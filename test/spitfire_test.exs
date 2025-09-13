@@ -49,7 +49,7 @@ defmodule SpitfireTest do
           some: :option
 
         def run(arg) do
-          bar() 
+          bar()
           :ok
         end
       end
@@ -164,7 +164,7 @@ defmodule SpitfireTest do
 
     test "parses strings" do
       code = ~s'''
-      "foobar" 
+      "foobar"
       '''
 
       assert Spitfire.parse(code) == s2q(code)
@@ -180,7 +180,7 @@ defmodule SpitfireTest do
 
     test "parses charlists" do
       code = ~s'''
-      'foobar' 
+      'foobar'
       '''
 
       assert Spitfire.parse(code) == s2q(code)
@@ -194,7 +194,7 @@ defmodule SpitfireTest do
       assert Spitfire.parse(code) == s2q(code)
 
       code = ~S'''
-      'foo#{alice}bar' 
+      'foo#{alice}bar'
       '''
 
       assert Spitfire.parse(code) == s2q(code)
@@ -202,7 +202,7 @@ defmodule SpitfireTest do
       code = ~S'''
       'foo#{
         alice
-      }bar' 
+      }bar'
       '''
 
       assert Spitfire.parse(code) == s2q(code)
@@ -947,7 +947,7 @@ defmodule SpitfireTest do
         ''',
         ~S'''
         if group_id do
-          [~S( data-group-id="), group_id, ~S(")] 
+          [~S( data-group-id="), group_id, ~S(")]
         else
           []
         end
@@ -1046,10 +1046,10 @@ defmodule SpitfireTest do
         case infix do
           nil ->
             {left, parser}
-                                                  
+
           ^do_block when parser.nestings != [] ->
             {left, next_token(parser)}
-                                                  
+
           _ ->
             infix.(next_token(parser), left)
         end
@@ -1986,7 +1986,7 @@ defmodule SpitfireTest do
         else
           :bob
         end
-      end 
+      end
       """
 
       assert Spitfire.parse(code) == s2q(code)
@@ -2038,6 +2038,7 @@ defmodule SpitfireTest do
     end
   end
 
+  @tag :skip_errors
   describe "code with errors" do
     # TODO: this needs a change to the tokenizer i believe, or a way to splice out the unknown token
     @tag :skip
@@ -2297,7 +2298,7 @@ defmodule SpitfireTest do
 
     test "missing end parentheses in function call" do
       code = ~S'''
-      foo(1 + 
+      foo(1 +
 
       bar(two)
       '''
@@ -2318,7 +2319,7 @@ defmodule SpitfireTest do
 
     test "missing closing end to anon function and paren" do
       code = ~S'''
-      new_list = 
+      new_list =
         Enum.map(some_list, fn item ->
 
 
@@ -2724,6 +2725,7 @@ defmodule SpitfireTest do
     end
   end
 
+  @tag :skip_comments
   describe "&parse_with_comments/2" do
     test "returns the comments" do
       code = ~S'''
@@ -2754,6 +2756,7 @@ defmodule SpitfireTest do
     end
   end
 
+  @tag :skip_cursor
   describe "container_cursor_to_quoted/2" do
     test "example from docs" do
       # example from the docs

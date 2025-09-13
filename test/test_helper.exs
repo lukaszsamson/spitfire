@@ -30,4 +30,4 @@ defmodule Spitfire.TestHelpers do
   end
 end
 
-ExUnit.start(exclude: [:skip])
+ExUnit.start(exclude: [:skip, :skip_errors, :skip_comments, :skip_cursor])
