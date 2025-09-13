@@ -2038,8 +2038,8 @@ defmodule SpitfireTest do
     end
   end
 
-  @tag :skip_errors
   describe "code with errors" do
+    @describetag :skip_errors
     # TODO: this needs a change to the tokenizer i believe, or a way to splice out the unknown token
     @tag :skip
     test "unknown prefix operator" do
@@ -2725,8 +2725,8 @@ defmodule SpitfireTest do
     end
   end
 
-  @tag :skip_comments
   describe "&parse_with_comments/2" do
+    @describetag :skip_comments
     test "returns the comments" do
       code = ~S'''
         # hello
@@ -2756,8 +2756,8 @@ defmodule SpitfireTest do
     end
   end
 
-  @tag :skip_cursor
   describe "container_cursor_to_quoted/2" do
+    @describetag :skip_cursor
     test "example from docs" do
       # example from the docs
       code = ~S'''

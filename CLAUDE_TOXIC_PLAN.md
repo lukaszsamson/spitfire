@@ -7,28 +7,36 @@ Replace Spitfire's batch tokenizer (`:spitfire_tokenizer.erl`) with Toxic's stre
 - Support for incremental parsing
 - Improved IDE integration capabilities
 
-## Phase 0: Baseline Understanding ✓
+## Phase 0: Basic understanding
 - Review PARSER.md and HIGH_LEVEL_TOKENIZER_PLAN.md
 - Understand current parser token API in lib/spitfire.ex
 - Study Toxic streaming API and token formats
 - Identify token shape differences and conversion needs
 
-## Phase 1: Compatibility Adapter (Parser Unchanged)
+## Phase 1: Compatibility Adapter
+
+Goal: decouple parser from legacy tokenizer, make parser compatible with Toxic.TokenStream semantics
+
+### 1.0 Extract legacy tokenizer to a wrapper module LegacyTokenizer
+**File**: `lib/spitfire/legacy_tokenizer.ex`
+
+- create a module with struct containing `tokens`, `current_token` and `peek_token`
+- add `next` and `peek` functions mimicking Toxic.TokenStream API
 
 ### 1.1 Replace Token List with Token Stream
 **File**: `lib/spitfire.ex`
 
 - Replace `tokens: tokenize(code, opts)` with `stream: Toxic.TokenStream.new(code, line, column, opts)`
-- Remove `current_token` and `peek_token` fields (stream handles this)
+- Remove `tokens`, `current_token` and `peek_token` fields from the parser struct (adapter handles this)
 - Keep `fuel`, `nesting`, `literal_encoder`, `errors`
 
 ### 1.2 Refactor Token Operations
 **File**: `lib/spitfire.ex`
 
 Replace all token manipulation functions:
-- `next_token/1` � Use `Toxic.TokenStream.next/1`
-- `current_token/1` � Track in parser state after consuming
-- `peek_token/1` � Use `Toxic.TokenStream.peek/1`
+- `next_token/1` � Use `LegacyTokenizer.next/1`
+- `current_token/1` � Track in parser or tokenizer state after consuming
+- `peek_token/1` � Use `LegacyTokenizer.peek/1`
 - `peek_token_type/1` � Adapt to Toxic's token format
 
 ## Phase 2: Token Format Adaptation

@@ -23,14 +23,14 @@ defmodule Spitfire do
   # precedences
 
   # pratt parsers are top down operator precedence recursive descent parsers
-  # 
+  #
   # operators have precedence (also known as binding power in some literature) and have a direction, left or right
-  # 
+  #
   # precedences increment by 2s to account for the left and right binding power. when doing the calculation (as seen in parse_expression/2)
   # if an operator has a right binding power, then you subtract 1 before comparing.
 
   # an example to differentiate the two binding powers are to compare the plus and concat operators.
-  # 
+  #
   # the implicit parentheses in the following two expressions makes this concept clearer
   #
   # one + two + three => ((one + two) + three)
@@ -200,7 +200,7 @@ defmodule Spitfire do
               match?({:__block__, [{:error, true} | _], _}, ast) ->
                 next_token(parser)
 
-              peek_token(parser) in [:eol, :";", :eof] and parser.tokens != :eot ->
+              peek_token(parser) in [:eol, :";", :eof] ->
                 next_token(parser)
 
               true ->
@@ -635,7 +635,7 @@ defmodule Spitfire do
   defp parse_comma_list(parser, precedence, is_list, is_map) do
     trace "parse_comma_list", trace_meta(parser) do
       {front, parser} = parse_expression(parser, precedence, is_list, is_map, false)
-      # we zip together the expression and parser state so that we can potentially 
+      # we zip together the expression and parser state so that we can potentially
       # backtrack later
       Process.put(:comma_list_parsers, [parser])
 
@@ -981,7 +981,7 @@ defmodule Spitfire do
   #
   # - beginning of parse function, current_token = :do
   # - encode `:do` literal in case of literal_encoder
-  # - save the old nesting level and insert a 0 
+  # - save the old nesting level and insert a 0
   # - enter outer loop
   #   - the job of the outer loop is to collect the expressions for each do+block_identifier
   #     (from now on just referred to as block_identifier)
@@ -995,11 +995,11 @@ defmodule Spitfire do
   #       - increment the token, and eat the eol token
   #       - if stab_state
   #         - we are in the body of a stab expression, don't increment and parse the stab
-  #       - else 
+  #       - else
   #         - parse expression
   #         - push eoe of the next token, but don't actually increment the parser
   #     - end inner loop
-  #   - encode block_identifier and save as {type, expressions} 
+  #   - encode block_identifier and save as {type, expressions}
   #   - end outer loop
   # - if current token is block_identifier, that means the last section was empty. encode the token
   #   and create an empty list of expressions
@@ -1353,7 +1353,7 @@ defmodule Spitfire do
                 else
                   parser =
                     %{
-                      tokens: tokens ++ [:eof],
+                      stream: Spitfire.TokenStream.from_tokens(tokens),
                       current_token: nil,
                       peek_token: nil,
                       nesting: 0,
@@ -1429,7 +1429,7 @@ defmodule Spitfire do
                 else
                   parser =
                     %{
-                      tokens: tokens ++ [:eof],
+                      stream: Spitfire.TokenStream.from_tokens(tokens),
                       current_token: nil,
                       peek_token: nil,
                       nesting: 0,
@@ -1528,7 +1528,7 @@ defmodule Spitfire do
             parser
             |> put_in([:current_token], {:fake_closing_brackets, nil})
             |> put_in([:peek_token], parser.current_token)
-            |> update_in([:tokens], &[parser.peek_token | &1])
+            |> update_in([:stream], &Spitfire.TokenStream.push_back(&1, [parser.peek_token]))
 
           {{:<<>>, [{:closing, current_meta(parser)} | meta], []}, parser}
 
@@ -1553,7 +1553,7 @@ defmodule Spitfire do
                    |> put_in([:current_token], {:fake_closing_bracket, nil})
                    |> put_in([:peek_token], parser.current_token)
                    |> put_in([:errors], parser_for_errors.errors)
-                   |> update_in([:tokens], &[parser.peek_token | &1])}
+                   |> update_in([:stream], &Spitfire.TokenStream.push_back(&1, [parser.peek_token]))}
                 else
                   _ ->
                     parser = next_token(parser)
@@ -1562,7 +1562,7 @@ defmodule Spitfire do
                      parser
                      |> put_in([:current_token], {:">>", nil})
                      |> put_in([:peek_token], parser.current_token)
-                     |> update_in([:tokens], &[parser.peek_token | &1])}
+                     |> update_in([:stream], &Spitfire.TokenStream.push_back(&1, [parser.peek_token]))}
                 end
 
               Process.put(:comma_list_parsers, old_comma_list_parsers)
@@ -1581,7 +1581,7 @@ defmodule Spitfire do
     trace "parse_map_literal", trace_meta(parser) do
       meta = current_meta(parser)
       parser = next_token(parser)
-      # we use a then to create lexical scoping to 
+      # we use a then to create lexical scoping to
       # hide manipulating incrementing the parser
       newlines = peek_newlines(parser)
 
@@ -1783,7 +1783,7 @@ defmodule Spitfire do
             parser
             |> put_in([:current_token], {:fake_closing_brace, nil})
             |> put_in([:peek_token], parser.current_token)
-            |> update_in([:tokens], &[parser.peek_token | &1])
+            |> update_in([:stream], &Spitfire.TokenStream.push_back(&1, [parser.peek_token]))
 
           parser = put_in(parser.nesting, old_nesting)
           {{:{}, meta, []}, parser}
@@ -1809,7 +1809,7 @@ defmodule Spitfire do
                      |> put_in([:current_token], {:fake_closing_brace, nil})
                      |> put_in([:peek_token], parser.current_token)
                      |> put_in([:errors], parser_for_errors.errors)
-                     |> update_in([:tokens], &[parser.peek_token | &1])}
+                     |> update_in([:stream], &Spitfire.TokenStream.push_back(&1, [parser.peek_token]))}
                   else
                     _ ->
                       parser = next_token(parser)
@@ -1818,7 +1818,7 @@ defmodule Spitfire do
                        parser
                        |> put_in([:current_token], {:"}", nil})
                        |> put_in([:peek_token], parser.current_token)
-                       |> update_in([:tokens], &[parser.peek_token | &1])}
+                       |> update_in([:stream], &Spitfire.TokenStream.push_back(&1, [parser.peek_token]))}
                   end
 
                 Process.put(:comma_list_parsers, old_comma_list_parsers)
@@ -1875,7 +1875,7 @@ defmodule Spitfire do
             parser
             |> put_in([:current_token], {:fake_closing_bracket, nil})
             |> put_in([:peek_token], parser.current_token)
-            |> update_in([:tokens], &[parser.peek_token | &1])
+            |> update_in([:stream], &Spitfire.TokenStream.push_back(&1, [parser.peek_token]))
 
           parser = Map.put(parser, :nesting, old_nesting)
           {encode_literal(parser, [], orig_meta), parser}
@@ -1903,7 +1903,7 @@ defmodule Spitfire do
                    |> put_in([:current_token], {:fake_closing_bracket, nil})
                    |> put_in([:peek_token], parser.current_token)
                    |> put_in([:errors], parser_for_errors.errors)
-                   |> update_in([:tokens], &[parser.peek_token | &1])}
+                   |> update_in([:stream], &Spitfire.TokenStream.push_back(&1, [parser.peek_token]))}
                 else
                   _ ->
                     parser = next_token(parser)
@@ -1912,7 +1912,7 @@ defmodule Spitfire do
                      parser
                      |> put_in([:current_token], {:"]", nil})
                      |> put_in([:peek_token], parser.current_token)
-                     |> update_in([:tokens], &[parser.peek_token | &1])}
+                     |> update_in([:stream], &Spitfire.TokenStream.push_back(&1, [parser.peek_token]))}
                 end
 
               Process.put(:comma_list_parsers, old_comma_list_parsers)
@@ -2150,40 +2150,6 @@ defmodule Spitfire do
     end
   end
 
-  defp tokenize(code, opts) do
-    opts =
-      opts
-      |> Keyword.put_new(:cursor_completion, false)
-      |> Keyword.put_new(:check_terminators, false)
-
-    tokens =
-      case code
-           |> String.to_charlist()
-           |> :spitfire_tokenizer.tokenize(opts[:line] || 1, opts[:column] || 1, opts) do
-        {:ok, _, _, _, tokens, []} ->
-          Enum.reverse(tokens)
-
-        {:ok, line, column, _, rev_tokens, rev_terminators} ->
-          # vendored from elixir-lang/elixir, license: Apache2
-          {rev_tokens, rev_terminators} =
-            with [close, open, {_, _, :__cursor__} = cursor | rev_tokens] <- rev_tokens,
-                 {_, [_ | after_fn]} <- Enum.split_while(rev_terminators, &(elem(&1, 0) != :fn)),
-                 true <- maybe_missing_stab?(rev_tokens, false),
-                 [_ | rev_tokens] <- Enum.drop_while(rev_tokens, &(elem(&1, 0) != :fn)) do
-              {[close, open, cursor | rev_tokens], after_fn}
-            else
-              _ -> {rev_tokens, rev_terminators}
-            end
-
-          reverse_tokens(line, column, rev_tokens, rev_terminators)
-
-        {:error, _, _, _, tokens} ->
-          Enum.reverse(tokens)
-      end
-
-    tokens ++ [:eof]
-  end
-
   defp parse_interpolation(parser, tokens) do
     trace "parse_interpolation", trace_meta(parser) do
       args =
@@ -2202,7 +2168,7 @@ defmodule Spitfire do
                 else
                   parser =
                     %{
-                      tokens: tokens ++ [:eof],
+                      stream: Spitfire.TokenStream.from_tokens(tokens),
                       current_token: nil,
                       errors: [],
                       peek_token: nil,
@@ -2234,7 +2200,7 @@ defmodule Spitfire do
 
   defp new(code, opts) do
     %{
-      tokens: tokenize(code, opts),
+      stream: Spitfire.TokenStream.new(code, opts[:line] || 1, opts[:column] || 1, opts),
       fuel: 150,
       current_token: nil,
       peek_token: nil,
@@ -2244,40 +2210,15 @@ defmodule Spitfire do
     }
   end
 
-  defp next_token(%{tokens: :eot, current_token: nil, peek_token: nil} = parser) do
-    parser
+  defp next_token(%{stream: stream, current_token: nil, peek_token: nil} = parser) do
+    {tok, stream1} = Spitfire.TokenStream.next(stream)
+    %{parser | stream: stream1, peek_token: tok, fuel: 150}
   end
 
-  defp next_token(%{tokens: :eot, current_token: :eof, peek_token: nil} = parser) do
-    %{parser | tokens: :eot, current_token: nil, fuel: 150}
-  end
-
-  defp next_token(%{tokens: [], current_token: nil, peek_token: nil} = parser) do
-    %{parser | tokens: :eot, fuel: 150}
-  end
-
-  defp next_token(%{tokens: [], peek_token: nil} = parser) do
-    %{parser | tokens: :eot, current_token: nil, fuel: 150}
-  end
-
-  defp next_token(%{tokens: []} = parser) do
-    %{
-      parser
-      | current_token: parser.peek_token,
-        peek_token: nil,
-        tokens: :eot,
-        fuel: 150
-    }
-  end
-
-  defp next_token(%{tokens: [token | tokens]} = parser) do
-    %{
-      parser
-      | tokens: tokens,
-        current_token: parser.peek_token,
-        peek_token: token,
-        fuel: 150
-    }
+  defp next_token(%{stream: stream} = parser) do
+    current = parser.peek_token
+    {tok, stream1} = Spitfire.TokenStream.next(stream)
+    %{parser | stream: stream1, current_token: current, peek_token: tok, fuel: 150}
   end
 
   defp consume_fuel(parser) do
@@ -2290,39 +2231,15 @@ defmodule Spitfire do
     parser
   end
 
-  defp eat(edibles, %{tokens: [], current_token: {edible, _}, peek_token: nil} = parser)
-       when is_map(edibles) and is_map_key(edibles, edible) do
-    %{
+  defp eat(edibles, parser) when is_map(edibles) do
+    if is_map_key(edibles, current_token_type(parser)) do
+      next_token(parser)
+    else
       parser
-      | tokens: :eot,
-        current_token: nil,
-        peek_token: nil
-    }
+    end
   end
 
-  defp eat(edibles, %{tokens: [], current_token: {edible, _}, peek_token: peek} = parser)
-       when is_map(edibles) and is_map_key(edibles, edible) do
-    %{
-      parser
-      | tokens: :eot,
-        current_token: peek,
-        peek_token: nil
-    }
-  end
-
-  defp eat(edibles, %{tokens: [token | tokens], current_token: {edible, _}} = parser)
-       when is_map(edibles) and is_map_key(edibles, edible) do
-    %{
-      parser
-      | tokens: tokens,
-        current_token: parser.peek_token,
-        peek_token: token
-    }
-  end
-
-  defp eat(_edibles, parser) do
-    parser
-  end
+  defp eat(_edibles, parser), do: parser
 
   defp eat_eol(parser) do
     eat(%{:eol => true, :";" => true}, parser)
@@ -2332,25 +2249,18 @@ defmodule Spitfire do
     eat_at(parser, [:eol, :";"], idx)
   end
 
-  defp eat_at(parser, tokens, idx) when is_list(tokens) do
-    eat_at(parser, Map.new(tokens, &{&1, true}), idx)
-  end
+  defp eat_at(parser, tokens, idx) when is_list(tokens), do: eat_at(parser, Map.new(tokens, &{&1, true}), idx)
 
-  defp eat_at(%{tokens: [next | rest]} = parser, tokens, 1) do
+  defp eat_at(%{stream: stream} = parser, tokens, 1) when is_map(tokens) do
     if tokens[peek_token_type(parser)] do
-      %{parser | peek_token: next, tokens: rest}
+      {tok, stream1} = Spitfire.TokenStream.next(stream)
+      %{parser | stream: stream1, peek_token: tok}
     else
       parser
     end
   end
 
-  defp eat_at(%{tokens: []} = parser, _tokens, 1) do
-    parser
-  end
-
-  defp eat_at(%{tokens: :eot} = parser, _token, _idx) do
-    parser
-  end
+  defp eat_at(parser, _tokens, _idx), do: parser
 
   defp peek_token(%{peek_token: {:stab_op, _, token}}) do
     token
@@ -2373,10 +2283,6 @@ defmodule Spitfire do
   end
 
   defp peek_token(%{peek_token: :eof}) do
-    :eof
-  end
-
-  defp peek_token(%{tokens: :eot}) do
     :eof
   end
 
@@ -2408,15 +2314,15 @@ defmodule Spitfire do
     :eof
   end
 
-  defp peek_token_eat_eol(%{tokens: :eot}) do
+  defp current_token_type(%{tokens: :eof}) do
     :eof
   end
 
-  defp current_token_type(%{tokens: :eot}) do
-    :eot
+  defp current_token_type(%{current_token: :eof}) do
+    :eof
   end
 
-  defp current_token_type(%{tokens: :eof}) do
+  defp current_token_type(%{current_token: nil}) do
     :eof
   end
 
@@ -2446,6 +2352,10 @@ defmodule Spitfire do
 
   defp peek_token_type(%{peek_token: {type, _, _}}) do
     type
+  end
+
+  defp peek_token_type(%{peek_token: :eof}) do
+    :eof
   end
 
   defp peek_token_type(_) do
@@ -2814,29 +2724,6 @@ defmodule Spitfire do
 
   defp previous_eol_count([]), do: 1
   defp previous_eol_count(_), do: 0
-
-  # vendored from elixir-lang/elixir, license: Apache2
-  defp maybe_missing_stab?([{:after, _} | _], _stab_choice?), do: true
-  defp maybe_missing_stab?([{:do, _} | _], _stab_choice?), do: true
-  defp maybe_missing_stab?([{:fn, _} | _], _stab_choice?), do: true
-  defp maybe_missing_stab?([{:else, _} | _], _stab_choice?), do: true
-  defp maybe_missing_stab?([{:catch, _} | _], _stab_choice?), do: true
-  defp maybe_missing_stab?([{:rescue, _} | _], _stab_choice?), do: true
-  defp maybe_missing_stab?([{:stab_op, _, :->} | _], stab_choice?), do: stab_choice?
-  defp maybe_missing_stab?([_ | tail], stab_choice?), do: maybe_missing_stab?(tail, stab_choice?)
-  defp maybe_missing_stab?([], _stab_choice?), do: false
-
-  # vendored from elixir-lang/elixir, license: Apache2
-  defp reverse_tokens(line, column, tokens, terminators) do
-    {terminators, _} =
-      Enum.map_reduce(terminators, column, fn {start, _, _}, column ->
-        atom = :spitfire_tokenizer.terminator(start)
-
-        {{atom, {line, column, nil}}, column + length(Atom.to_charlist(atom))}
-      end)
-
-    Enum.reverse(tokens, terminators)
-  end
 
   defp push_delimiter(meta, {_, _, delimiter}) when is_integer(delimiter) do
     [{:delimiter, "#{[delimiter]}"} | meta]
