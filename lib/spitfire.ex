@@ -2233,8 +2233,9 @@ defmodule Spitfire do
   defp scan_loop(parser, accumulator, end_token, kind, opts) do
     case current_token_type(parser) do
       :string_fragment ->
-        current_token(parser) |> dbg
-        {content, meta} = {current_token(parser) |> elem(2), current_meta(parser)}
+        # Grab fragment content from the full token tuple, not the token type
+        {:string_fragment, _tok_meta, content} = parser.current_token
+        meta = current_meta(parser)
 
         # Unescape content unless it's a sigil
         content = if opts[:no_unescape], do: content, else: unescape_fragment(content)
@@ -2394,7 +2395,8 @@ defmodule Spitfire do
   defp scan_identifier_loop(parser, accumulator) do
     case current_token_type(parser) do
       :string_fragment ->
-        {content, meta} = {current_token(parser) |> elem(2), current_meta(parser)}
+        {:string_fragment, _tok_meta, content} = parser.current_token
+        meta = current_meta(parser)
         content = unescape_fragment(content)
         parser = next_token(parser)
         scan_identifier_loop(parser, [{:fragment, meta, content} | accumulator])
@@ -2458,29 +2460,37 @@ defmodule Spitfire do
       end
 
       # Scan the linearized content
-      {parts, parser, end_meta} = scan_linearized(parser, end_token, kind)
+      {parts, parser, _end_meta} = scan_linearized(parser, end_token, kind)
 
-      case parts do
-        [] ->
+      cond do
+        parts == [] ->
           # Empty string
-          literal = case kind do
-            :binary -> ""
-            :charlist -> []
-          end
+          literal = if kind == :binary, do: "", else: []
           {encode_literal(parser, literal, start_meta), parser}
 
-        _ ->
-          # Build AST from parts
+        Enum.all?(parts, fn
+          {:fragment, _m, _c} -> true
+          _ -> false
+        end) ->
+          # Only fragments, no interpolation: return literal to match s2q
+          merged =
+            parts
+            |> Enum.map(fn {:fragment, _m, c} -> c end)
+            |> IO.iodata_to_binary()
+
+          literal = if kind == :binary, do: merged, else: String.to_charlist(merged)
+          {encode_literal(parser, literal, start_meta), parser}
+
+        true ->
+          # Interpolated or multi-part: build AST
           args = build_string_parts(parts, kind)
 
           case kind do
             :binary ->
-              # Build binary string: {:<<>>, meta, args}
               meta_with_delimiter = [{:delimiter, "\""} | start_meta]
               {{:<<>>, meta_with_delimiter, args}, parser}
 
             :charlist ->
-              # Build charlist wrapped in List.to_charlist
               meta_with_delimiter = [{:delimiter, "'"} | start_meta]
               {{{:., start_meta, [List, :to_charlist]}, meta_with_delimiter, [args]}, parser}
           end

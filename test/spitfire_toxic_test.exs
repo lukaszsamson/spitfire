@@ -38,13 +38,31 @@ defmodule SpitfireToxicTest do
       assert Spitfire.parse(code) == s2q(code)
     end
 
+    test "atom quoted" do
+      code = ":\"\""
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = ":\"foo\""
+
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
     test "string" do
+      code = "\"\""
+
+      assert Spitfire.parse(code) == s2q(code)
+
       code = "\"foo\""
 
       assert Spitfire.parse(code) == s2q(code)
     end
 
     test "charlist" do
+      code = "''"
+
+      assert Spitfire.parse(code) == s2q(code)
+
       code = "'foo'"
 
       assert Spitfire.parse(code) == s2q(code)
