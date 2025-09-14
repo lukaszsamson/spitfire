@@ -225,6 +225,18 @@ defmodule SpitfireToxicTest do
     end
 
     test "sigil" do
+      code = "~x''"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "~x'fo\n\\n\\\no'"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "~X'fo\n\\n\\\no'"
+
+      assert Spitfire.parse(code) == s2q(code)
+
       code = "~x'foo'abc"
 
       assert Spitfire.parse(code) == s2q(code)

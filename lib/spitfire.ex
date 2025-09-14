@@ -2604,7 +2604,7 @@ defmodule Spitfire do
           :charlist -> [:kw_identifier_safe_end, :kw_identifier_unsafe_end, end_token]
         end
 
-      {parts, parser, _end_meta, end_type} = scan_linearized(parser, end_tokens, kind)
+      {parts, parser, _end_meta, end_type, _end_info} = scan_linearized(parser, end_tokens, kind)
 
       cond do
         end_type in [:kw_identifier_safe_end, :kw_identifier_unsafe_end] ->
@@ -2748,7 +2748,8 @@ defmodule Spitfire do
   defp parse_linearized_sigil(parser) do
     trace "parse_linearized_sigil", trace_meta(parser) do
       # Extract sigil information from the start token
-      {:sigil_start, start_meta, sigil_atom, delimiter} = current_token(parser)
+      {:sigil_start, _start_meta_raw, sigil_atom, delimiter} = parser.current_token
+      base_meta = current_meta(parser)
       parser = next_token(parser)
 
       # Scan the sigil content (without unescaping)
@@ -2758,28 +2759,26 @@ defmodule Spitfire do
       {modifiers, parser} =
         case current_token_type(parser) do
           :sigil_modifiers ->
-            {mods, _meta} = {elem(current_token(parser), 2), current_meta(parser)}
-            {mods, next_token(parser)}
+            case parser.current_token do
+              {:sigil_modifiers, _meta, mods} -> {mods, next_token(parser)}
+              _ -> {[], parser}
+            end
 
           _ ->
             {[], parser}
         end
 
-      # Build sigil content
-      args =
+      # Build sigil content as a binary node even when only fragments
+      bs_args =
         case parts do
-          [] ->
-            # Empty sigil
-            ""
-
-          _ ->
-            # Build binary from parts
-            build_sigil_content(parts)
+          [] -> [""]
+          _ -> build_string_parts(parts, :sigil)
         end
 
       # Build the final sigil AST
-      meta_with_delimiter = [{:delimiter, delimiter} | start_meta]
-      sigil_ast = {sigil_atom, meta_with_delimiter, [args, modifiers]}
+      meta_with_delimiter = [{:delimiter, delimiter} | base_meta]
+      bs_meta = base_meta
+      sigil_ast = {sigil_atom, meta_with_delimiter, [{:<<>>, bs_meta, bs_args}, modifiers]}
 
       {sigil_ast, parser}
     end
@@ -2841,7 +2840,7 @@ defmodule Spitfire do
         end
 
       # Scan the atom content
-      {parts, parser, _end_meta, _end_type} = scan_linearized(parser, end_token, :atom)
+      {parts, parser, _end_meta, _end_type, _end_info} = scan_linearized(parser, end_token, :atom)
 
       cond do
         parts == [] ->
@@ -2948,6 +2947,10 @@ defmodule Spitfire do
     type
   end
 
+  defp peek_token(%{peek_token: {token, _, _, _}}) do
+    token
+  end
+
   defp peek_token(%{peek_token: {token, _, _}}) do
     token
   end
@@ -2974,6 +2977,10 @@ defmodule Spitfire do
 
   defp peek_token_eat_eol(%{peek_token: {type, _, _, _}}) when type in [:list_heredoc, :bin_heredoc] do
     type
+  end
+
+  defp peek_token_eat_eol(%{peek_token: {token, _, _, _}}) do
+    token
   end
 
   defp peek_token_eat_eol(%{peek_token: {token, _, _}}) do
@@ -3062,6 +3069,10 @@ defmodule Spitfire do
 
   defp current_token(%{current_token: {:list_heredoc, _meta, _indent, _tokens}}) do
     :list_heredoc
+  end
+
+  defp current_token(%{current_token: {token, _, _, _}}) do
+    token
   end
 
   for op <- [
