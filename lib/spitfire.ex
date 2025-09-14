@@ -1116,6 +1116,12 @@ defmodule Spitfire do
           # Handle remote calls with quoted identifiers: D."foo", D."foo"(1), D."foo"[1], D."foo" + 1, D."foo" do ... end
           parser = next_token(parser)
           id_start_meta = current_meta(parser)
+          delim_str =
+            case parser.current_token do
+              {:quoted_identifier_start, _m, h} when is_integer(h) -> <<h>>
+              {:quoted_identifier_start, _m, d} when is_binary(d) -> d
+              _ -> ~S'"'
+            end
 
           # Scan the quoted identifier and classify its end
           # Advance past the start token to the first content token
@@ -1124,7 +1130,7 @@ defmodule Spitfire do
           content = build_identifier_content(parts)
           callee_atom = if is_binary(content), do: String.to_atom(content), else: :interpolated_identifier
 
-          base_call_meta = [{:delimiter, ~S'"'} | id_start_meta]
+          base_call_meta = [{:delimiter, delim_str} | id_start_meta]
 
           # Decide argument parsing strategy based on end_type and upcoming tokens
           case end_type do
@@ -1287,10 +1293,20 @@ defmodule Spitfire do
           parser = next_token(parser)
           base_meta = current_meta(parser)
           quoted? = current_token_type(parser) == :quoted_identifier_start
+          delim_str =
+            if quoted? do
+              case parser.current_token do
+                {:quoted_identifier_start, _m, h} when is_integer(h) -> <<h>>
+                {:quoted_identifier_start, _m, d} when is_binary(d) -> d
+                _ -> ~S'"'
+              end
+            else
+              nil
+            end
 
           {rhs, parser} = parse_expression(parser, @lowest, false, false, false)
 
-          call_meta = if quoted?, do: [no_parens: true, delimiter: ~S'"'] ++ base_meta, else: base_meta
+          call_meta = if quoted?, do: [no_parens: true, delimiter: delim_str] ++ base_meta, else: base_meta
           ast = {{token, meta, [lhs, rhs]}, call_meta, []}
 
           {ast, parser}
