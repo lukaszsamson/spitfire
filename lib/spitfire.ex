@@ -1166,12 +1166,14 @@ defmodule Spitfire do
               # Always parse at least one argument (operator identifier semantics)
               parser = push_nesting(parser)
               {front, parser} = parse_expression(parser, @lowest, false, false, false)
+
               {rest, parser} =
                 while2 peek_token(parser) == :"," <- parser do
                   parser = next_token(parser)
                   parser = next_token(parser)
                   parse_expression(parser, @lowest, false, false, false)
                 end
+
               parser = pop_nesting(parser)
               base_ast = {{token, meta, [lhs, callee_atom]}, base_call_meta, []}
               ast = put_elem(base_ast, 2, List.wrap(front) ++ List.wrap(rest))
@@ -1181,15 +1183,18 @@ defmodule Spitfire do
               # :quoted_identifier_end and any other: behave like plain identifier,
               # but allow op-identifier style no-parens when a unary op follows.
               base_ast = {{token, meta, [lhs, callee_atom]}, base_call_meta, []}
+
               if current_token_type(parser) == :unary_op do
                 parser = push_nesting(parser)
                 {front, parser} = parse_expression(parser, @lowest, false, false, false)
+
                 {rest, parser} =
                   while2 peek_token(parser) == :"," <- parser do
                     parser = next_token(parser)
                     parser = next_token(parser)
                     parse_expression(parser, @lowest, false, false, false)
                   end
+
                 parser = pop_nesting(parser)
                 ast = put_elem(base_ast, 2, List.wrap(front) ++ List.wrap(rest))
                 {ast, parser}
@@ -2386,6 +2391,7 @@ defmodule Spitfire do
         if token in end_tokens do
           # Found the end token - extract metadata and return
           end_meta = current_meta(parser)
+
           end_info =
             case parser.current_token do
               {t, _m, _delim, indent} when t in [:bin_heredoc_end, :list_heredoc_end, :sigil_end] ->
@@ -2412,6 +2418,7 @@ defmodule Spitfire do
     case kind do
       :binary ->
         call_meta = [from_interpolation: true, closing: end_meta] ++ open_meta
+
         {:"::", open_meta,
          [
            {{:., open_meta, [Kernel, :to_string]}, call_meta, [expr]},
@@ -2424,6 +2431,7 @@ defmodule Spitfire do
 
       :atom ->
         call_meta = [from_interpolation: true, closing: end_meta] ++ open_meta
+
         {:"::", open_meta,
          [
            {{:., open_meta, [Kernel, :to_string]}, call_meta, [expr]},
@@ -2432,6 +2440,7 @@ defmodule Spitfire do
 
       :sigil ->
         call_meta = [from_interpolation: true, closing: end_meta] ++ open_meta
+
         {:"::", open_meta,
          [
            {{:., open_meta, [Kernel, :to_string]}, call_meta, [expr]},
@@ -2487,6 +2496,7 @@ defmodule Spitfire do
   # Trim up to `indentation` leading spaces/tabs from each line
   defp trim_heredoc_fragment(content, indentation) do
     indent = indentation || 0
+
     if indent <= 0 do
       content
     else
@@ -2735,13 +2745,13 @@ defmodule Spitfire do
             # Build AST from parts
             args = build_string_parts(unescaped_parts, kind)
 
-          # Add metadata with correct order: delimiter first, then indentation (if any)
-          meta_with_indent =
-            if indentation do
-              [{:delimiter, if(kind == :binary, do: ~s|"""|, else: ~s|'''|)}, {:indentation, indentation} | start_meta]
-            else
-              [{:delimiter, if(kind == :binary, do: ~s|"""|, else: ~s|'''|)} | start_meta]
-            end
+            # Add metadata with correct order: delimiter first, then indentation (if any)
+            meta_with_indent =
+              if indentation do
+                [{:delimiter, if(kind == :binary, do: ~s|"""|, else: ~s|'''|)}, {:indentation, indentation} | start_meta]
+              else
+                [{:delimiter, if(kind == :binary, do: ~s|"""|, else: ~s|'''|)} | start_meta]
+              end
 
             case kind do
               :binary ->
@@ -2797,11 +2807,13 @@ defmodule Spitfire do
 
       # Build the final sigil AST
       meta_with_delimiter = [{:delimiter, delimiter} | base_meta]
+
       bs_meta =
         case Map.get(end_info, :indentation) do
           nil -> base_meta
           indent -> [{:indentation, indent} | base_meta]
         end
+
       sigil_ast = {sigil_atom, meta_with_delimiter, [{:<<>>, bs_meta, bs_args}, modifiers]}
 
       {sigil_ast, parser}
