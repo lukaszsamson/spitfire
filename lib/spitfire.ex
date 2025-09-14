@@ -2394,39 +2394,50 @@ defmodule Spitfire do
         # Eat any immediate EOLs after opening interpolation
         parser = eat_eol(parser)
 
-        # 4. Parse expression with :end_interpolation as terminal
-        {expr, parser} = parse_expression(parser)
-        # Attach end_of_expression metadata for fidelity with legacy
-        expr = push_eoe(expr, peek_eoe(parser))
+        # 4. Parse expression with :end_interpolation as terminal (unless empty)
+        empty_interp? = current_token_type(parser) == :end_interpolation
+        {expr, parser} =
+          if empty_interp? do
+            {{:__block__, [], []}, parser}
+          else
+            {e, p} = parse_expression(parser)
+            # Attach end_of_expression metadata for fidelity with legacy (non-empty only)
+            {push_eoe(e, peek_eoe(p)), p}
+          end
 
-        # 5. Skip any trailing EOLs, then expect and consume :end_interpolation
-        parser = eat_eol_at(parser, 1)
+        # 5. Skip any trailing EOLs (for non-empty), then expect and consume :end_interpolation
+        parser = if empty_interp?, do: parser, else: eat_eol_at(parser, 1)
 
-        if peek_token_type(parser) == :end_interpolation do
-          parser = next_token(parser)
-          end_meta = current_meta(parser)
-          # Advance past end_interpolation so current_token points to following content
-          parser = next_token(parser)
+        {end_meta, parser} =
+          cond do
+            current_token_type(parser) == :end_interpolation ->
+              # Current is the closing marker (empty interpolation)
+              {current_meta(parser), next_token(parser)}
 
-          # 6. Restore nesting and pop depth
-          [saved | rest] = parser.saved_nesting_stack
+            peek_token_type(parser) == :end_interpolation ->
+              # Closing marker is at peek; advance to it and then past it
+              parser = next_token(parser)
+              {current_meta(parser), next_token(parser)}
 
-          parser = %{
-            parser
-            | nesting: saved,
-              saved_nesting_stack: rest,
-              interpolation_depth: parser.interpolation_depth - 1
-          }
+            true ->
+              # Error: expected :end_interpolation
+              parser = put_error(parser, {current_meta(parser), "expected end of interpolation"})
+              {nil, parser}
+          end
 
-          # 7. Build interpolation AST based on kind
-          interp_ast = build_interpolation_ast(expr, open_meta, end_meta, kind)
+        # 6. Restore nesting and pop depth
+        [saved | rest] = parser.saved_nesting_stack
 
-          scan_loop(parser, [{:interpolation, end_meta, interp_ast} | accumulator], end_tokens, kind, opts)
-        else
-          # Error: expected :end_interpolation
-          parser = put_error(parser, {current_meta(parser), "expected end of interpolation"})
-          {Enum.reverse(accumulator), parser, nil, nil, %{}}
-        end
+        parser = %{
+          parser
+          | nesting: saved,
+            saved_nesting_stack: rest,
+            interpolation_depth: parser.interpolation_depth - 1
+        }
+
+        # 7. Build interpolation AST based on kind
+        interp_ast = build_interpolation_ast(expr, open_meta, end_meta || open_meta, kind)
+        scan_loop(parser, [{:interpolation, end_meta || open_meta, interp_ast} | accumulator], end_tokens, kind, opts)
 
       token ->
         if token in end_tokens do
