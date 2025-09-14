@@ -13,13 +13,69 @@ defmodule SpitfireToxicTest do
 
   doctest Spitfire
 
-  describe "valid code" do
-    test "simple" do
+  describe "simple cases" do
+    test "identifier" do
       code = "foo"
 
       assert Spitfire.parse(code) == s2q(code)
     end
 
+    test "number" do
+      code = "123"
+
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "alias" do
+      code = "Foo"
+
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "atom" do
+      code = ":foo"
+
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "string" do
+      code = "\"foo\""
+
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "charlist" do
+      code = "'foo'"
+
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "string heredoc" do
+      code = "\"\"\"\nfoo\n\"\"\""
+
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "charlist heredoc" do
+      code = "'''\nfoo\n'''"
+
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "sigil" do
+      code = "~x'foo'abc"
+
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "heredoc sigil" do
+      code = "~x\"\"\"\nfoo\n\"\"\"abc"
+
+      assert Spitfire.parse(code) == s2q(code)
+    end
+  end
+
+  describe "valid code" do
     test "semicolons" do
       code = "res = Foo.Bar.run(1, 2, 3); IO.inspect(res)"
 

@@ -2222,51 +2222,468 @@ defmodule Spitfire do
 
   # Linearized token parsing functions for Toxic integration
 
+  # Shared scanner for linearized constructs (strings, atoms, sigils, etc.)
+  defp scan_linearized(parser, end_token, kind, opts \\ []) do
+    trace "scan_linearized (#{end_token})", trace_meta(parser) do
+      accumulator = []
+      scan_loop(parser, accumulator, end_token, kind, opts)
+    end
+  end
+
+  defp scan_loop(parser, accumulator, end_token, kind, opts) do
+    case current_token_type(parser) do
+      :string_fragment ->
+        current_token(parser) |> dbg
+        {content, meta} = {current_token(parser) |> elem(2), current_meta(parser)}
+
+        # Unescape content unless it's a sigil
+        content = if opts[:no_unescape], do: content, else: unescape_fragment(content)
+
+        # For heredocs, trim whitespace using indent from end token (handled later)
+        parser = next_token(parser)
+        scan_loop(parser, [{:fragment, meta, content} | accumulator], end_token, kind, opts)
+
+      :begin_interpolation ->
+        # 1. Push interpolation depth
+        parser = %{parser | interpolation_depth: parser.interpolation_depth + 1}
+
+        # 2. Save and reset nesting
+        saved_nesting = parser.nesting
+        parser = %{parser | nesting: 0, saved_nesting_stack: [saved_nesting | parser.saved_nesting_stack]}
+
+        # 3. Consume :begin_interpolation token
+        parser = next_token(parser)
+
+        # 4. Parse expression with :end_interpolation as terminal
+        {expr, parser} = parse_expression(parser)
+
+        # 5. Expect and consume :end_interpolation
+        if current_token_type(parser) == :end_interpolation do
+          end_meta = current_meta(parser)
+          parser = next_token(parser)
+
+          # 6. Restore nesting and pop depth
+          [saved | rest] = parser.saved_nesting_stack
+          parser = %{parser | nesting: saved, saved_nesting_stack: rest, interpolation_depth: parser.interpolation_depth - 1}
+
+          # 7. Build interpolation AST based on kind
+          interp_ast = build_interpolation_ast(expr, end_meta, kind)
+
+          scan_loop(parser, [{:interpolation, end_meta, interp_ast} | accumulator], end_token, kind, opts)
+        else
+          # Error: expected :end_interpolation
+          parser = put_error(parser, {current_meta(parser), "expected end of interpolation"})
+          {Enum.reverse(accumulator), parser, nil}
+        end
+
+      ^end_token ->
+        # Found the end token - extract metadata and return
+        end_meta = current_meta(parser)
+        parser = next_token(parser)
+        {Enum.reverse(accumulator), parser, end_meta}
+
+      _ ->
+        # Unexpected token - error recovery
+        parser = put_error(parser, {current_meta(parser), "unexpected token in #{kind}: #{current_token_type(parser)}"})
+        {Enum.reverse(accumulator), parser, nil}
+    end
+  end
+
+  # Helper function to build interpolation AST based on construct type
+  defp build_interpolation_ast(expr, end_meta, kind) do
+    meta = [from_interpolation: true, closing: end_meta]
+
+    case kind do
+      :binary ->
+        # For binary strings: to_string call + binary type
+        {:"::", meta, [
+          {{:., meta, [Kernel, :to_string]}, meta, [expr]},
+          {:binary, meta, nil}
+        ]}
+
+      :charlist ->
+        # For charlists: to_string call (will be wrapped in to_charlist later)
+        {{:., meta, [Kernel, :to_string]}, meta, [expr]}
+
+      :atom ->
+        # For atoms: just the expression (will be wrapped in binary_to_atom later)
+        expr
+
+      :sigil ->
+        # For sigils: to_string call + binary type
+        {:"::", meta, [
+          {{:., meta, [Kernel, :to_string]}, meta, [expr]},
+          {:binary, meta, nil}
+        ]}
+
+      _ ->
+        # Default: just the expression
+        expr
+    end
+  end
+
+  # Helper function to unescape string fragments (placeholder for now)
+  defp unescape_fragment(content) do
+    # TODO: Implement proper unescaping using Toxic.Unescape or similar
+    # For now, just return the content as-is
+    content
+  end
+
+  # Helper function to build string parts from scanned fragments and interpolations
+  defp build_string_parts(parts, kind) do
+    for part <- parts do
+      case part do
+        {:fragment, _meta, content} when is_binary(content) ->
+          # String fragment - return as literal
+          content
+
+        {:interpolation, _meta, ast} ->
+          # Interpolation - return the AST
+          ast
+
+        _ ->
+          # Unexpected part type
+          ""
+      end
+    end
+  end
+
+  # Helper function to trim whitespace from heredoc parts based on indentation
+  defp trim_heredoc_parts(parts, indentation) do
+    for part <- parts do
+      case part do
+        {:fragment, meta, content} ->
+          # Trim whitespace from the fragment content based on indentation
+          trimmed_content = trim_heredoc_fragment(content, indentation)
+          {:fragment, meta, trimmed_content}
+
+        other ->
+          # Keep interpolations as-is
+          other
+      end
+    end
+  end
+
+  # Placeholder for heredoc fragment trimming
+  defp trim_heredoc_fragment(content, _indentation) do
+    # TODO: Implement proper heredoc whitespace trimming
+    # For now, just return the content as-is
+    content
+  end
+
+  # Helper function to build sigil content from parts
+  defp build_sigil_content(parts) do
+    case parts do
+      [{:fragment, _meta, content}] when is_binary(content) ->
+        # Single fragment - return as string literal
+        content
+
+      _ ->
+        # Multiple parts or interpolations - build binary
+        args = build_string_parts(parts, :sigil)
+        {:<<>>, [], args}
+    end
+  end
+
+  # Special scanner for identifiers that can have multiple end token types
+  defp scan_linearized_identifier(parser) do
+    accumulator = []
+    scan_identifier_loop(parser, accumulator)
+  end
+
+  defp scan_identifier_loop(parser, accumulator) do
+    case current_token_type(parser) do
+      :string_fragment ->
+        {content, meta} = {current_token(parser) |> elem(2), current_meta(parser)}
+        content = unescape_fragment(content)
+        parser = next_token(parser)
+        scan_identifier_loop(parser, [{:fragment, meta, content} | accumulator])
+
+      :begin_interpolation ->
+        # Handle interpolation (simplified for identifiers)
+        parser = next_token(parser)
+        {expr, parser} = parse_expression(parser)
+
+        if current_token_type(parser) == :end_interpolation do
+          end_meta = current_meta(parser)
+          parser = next_token(parser)
+          interp_ast = build_interpolation_ast(expr, end_meta, :identifier)
+          scan_identifier_loop(parser, [{:interpolation, end_meta, interp_ast} | accumulator])
+        else
+          parser = put_error(parser, {current_meta(parser), "expected end of interpolation in identifier"})
+          {Enum.reverse(accumulator), parser, :quoted_identifier_end}
+        end
+
+      end_token when end_token in [:quoted_identifier_end, :quoted_paren_identifier_end, :quoted_bracket_identifier_end, :quoted_op_identifier_end, :quoted_do_identifier_end] ->
+        parser = next_token(parser)
+        {Enum.reverse(accumulator), parser, end_token}
+
+      _ ->
+        # Unexpected token
+        parser = put_error(parser, {current_meta(parser), "unexpected token in identifier: #{current_token_type(parser)}"})
+        {Enum.reverse(accumulator), parser, :quoted_identifier_end}
+    end
+  end
+
+  # Helper function to build identifier content from parts
+  defp build_identifier_content(parts) do
+    case parts do
+      [{:fragment, _meta, content}] when is_binary(content) ->
+        # Simple case - just a string
+        content
+
+      _ ->
+        # Complex case with interpolations - for now just concatenate fragments
+        # TODO: Handle interpolations properly
+        parts
+        |> Enum.map(fn
+          {:fragment, _meta, content} -> content
+          {:interpolation, _meta, _ast} -> "#{:interpolated}"
+        end)
+        |> Enum.join("")
+    end
+  end
+
   defp parse_linearized_string(parser, kind) do
     trace "parse_linearized_string (#{kind})", trace_meta(parser) do
-      # TODO: Implement linearized string parsing
-      # For now, delegate to existing string parsing
-      case kind do
-        :binary -> parse_string(parser)
-        :charlist -> parse_string(parser)
+      start_meta = current_meta(parser)
+
+      # Consume the start token
+      parser = next_token(parser)
+
+      # Determine end token based on kind
+      end_token = case kind do
+        :binary -> :bin_string_end
+        :charlist -> :list_string_end
+      end
+
+      # Scan the linearized content
+      {parts, parser, end_meta} = scan_linearized(parser, end_token, kind)
+
+      case parts do
+        [] ->
+          # Empty string
+          literal = case kind do
+            :binary -> ""
+            :charlist -> []
+          end
+          {encode_literal(parser, literal, start_meta), parser}
+
+        _ ->
+          # Build AST from parts
+          args = build_string_parts(parts, kind)
+
+          case kind do
+            :binary ->
+              # Build binary string: {:<<>>, meta, args}
+              meta_with_delimiter = [{:delimiter, "\""} | start_meta]
+              {{:<<>>, meta_with_delimiter, args}, parser}
+
+            :charlist ->
+              # Build charlist wrapped in List.to_charlist
+              meta_with_delimiter = [{:delimiter, "'"} | start_meta]
+              {{{:., start_meta, [List, :to_charlist]}, meta_with_delimiter, [args]}, parser}
+          end
       end
     end
   end
 
   defp parse_linearized_heredoc(parser, kind) do
     trace "parse_linearized_heredoc (#{kind})", trace_meta(parser) do
-      # TODO: Implement linearized heredoc parsing
-      # For now, delegate to existing string parsing
-      case kind do
-        :binary -> parse_string(parser)
-        :charlist -> parse_string(parser)
+      start_meta = current_meta(parser)
+
+      # Consume the start token
+      parser = next_token(parser)
+
+      # Determine end token based on kind
+      end_token = case kind do
+        :binary -> :bin_heredoc_end
+        :charlist -> :list_heredoc_end
+      end
+
+      # Scan the linearized content
+      {parts, parser, end_meta} = scan_linearized(parser, end_token, kind)
+
+      # Extract indentation from end token metadata
+      indentation = if end_meta, do: end_meta[:indentation], else: nil
+
+      case parts do
+        [] ->
+          # Empty heredoc
+          literal = case kind do
+            :binary -> ""
+            :charlist -> []
+          end
+          {encode_literal(parser, literal, start_meta), parser}
+
+        _ ->
+          # Apply indentation trimming to fragments
+          trimmed_parts = if indentation do
+            trim_heredoc_parts(parts, indentation)
+          else
+            parts
+          end
+
+          # Build AST from parts
+          args = build_string_parts(trimmed_parts, kind)
+
+          # Add indentation metadata
+          meta_with_indent = if indentation do
+            [{:indentation, indentation}, {:delimiter, if(kind == :binary, do: ~s|"""|, else: ~s|'''|)} | start_meta]
+          else
+            [{:delimiter, if(kind == :binary, do: ~s|"""|, else: ~s|'''|)} | start_meta]
+          end
+
+          case kind do
+            :binary ->
+              # Build binary heredoc: {:<<>>, meta, args}
+              {{:<<>>, meta_with_indent, args}, parser}
+
+            :charlist ->
+              # Build charlist wrapped in List.to_charlist
+              {{{:., start_meta, [List, :to_charlist]}, meta_with_indent, [args]}, parser}
+          end
       end
     end
   end
 
   defp parse_linearized_sigil(parser) do
     trace "parse_linearized_sigil", trace_meta(parser) do
-      # TODO: Implement linearized sigil parsing
-      # For now, delegate to existing sigil parsing
-      parse_sigil(parser)
+      # Extract sigil information from the start token
+      {:sigil_start, start_meta, sigil_atom, delimiter} = current_token(parser)
+      parser = next_token(parser)
+
+      # Scan the sigil content (without unescaping)
+      {parts, parser, _end_meta} = scan_linearized(parser, :sigil_end, :sigil, no_unescape: true)
+
+      # Check for optional modifiers
+      {modifiers, parser} = case current_token_type(parser) do
+        :sigil_modifiers ->
+          {mods, _meta} = {elem(current_token(parser), 2), current_meta(parser)}
+          {mods, next_token(parser)}
+        _ ->
+          {[], parser}
+      end
+
+      # Build sigil content
+      args = case parts do
+        [] ->
+          # Empty sigil
+          ""
+        _ ->
+          # Build binary from parts
+          build_sigil_content(parts)
+      end
+
+      # Build the final sigil AST
+      meta_with_delimiter = [{:delimiter, delimiter} | start_meta]
+      sigil_ast = {sigil_atom, meta_with_delimiter, [args, modifiers]}
+
+      {sigil_ast, parser}
     end
   end
 
   defp parse_linearized_identifier(parser) do
     trace "parse_linearized_identifier", trace_meta(parser) do
-      # TODO: Implement linearized identifier parsing
-      # For now, delegate to existing identifier parsing
-      parse_identifier(parser)
+      start_meta = current_meta(parser)
+
+      # Consume the start token
+      parser = next_token(parser)
+
+      # Scan until we find one of the identifier end tokens
+      {parts, parser, end_token_type} = scan_linearized_identifier(parser)
+
+      # Build the identifier content
+      content = case parts do
+        [] -> ""
+        _ ->
+          # Join all fragments and build interpolated content if needed
+          build_identifier_content(parts)
+      end
+
+      # Convert to atom
+      atom_value = if is_binary(content) do
+        String.to_atom(content)
+      else
+        # Interpolated content - this is complex, for now just use a placeholder
+        :interpolated_identifier
+      end
+
+      # Build the correct AST based on the end token type
+      case end_token_type do
+        :quoted_identifier_end ->
+          meta_with_delimiter = [{:delimiter, ~S'"'} | start_meta]
+          {{:identifier, meta_with_delimiter, atom_value}, parser}
+
+        :quoted_paren_identifier_end ->
+          meta_with_delimiter = [{:delimiter, ~S'"'} | start_meta]
+          {{:paren_identifier, meta_with_delimiter, atom_value}, parser}
+
+        :quoted_bracket_identifier_end ->
+          meta_with_delimiter = [{:delimiter, ~S'"'} | start_meta]
+          {{:bracket_identifier, meta_with_delimiter, atom_value}, parser}
+
+        :quoted_op_identifier_end ->
+          meta_with_delimiter = [{:delimiter, ~S'"'} | start_meta]
+          {{:op_identifier, meta_with_delimiter, atom_value}, parser}
+
+        :quoted_do_identifier_end ->
+          meta_with_delimiter = [{:delimiter, ~S'"'} | start_meta]
+          {{:do_identifier, meta_with_delimiter, atom_value}, parser}
+
+        _ ->
+          # Default to regular identifier
+          meta_with_delimiter = [{:delimiter, ~S'"'} | start_meta]
+          {{:identifier, meta_with_delimiter, atom_value}, parser}
+      end
     end
   end
 
   defp parse_linearized_atom(parser, safety) do
     trace "parse_linearized_atom (#{safety})", trace_meta(parser) do
-      # TODO: Implement linearized atom parsing
-      # For now, delegate to existing atom parsing
-      case safety do
-        :safe -> parse_atom(parser)
-        :unsafe -> parse_atom(parser)
+      start_meta = current_meta(parser)
+
+      # Consume the start token
+      parser = next_token(parser)
+
+      # Determine end token based on safety
+      end_token = case safety do
+        :safe -> :atom_safe_end
+        :unsafe -> :atom_unsafe_end
+      end
+
+      # Scan the atom content
+      {parts, parser, _end_meta} = scan_linearized(parser, end_token, :atom)
+
+      case parts do
+        [] ->
+          # Empty atom (shouldn't happen but handle gracefully)
+          atom = encode_literal(parser, :"", start_meta)
+          {atom, parser}
+
+        [{:fragment, _meta, content}] when is_binary(content) ->
+          # Simple atom without interpolation
+          case safety do
+            :safe ->
+              # Can be a literal atom
+              atom_value = String.to_atom(content)
+              atom = encode_literal(parser, atom_value, start_meta)
+              {atom, parser}
+
+            :unsafe ->
+              # Must use binary_to_atom even if no interpolation
+              meta_with_delimiter = [{:delimiter, ~S'"'} | start_meta]
+              atom_ast = {{:., start_meta, [:erlang, :binary_to_atom]}, meta_with_delimiter, [content, :utf8]}
+              {atom_ast, parser}
+          end
+
+        _ ->
+          # Atom with interpolation or multiple parts - must use binary_to_atom
+          args = build_string_parts(parts, :atom)
+          binary_ast = {:<<>>, start_meta, args}
+          meta_with_delimiter = [{:delimiter, ~S'"'} | start_meta]
+          atom_ast = {{:., start_meta, [:erlang, :binary_to_atom]}, meta_with_delimiter, [binary_ast, :utf8]}
+          {atom_ast, parser}
       end
     end
   end
