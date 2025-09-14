@@ -2391,7 +2391,9 @@ defmodule Spitfire do
 
       token ->
         if token in end_tokens do
-          # Found the end token - extract metadata and return
+          # Found the end token - extract metadata and return WITHOUT consuming it.
+          # Leaving the end token as current allows callers to make context-specific
+          # decisions (e.g., parse keyword value, check sigil modifiers, or parse infix).
           end_meta = current_meta(parser)
 
           end_info =
@@ -2403,7 +2405,6 @@ defmodule Spitfire do
                 %{}
             end
 
-          parser = next_token(parser)
           {Enum.reverse(accumulator), parser, end_meta, token, end_info}
         else
           # Unexpected token - error recovery
@@ -2644,6 +2645,8 @@ defmodule Spitfire do
               {{:., start_meta, [:erlang, :binary_to_atom]}, meta_with_delimiter, [binary_ast, :utf8]}
             end
 
+          # We left the end token as current; advance once to start parsing the value
+          parser = next_token(parser)
           # Parse the value with kw_identifier precedence
           {value, parser} = parse_expression(parser, @kw_identifier, false, false, false)
           {{key_ast, value}, parser}
@@ -2776,16 +2779,17 @@ defmodule Spitfire do
       base_meta = current_meta(parser)
       parser = next_token(parser)
 
-      # Scan the sigil content (without unescaping)
+      # Scan the sigil content (without unescaping). We leave :sigil_end as current.
       {parts, parser, _end_meta, _end_type, end_info} =
         scan_linearized(parser, :sigil_end, :sigil, no_unescape: true)
 
-      # Check for optional modifiers
+      # Check for optional modifiers. Since current is :sigil_end, look at peek.
       {modifiers, parser} =
-        case current_token_type(parser) do
+        case peek_token_type(parser) do
           :sigil_modifiers ->
+            parser = next_token(parser)
             case parser.current_token do
-              {:sigil_modifiers, _meta, mods} -> {mods, next_token(parser)}
+              {:sigil_modifiers, _meta, mods} -> {mods, parser}
               _ -> {[], parser}
             end
 
