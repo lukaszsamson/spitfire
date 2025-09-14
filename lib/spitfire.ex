@@ -2735,13 +2735,13 @@ defmodule Spitfire do
             # Build AST from parts
             args = build_string_parts(unescaped_parts, kind)
 
-            # Add indentation metadata
-            meta_with_indent =
-              if indentation do
-                [{:indentation, indentation}, {:delimiter, if(kind == :binary, do: ~s|"""|, else: ~s|'''|)} | start_meta]
-              else
-                [{:delimiter, if(kind == :binary, do: ~s|"""|, else: ~s|'''|)} | start_meta]
-              end
+          # Add metadata with correct order: delimiter first, then indentation (if any)
+          meta_with_indent =
+            if indentation do
+              [{:delimiter, if(kind == :binary, do: ~s|"""|, else: ~s|'''|)}, {:indentation, indentation} | start_meta]
+            else
+              [{:delimiter, if(kind == :binary, do: ~s|"""|, else: ~s|'''|)} | start_meta]
+            end
 
             case kind do
               :binary ->

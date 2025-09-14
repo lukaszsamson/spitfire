@@ -166,6 +166,36 @@ defmodule SpitfireToxicTest do
       code = ":\"fo\n\\n\\\no\""
 
       assert Spitfire.parse(code) == s2q(code)
+
+      code = ":'fo\n\\n\\\no'"
+
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "atom quoted interpolated" do
+      code = ":\"\#{1}\""
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = ":\"fo\#{1}\""
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = ":\"\#{1}bar\""
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = ":\"foo\#{1}bar\""
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = ":\"foo\#{1}bar\#{2}baz\""
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = ":'foo\#{1}bar\#{2}baz'"
+
+      assert Spitfire.parse(code) == s2q(code)
     end
 
     test "keyword identifier" do
@@ -180,6 +210,20 @@ defmodule SpitfireToxicTest do
       assert Spitfire.parse(code) == s2q(code)
 
       code = "[\"fo\n\\n\\\no\": 1]"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "['fo\n\\n\\\no': 1]"
+
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "keyword identifier quoted interpolated" do
+      code = "[\"\": 1]"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "[\"fo\#{1}o\": 1]"
 
       assert Spitfire.parse(code) == s2q(code)
     end
@@ -226,6 +270,28 @@ defmodule SpitfireToxicTest do
       assert Spitfire.parse(code) == s2q(code)
     end
 
+    test "charlist interpolated" do
+      code = "'\#{1}'"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "'fo\#{1}'"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "'\#{1}bar'"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "'foo\#{1}bar'"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "'foo\#{1}bar\#{2}baz'"
+
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
     test "string heredoc" do
       code = "\"\"\"\nfo\n\\n\\\no\n\"\"\""
 
@@ -240,8 +306,40 @@ defmodule SpitfireToxicTest do
       assert Spitfire.parse(code) == s2q(code)
     end
 
+    test "string heredoc interpolated" do
+      code = "\"\"\"\n\#{1}\n\"\"\""
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "\"\"\"\n\#{1}\\\n\"\"\""
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "\"\"\"\nfoo\#{1}\n\"\"\""
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "\"\"\"\n\#{1}bar\n\"\"\""
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "\"\"\"\nfoo\#{1}bar\n\"\"\""
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "\"\"\"\nfoo\#{1}bar\n  \"\"\""
+
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
     test "charlist heredoc" do
       code = "'''\nfoo\n'''"
+
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "charlist heredoc interpolated" do
+      code = "'''\nfo\#{1}o\n'''"
 
       assert Spitfire.parse(code) == s2q(code)
     end
@@ -264,6 +362,28 @@ defmodule SpitfireToxicTest do
       assert Spitfire.parse(code) == s2q(code)
     end
 
+    test "sigil interpolated" do
+      code = "~x'\#{1}'"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "~x'foo\#{1}'"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "~x'\#{1}bar'"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "~x'foo\#{1}bar'"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "~X'foo\#{1}bar'"
+
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
     test "heredoc sigil" do
       code = "~x\"\"\"\nfo\n\\n\\\no\n\"\"\"abc"
 
@@ -274,6 +394,16 @@ defmodule SpitfireToxicTest do
       assert Spitfire.parse(code) == s2q(code)
 
       code = "~x\"\"\"\n  foo\n  \"\"\"abc"
+
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "heredoc sigil interpolated" do
+      code = "~x\"\"\"\nfo\#{1}o\n\"\"\"abc"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "~X\"\"\"\nfo\#{1}o\n\"\"\"abc"
 
       assert Spitfire.parse(code) == s2q(code)
     end
