@@ -13,6 +13,68 @@ defmodule SpitfireToxicTest do
 
   doctest Spitfire
 
+  describe "simple identifier" do
+    test "identifier" do
+      code = "foo"
+
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "bracket_identifier" do
+      code = "foo[1]"
+
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "paren_identifier" do
+      code = "foo(1)"
+
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "op_identifier" do
+      code = "foo +1"
+
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "do_identifier" do
+      code = "foo do\n:ok\nend"
+
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "identifier quoted" do
+      code = "D.\"foo\""
+
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "bracket_identifier quoted" do
+      code = "D.\"foo\"[1]"
+
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "paren_identifier quoted" do
+      code = "D.\"foo\"(1)"
+
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "op_identifier quoted" do
+      code = "D.\"foo\" +1"
+
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "do_identifier quoted" do
+      code = "D.\"foo\" do\n:ok\nend"
+
+      assert Spitfire.parse(code) == s2q(code)
+    end
+  end
+
   describe "simple cases" do
     test "identifier" do
       code = "foo"
@@ -37,7 +99,15 @@ defmodule SpitfireToxicTest do
     end
 
     test "identifier quoted" do
+      code = "D.\"\""
+
+      assert Spitfire.parse(code) == s2q(code)
+
       code = "D.\"foo\""
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "D.\"\"[1]"
 
       assert Spitfire.parse(code) == s2q(code)
 
@@ -45,7 +115,15 @@ defmodule SpitfireToxicTest do
 
       assert Spitfire.parse(code) == s2q(code)
 
+      code = "D.\"\"(1)"
+
+      assert Spitfire.parse(code) == s2q(code)
+
       code = "D.\"foo\"(1)"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "D.\"\" +1"
 
       assert Spitfire.parse(code) == s2q(code)
 
@@ -54,6 +132,10 @@ defmodule SpitfireToxicTest do
       assert Spitfire.parse(code) == s2q(code)
 
       code = "D.\"foo\" do\n:ok\nend"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "D.\"\" do\n:ok\nend"
 
       assert Spitfire.parse(code) == s2q(code)
     end

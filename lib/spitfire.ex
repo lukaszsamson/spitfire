@@ -1110,6 +1110,95 @@ defmodule Spitfire do
       meta = current_meta(parser)
 
       case peek_token_type(parser) do
+        :quoted_identifier_start ->
+          # Handle remote calls with quoted identifiers: D."foo", D."foo"(1), D."foo"[1], D."foo" +1, D."foo" do ... end
+          parser = next_token(parser)
+          id_start_meta = current_meta(parser)
+
+          # Scan the quoted identifier and classify its end
+          # Advance past the start token to the first content token
+          parser = next_token(parser)
+          {parts, parser, end_type} = scan_linearized_identifier(parser)
+          content = build_identifier_content(parts)
+          callee_atom = if is_binary(content), do: String.to_atom(content), else: :interpolated_identifier
+
+          base_call_meta = [{:delimiter, ~S'"'} | id_start_meta]
+
+          # Decide argument parsing strategy based on end_type and upcoming tokens
+          case end_type do
+            :quoted_paren_identifier_end ->
+              # Build call like regular paren_identifier: use dot ast as callee
+              dot_ast = {token, meta, [lhs, callee_atom]}
+              newlines = get_newlines(parser)
+
+              if peek_token(parser) == :")" do
+                parser = next_token(parser)
+                closing = current_meta(parser)
+                ast = {dot_ast, newlines ++ [{:closing, closing} | base_call_meta], []}
+                {ast, parser}
+              else
+                {pairs, parser} = parser |> next_token() |> eat_eol() |> parse_comma_list()
+                parser = eat_eol_at(parser, 1)
+
+                parser =
+                  case peek_token(parser) do
+                    :")" -> next_token(parser)
+                    _ -> put_error(parser, {meta, "missing closing parentheses for function invocation"})
+                  end
+
+                closing = current_meta(parser)
+                ast = {dot_ast, newlines ++ [{:closing, closing} | base_call_meta], List.wrap(pairs)}
+                {ast, parser}
+              end
+
+            :quoted_bracket_identifier_end ->
+              # Current token is "["; inner remote call is no-parens
+              inner_meta = [no_parens: true] ++ base_call_meta
+              base_ast = {{token, meta, [lhs, callee_atom]}, inner_meta, []}
+              parse_access_expression(parser, base_ast)
+
+            :quoted_do_identifier_end ->
+              # Current token is :do; attach delimiter at call-site
+              base_ast = {{token, meta, [lhs, callee_atom]}, base_call_meta, []}
+              parse_do_block(parser, base_ast)
+
+            :quoted_op_identifier_end ->
+              # Always parse at least one argument (operator identifier semantics)
+              parser = push_nesting(parser)
+              {front, parser} = parse_expression(parser, @lowest, false, false, false)
+              {rest, parser} =
+                while2 peek_token(parser) == :"," <- parser do
+                  parser = next_token(parser)
+                  parser = next_token(parser)
+                  parse_expression(parser, @lowest, false, false, false)
+                end
+              parser = pop_nesting(parser)
+              base_ast = {{token, meta, [lhs, callee_atom]}, base_call_meta, []}
+              ast = put_elem(base_ast, 2, List.wrap(front) ++ List.wrap(rest))
+              {ast, parser}
+
+            _ ->
+              # :quoted_identifier_end and any other: behave like plain identifier,
+              # but allow op-identifier style no-parens when a unary op follows.
+              base_ast = {{token, meta, [lhs, callee_atom]}, base_call_meta, []}
+              if current_token_type(parser) == :unary_op do
+                parser = push_nesting(parser)
+                {front, parser} = parse_expression(parser, @lowest, false, false, false)
+                {rest, parser} =
+                  while2 peek_token(parser) == :"," <- parser do
+                    parser = next_token(parser)
+                    parser = next_token(parser)
+                    parse_expression(parser, @lowest, false, false, false)
+                  end
+                parser = pop_nesting(parser)
+                ast = put_elem(base_ast, 2, List.wrap(front) ++ List.wrap(rest))
+                {ast, parser}
+              else
+                ast = put_elem(base_ast, 1, [no_parens: true] ++ base_call_meta)
+                {ast, parser}
+              end
+          end
+
         # if the next token is an open brace, we are in a multi alias situation `alias Foo.{Bar, Baz}`
         # technically the contents of the braces can be anything, so we parse them as anything
         :"{" ->
@@ -1173,10 +1262,16 @@ defmodule Spitfire do
           {ast, parser}
 
         _ ->
+          # Default: consume dot and parse RHS expression. If RHS is a quoted identifier,
+          # attach no_parens + delimiter metadata to the call site and use atom as callee.
           parser = next_token(parser)
-          next_meta = current_meta(parser)
+          base_meta = current_meta(parser)
+          quoted? = current_token_type(parser) == :quoted_identifier_start
+
           {rhs, parser} = parse_expression(parser, @lowest, false, false, false)
-          ast = {{token, meta, [lhs, rhs]}, next_meta, []}
+
+          call_meta = if quoted?, do: [no_parens: true, delimiter: ~S'"'] ++ base_meta, else: base_meta
+          ast = {{token, meta, [lhs, rhs]}, call_meta, []}
 
           {ast, parser}
       end
@@ -2343,7 +2438,7 @@ defmodule Spitfire do
   end
 
   # Helper function to build string parts from scanned fragments and interpolations
-  defp build_string_parts(parts, kind) do
+  defp build_string_parts(parts, _kind) do
     for part <- parts do
       case part do
         {:fragment, _meta, content} when is_binary(content) ->
@@ -2654,8 +2749,6 @@ defmodule Spitfire do
 
   defp parse_linearized_identifier(parser) do
     trace "parse_linearized_identifier", trace_meta(parser) do
-      start_meta = current_meta(parser)
-
       # Consume the start token
       parser = next_token(parser)
 
@@ -2684,30 +2777,13 @@ defmodule Spitfire do
 
       # Build the correct AST based on the end token type
       case end_token_type do
-        :quoted_identifier_end ->
-          meta_with_delimiter = [{:delimiter, ~S'"'} | start_meta]
-          {{:identifier, meta_with_delimiter, atom_value}, parser}
-
-        :quoted_paren_identifier_end ->
-          meta_with_delimiter = [{:delimiter, ~S'"'} | start_meta]
-          {{:paren_identifier, meta_with_delimiter, atom_value}, parser}
-
-        :quoted_bracket_identifier_end ->
-          meta_with_delimiter = [{:delimiter, ~S'"'} | start_meta]
-          {{:bracket_identifier, meta_with_delimiter, atom_value}, parser}
-
-        :quoted_op_identifier_end ->
-          meta_with_delimiter = [{:delimiter, ~S'"'} | start_meta]
-          {{:op_identifier, meta_with_delimiter, atom_value}, parser}
-
-        :quoted_do_identifier_end ->
-          meta_with_delimiter = [{:delimiter, ~S'"'} | start_meta]
-          {{:do_identifier, meta_with_delimiter, atom_value}, parser}
-
-        _ ->
-          # Default to regular identifier
-          meta_with_delimiter = [{:delimiter, ~S'"'} | start_meta]
-          {{:identifier, meta_with_delimiter, atom_value}, parser}
+        # Return the plain atom; delimiter and no_parens metadata will be attached by callers
+        :quoted_identifier_end -> {atom_value, parser}
+        :quoted_paren_identifier_end -> {atom_value, parser}
+        :quoted_bracket_identifier_end -> {atom_value, parser}
+        :quoted_op_identifier_end -> {atom_value, parser}
+        :quoted_do_identifier_end -> {atom_value, parser}
+        _ -> {atom_value, parser}
       end
     end
   end
