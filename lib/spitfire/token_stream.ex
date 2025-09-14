@@ -41,6 +41,6 @@ defmodule Spitfire.TokenStream do
 
   @spec push_back(t(), list()) :: t()
   def push_back(%__MODULE__{backend: backend, state: s} = ts, toks) do
-    %__MODULE__{ts | state: backend.push_back(s, toks)}
+    %__MODULE__{ts | state: backend.pushback(s, toks)}
   end
 end

@@ -39,8 +39,8 @@ defmodule Spitfire.LegacyTokenizer do
   end
 
   # Public: Push tokens back so they are returned before the remaining stream
-  @spec push_back(t(), list()) :: t()
-  def push_back(%__MODULE__{} = s, toks) when is_list(toks) do
+  @spec pushback(t(), list()) :: t()
+  def pushback(%__MODULE__{} = s, toks) when is_list(toks) do
     %__MODULE__{s | pushback: Enum.reverse(toks, s.pushback)}
   end
 
