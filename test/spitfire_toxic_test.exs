@@ -13,6 +13,86 @@ defmodule SpitfireToxicTest do
 
   doctest Spitfire
 
+  describe "tokens after" do
+    test "quoted identifier" do
+      code = "D.\"foo\" + 1"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "D.\"foo\" -1 + 1"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "D.\"foo\"() + 1"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "D.\"foo\"[1] + 1"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "D.\"foo\" do\n\:ok\nend + 1"
+
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "quoted atom" do
+      code = ":\"foo\" + 1"
+
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "quoted keyword identifier" do
+      code = "[\"foo\": 1] + 1"
+
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "string" do
+      code = "\"foo\" + 1"
+
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "charlist" do
+      code = "'foo' + 1"
+
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "string heredoc" do
+      code = "\"\"\"\nfoo\n\"\"\" + 1"
+
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "charlist heredoc" do
+      code = "'''\nfoo\n''' + 1"
+
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "sigil" do
+      code = "~c'foo' + 1"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "~c'foo's + 1"
+
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "heredoc sigil" do
+      code = "~c'''\nfoo\n''' + 1"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "~c'''\nfoo\n'''zx + 1"
+
+      assert Spitfire.parse(code) == s2q(code)
+    end
+  end
+
   describe "simple identifier" do
     test "identifier" do
       code = "foo"
@@ -100,6 +180,10 @@ defmodule SpitfireToxicTest do
 
     test "identifier quoted" do
       code = "D.\"\""
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "D.''"
 
       assert Spitfire.parse(code) == s2q(code)
 
@@ -479,7 +563,9 @@ defmodule SpitfireToxicTest do
           :bar
         ]
         ''',
-        ~S'foo[bar["baz"]]'
+        ~S'foo[bar["baz"]]',
+        ~S'foo[bar[boom["baz"] + 1]]',
+        ~s'foo[bar[boom[["a": 1]] + 1]]'
       ]
 
       for code <- codes do

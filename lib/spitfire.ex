@@ -1113,7 +1113,7 @@ defmodule Spitfire do
 
       case peek_token_type(parser) do
         :quoted_identifier_start ->
-          # Handle remote calls with quoted identifiers: D."foo", D."foo"(1), D."foo"[1], D."foo" +1, D."foo" do ... end
+          # Handle remote calls with quoted identifiers: D."foo", D."foo"(1), D."foo"[1], D."foo" + 1, D."foo" do ... end
           parser = next_token(parser)
           id_start_meta = current_meta(parser)
 
@@ -1129,43 +1129,54 @@ defmodule Spitfire do
           # Decide argument parsing strategy based on end_type and upcoming tokens
           case end_type do
             :quoted_paren_identifier_end ->
-              # Build call like regular paren_identifier: use dot ast as callee
+              # Build call like regular paren_identifier: use dot ast as callee with dot's own meta.
+              # Then rewrite the returned call meta to include delimiter and identifier start meta.
               dot_ast = {token, meta, [lhs, callee_atom]}
-              newlines = get_newlines(parser)
+              parser1 = next_token(parser)
 
-              if peek_token(parser) == :")" do
-                parser = next_token(parser)
-                closing = current_meta(parser)
-                ast = {dot_ast, newlines ++ [{:closing, closing} | base_call_meta], []}
-                {ast, parser}
-              else
-                {pairs, parser} = parser |> next_token() |> eat_eol() |> parse_comma_list()
-                parser = eat_eol_at(parser, 1)
+              case current_token(parser1) do
+                :"(" ->
+                  {{lhs_dot, call_meta, args}, parser2} = parse_call_expression(parser1, dot_ast)
+                  # Preserve newlines and closing from call_meta, but replace base meta with base_call_meta
+                  newlines = case Keyword.get(call_meta, :newlines) do nil -> []; nl -> [newlines: nl] end
+                  closing = Keyword.get(call_meta, :closing)
+                  new_meta = newlines ++ [{:closing, closing} | base_call_meta]
+                  {{lhs_dot, new_meta, args}, parser2}
 
-                parser =
-                  case peek_token(parser) do
-                    :")" -> next_token(parser)
-                    _ -> put_error(parser, {meta, "missing closing parentheses for function invocation"})
-                  end
-
-                closing = current_meta(parser)
-                ast = {dot_ast, newlines ++ [{:closing, closing} | base_call_meta], List.wrap(pairs)}
-                {ast, parser}
+                _ ->
+                  # No actual parens; treat as no-parens call site
+                  ast = put_elem(dot_ast, 1, [no_parens: true] ++ base_call_meta)
+                  {ast, parser1}
               end
 
             :quoted_bracket_identifier_end ->
-              # Current token is "["; inner remote call is no-parens
+              # Inner remote call is a no-parens call site; expect a following "[".
               inner_meta = [no_parens: true] ++ base_call_meta
               base_ast = {{token, meta, [lhs, callee_atom]}, inner_meta, []}
-              parse_access_expression(parser, base_ast)
+              parser1 = next_token(parser)
+
+              case current_token(parser1) do
+                :"[" -> parse_access_expression(parser1, base_ast)
+                _ ->
+                  ast = put_elem(base_ast, 1, [no_parens: true] ++ base_call_meta)
+                  {ast, parser1}
+              end
 
             :quoted_do_identifier_end ->
-              # Current token is :do; attach delimiter at call-site
+              # Expect a following :do; otherwise fall back to no-parens call-site.
               base_ast = {{token, meta, [lhs, callee_atom]}, base_call_meta, []}
-              parse_do_block(parser, base_ast)
+              parser1 = next_token(parser)
+              case current_token_type(parser1) do
+                :do -> parse_do_block(parser1, base_ast)
+                _ ->
+                  ast = put_elem(base_ast, 1, [no_parens: true] ++ base_call_meta)
+                  {ast, parser1}
+              end
 
             :quoted_op_identifier_end ->
               # Always parse at least one argument (operator identifier semantics)
+              # Drop the end token; then parse first argument
+              parser = next_token(parser)
               parser = push_nesting(parser)
               {front, parser} = parse_expression(parser, @lowest, false, false, false)
 
@@ -1186,7 +1197,9 @@ defmodule Spitfire do
               # but allow op-identifier style no-parens when a unary op follows.
               base_ast = {{token, meta, [lhs, callee_atom]}, base_call_meta, []}
 
-              if current_token_type(parser) == :unary_op do
+              if peek_token_type(parser) == :unary_op do
+                # Consume end token to reach the unary op and parse at least one arg
+                parser = next_token(parser)
                 parser = push_nesting(parser)
                 {front, parser} = parse_expression(parser, @lowest, false, false, false)
 
@@ -2572,7 +2585,8 @@ defmodule Spitfire do
              :quoted_op_identifier_end,
              :quoted_do_identifier_end
            ] ->
-        parser = next_token(parser)
+        # Do NOT consume the end token here; leave it as current so callers can
+        # decide how to handle/look ahead without skipping the following token.
         {Enum.reverse(accumulator), parser, end_token}
 
       _ ->
@@ -2833,6 +2847,9 @@ defmodule Spitfire do
 
       # Scan until we find one of the identifier end tokens
       {parts, parser, end_token_type} = scan_linearized_identifier(parser)
+
+      # We left the end token as current; advance once to move past it
+      parser = next_token(parser)
 
       # Build the identifier content
       content =
