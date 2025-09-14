@@ -2206,6 +2206,8 @@ defmodule Spitfire do
       peek_token: nil,
       nesting: 0,
       literal_encoder: Keyword.get(opts, :literal_encoder),
+      interpolation_depth: 0,      # Track interpolation nesting level
+      saved_nesting_stack: [],     # Stack to save/restore nesting during interpolations
       errors: []
     }
   end

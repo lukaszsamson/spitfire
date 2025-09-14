@@ -41,8 +41,8 @@ Replace all token manipulation functions:
 
 ## Phase 2: Token Format Adaptation
 
-### 2.1 Create Token Adapter Module
-**New File**: `lib/spitfire/toxic_adapter.ex`
+### 2.1 Create Token Adapter function overrides
+**New File**: `lib/spitfire.ex`
 
 Convert between Toxic's ranged metadata format and Spitfire's expected format:
 - Toxic: `{{start_line, start_col}, {end_line, end_col}, extra}`
