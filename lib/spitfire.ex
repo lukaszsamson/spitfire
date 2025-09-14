@@ -2434,6 +2434,13 @@ defmodule Spitfire do
     [line: line, column: col]
   end
 
+  # Ranged meta from Toxic: {{line, col}, {end_line, end_col}, extra}
+  defp current_meta(%{current_token: current_token})
+       when is_tuple(current_token) and tuple_size(elem(elem(current_token, 1), 0)) == 2 do
+    {{line, col}, {_end_line, _end_col}, _extra} = elem(current_token, 1)
+    [line: line, column: col]
+  end
+
   defp current_meta(%{current_token: {token, _}})
        when token in [:fake_closing_brace, :fake_closing_bracket, :fake_closing_brackets] do
     []
@@ -2457,6 +2464,20 @@ defmodule Spitfire do
     end
   end
 
+  # Ranged meta from Toxic
+  defp current_eoe(%{current_token: {token, {{line, col}, {_end_line, _end_col}, newlines}}})
+       when token in [:eol, :";"] and is_integer(newlines) do
+    [newlines: newlines, line: line, column: col]
+  end
+
+  defp current_eoe(%{current_token: {token, {{line, col}, _end_pos, _extra}, _}}) when token in [:eol, :";"] do
+    [line: line, column: col]
+  end
+
+  defp current_eoe(%{current_token: {token, {{line, col}, _end_pos}, _}}) when token in [:eol, :";"] do
+    [line: line, column: col]
+  end
+
   defp current_eoe(%{current_token: {token, {line, col, newlines}}})
        when token in [:eol, :";"] and is_integer(newlines) do
     [newlines: newlines, line: line, column: col]
@@ -2472,6 +2493,20 @@ defmodule Spitfire do
 
   defp current_eoe(_) do
     nil
+  end
+
+  # Ranged meta from Toxic
+  defp peek_eoe(%{peek_token: {token, {{line, col}, {_end_line, _end_col}, newlines}}})
+       when token in [:eol, :";"] and is_integer(newlines) do
+    [newlines: newlines, line: line, column: col]
+  end
+
+  defp peek_eoe(%{peek_token: {token, {{line, col}, _end_pos, _extra}, _}}) when token in [:eol, :";"] do
+    [line: line, column: col]
+  end
+
+  defp peek_eoe(%{peek_token: {token, {{line, col}, _end_pos}, _}}) when token in [:eol, :";"] do
+    [line: line, column: col]
   end
 
   defp peek_eoe(%{peek_token: {token, {line, col, newlines}}}) when token in [:eol, :";"] and is_integer(newlines) do

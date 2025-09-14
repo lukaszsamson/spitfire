@@ -14,6 +14,12 @@ defmodule SpitfireToxicTest do
   doctest Spitfire
 
   describe "valid code" do
+    test "simple" do
+      code = "foo"
+
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
     test "semicolons" do
       code = "res = Foo.Bar.run(1, 2, 3); IO.inspect(res)"
 
