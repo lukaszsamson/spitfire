@@ -194,6 +194,28 @@ defmodule SpitfireToxicTest do
       assert Spitfire.parse(code) == s2q(code)
     end
 
+    test "string interpolated" do
+      code = "\"\#{1}\""
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "\"fo\#{1}\""
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "\"\#{1}bar\""
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "\"foo\#{1}bar\""
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "\"foo\#{1}bar\#{2}baz\""
+
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
     test "charlist" do
       code = "''"
 
