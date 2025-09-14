@@ -103,7 +103,7 @@ defmodule SpitfireToxicTest do
 
       assert Spitfire.parse(code) == s2q(code)
 
-      code = "D.\"foo\""
+      code = "D.\"fo\n\\n\\\no\""
 
       assert Spitfire.parse(code) == s2q(code)
 
@@ -111,7 +111,7 @@ defmodule SpitfireToxicTest do
 
       assert Spitfire.parse(code) == s2q(code)
 
-      code = "D.\"foo\"[1]"
+      code = "D.\"fo\n\\n\\\no\"[1]"
 
       assert Spitfire.parse(code) == s2q(code)
 
@@ -119,7 +119,7 @@ defmodule SpitfireToxicTest do
 
       assert Spitfire.parse(code) == s2q(code)
 
-      code = "D.\"foo\"(1)"
+      code = "D.\"fo\n\\n\\\no\"(1)"
 
       assert Spitfire.parse(code) == s2q(code)
 
@@ -127,15 +127,15 @@ defmodule SpitfireToxicTest do
 
       assert Spitfire.parse(code) == s2q(code)
 
-      code = "D.\"foo\" +1"
-
-      assert Spitfire.parse(code) == s2q(code)
-
-      code = "D.\"foo\" do\n:ok\nend"
+      code = "D.\"fo\n\\n\\\no\" +1"
 
       assert Spitfire.parse(code) == s2q(code)
 
       code = "D.\"\" do\n:ok\nend"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "D.\"fo\n\\n\\\no\" do\n:ok\nend"
 
       assert Spitfire.parse(code) == s2q(code)
     end
@@ -163,7 +163,7 @@ defmodule SpitfireToxicTest do
 
       assert Spitfire.parse(code) == s2q(code)
 
-      code = ":\"foo\""
+      code = ":\"fo\n\\n\\\no\""
 
       assert Spitfire.parse(code) == s2q(code)
     end
@@ -179,7 +179,7 @@ defmodule SpitfireToxicTest do
 
       assert Spitfire.parse(code) == s2q(code)
 
-      code = "[\"foo\": 1]"
+      code = "[\"fo\n\\n\\\no\": 1]"
 
       assert Spitfire.parse(code) == s2q(code)
     end
@@ -189,7 +189,7 @@ defmodule SpitfireToxicTest do
 
       assert Spitfire.parse(code) == s2q(code)
 
-      code = "\"foo\""
+      code = "\"fo\n\\n\\\no\""
 
       assert Spitfire.parse(code) == s2q(code)
     end
@@ -199,13 +199,21 @@ defmodule SpitfireToxicTest do
 
       assert Spitfire.parse(code) == s2q(code)
 
-      code = "'foo'"
+      code = "'fo\n\\n\\\no'"
 
       assert Spitfire.parse(code) == s2q(code)
     end
 
     test "string heredoc" do
       code = "\"\"\"\nfoo\n\"\"\""
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "\"\"\"\n  foo\n  \"\"\""
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "\"\"\"\nfoo\n  \"\"\""
 
       assert Spitfire.parse(code) == s2q(code)
     end

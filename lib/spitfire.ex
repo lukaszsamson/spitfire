@@ -2376,21 +2376,30 @@ defmodule Spitfire do
         else
           # Error: expected :end_interpolation
           parser = put_error(parser, {current_meta(parser), "expected end of interpolation"})
-          {Enum.reverse(accumulator), parser, nil, nil}
+          {Enum.reverse(accumulator), parser, nil, nil, %{}}
         end
 
       token ->
         if token in end_tokens do
           # Found the end token - extract metadata and return
           end_meta = current_meta(parser)
+          end_info =
+            case parser.current_token do
+              {t, _m, _delim, indent} when t in [:bin_heredoc_end, :list_heredoc_end, :sigil_end] ->
+                %{indentation: indent}
+
+              _ ->
+                %{}
+            end
+
           parser = next_token(parser)
-          {Enum.reverse(accumulator), parser, end_meta, token}
+          {Enum.reverse(accumulator), parser, end_meta, token, end_info}
         else
           # Unexpected token - error recovery
           parser =
             put_error(parser, {current_meta(parser), "unexpected token in #{kind}: #{current_token_type(parser)}"})
 
-          {Enum.reverse(accumulator), parser, nil, nil}
+          {Enum.reverse(accumulator), parser, nil, nil, %{}}
         end
     end
   end
@@ -2432,9 +2441,8 @@ defmodule Spitfire do
 
   # Helper function to unescape string fragments (placeholder for now)
   defp unescape_fragment(content) do
-    # TODO: Implement proper unescaping using Toxic.Unescape or similar
-    # For now, just return the content as-is
-    content
+    # TODO: error handling
+    Macro.unescape_string(content)
   end
 
   # Helper function to build string parts from scanned fragments and interpolations
@@ -2472,11 +2480,26 @@ defmodule Spitfire do
     end
   end
 
-  # Placeholder for heredoc fragment trimming
-  defp trim_heredoc_fragment(content, _indentation) do
-    # TODO: Implement proper heredoc whitespace trimming
-    # For now, just return the content as-is
-    content
+  # Trim up to `indentation` leading spaces/tabs from each line
+  defp trim_heredoc_fragment(content, indentation) do
+    indent = indentation || 0
+    if indent <= 0 do
+      content
+    else
+      {rev, _sol, _rem} =
+        content
+        |> :binary.bin_to_list()
+        |> Enum.reduce({[], true, indent}, fn ch, {acc, sol, rem} ->
+          cond do
+            ch == ?\n -> {[?\n | acc], true, indent}
+            sol and rem > 0 and (ch == ?\s or ch == ?\t) -> {acc, true, rem - 1}
+            true -> {[ch | acc], false, rem}
+          end
+        end)
+
+      trimmed = rev |> Enum.reverse() |> :erlang.list_to_binary()
+      Macro.unescape_string(trimmed)
+    end
   end
 
   # Helper function to build sigil content from parts
@@ -2657,11 +2680,12 @@ defmodule Spitfire do
           :charlist -> :list_heredoc_end
         end
 
-      # Scan the linearized content
-      {parts, parser, end_meta, _end_type} = scan_linearized(parser, end_token, kind)
+      # Scan the linearized content; avoid unescape so we can trim first
+      {parts, parser, _end_meta, _end_type, end_info} =
+        scan_linearized(parser, end_token, kind, no_unescape: true)
 
-      # Extract indentation from end token metadata
-      indentation = if end_meta, do: end_meta[:indentation]
+      # Extract indentation from end token
+      indentation = Map.get(end_info, :indentation)
 
       case parts do
         [] ->
@@ -2683,25 +2707,39 @@ defmodule Spitfire do
               parts
             end
 
-          # Build AST from parts
-          args = build_string_parts(trimmed_parts, kind)
+          # If only fragments and no interpolation, return a literal like s2q
+          if Enum.all?(trimmed_parts, fn
+               {:fragment, _m, _c} -> true
+               _ -> false
+             end) do
+            merged =
+              trimmed_parts
+              |> Enum.map(fn {:fragment, _m, c} -> c end)
+              |> IO.iodata_to_binary()
 
-          # Add indentation metadata
-          meta_with_indent =
-            if indentation do
-              [{:indentation, indentation}, {:delimiter, if(kind == :binary, do: ~s|"""|, else: ~s|'''|)} | start_meta]
-            else
-              [{:delimiter, if(kind == :binary, do: ~s|"""|, else: ~s|'''|)} | start_meta]
+            literal = if kind == :binary, do: merged, else: String.to_charlist(merged)
+            {encode_literal(parser, literal, start_meta), parser}
+          else
+            # Build AST from parts
+            args = build_string_parts(trimmed_parts, kind)
+
+            # Add indentation metadata
+            meta_with_indent =
+              if indentation do
+                [{:indentation, indentation}, {:delimiter, if(kind == :binary, do: ~s|"""|, else: ~s|'''|)} | start_meta]
+              else
+                [{:delimiter, if(kind == :binary, do: ~s|"""|, else: ~s|'''|)} | start_meta]
+              end
+
+            case kind do
+              :binary ->
+                # Build binary heredoc: {:<<>>, meta, args}
+                {{:<<>>, meta_with_indent, args}, parser}
+
+              :charlist ->
+                # Build charlist wrapped in List.to_charlist
+                {{{:., start_meta, [List, :to_charlist]}, meta_with_indent, [args]}, parser}
             end
-
-          case kind do
-            :binary ->
-              # Build binary heredoc: {:<<>>, meta, args}
-              {{:<<>>, meta_with_indent, args}, parser}
-
-            :charlist ->
-              # Build charlist wrapped in List.to_charlist
-              {{{:., start_meta, [List, :to_charlist]}, meta_with_indent, [args]}, parser}
           end
       end
     end
@@ -2714,7 +2752,7 @@ defmodule Spitfire do
       parser = next_token(parser)
 
       # Scan the sigil content (without unescaping)
-      {parts, parser, _end_meta} = scan_linearized(parser, :sigil_end, :sigil, no_unescape: true)
+      {parts, parser, _end_meta, _end_type, _end_info} = scan_linearized(parser, :sigil_end, :sigil, no_unescape: true)
 
       # Check for optional modifiers
       {modifiers, parser} =
@@ -2803,7 +2841,7 @@ defmodule Spitfire do
         end
 
       # Scan the atom content
-      {parts, parser, _end_meta} = scan_linearized(parser, end_token, :atom)
+      {parts, parser, _end_meta, _end_type} = scan_linearized(parser, end_token, :atom)
 
       cond do
         parts == [] ->
@@ -2976,6 +3014,10 @@ defmodule Spitfire do
 
   defp current_token_type(%{current_token: {:list_heredoc, _meta, _indent, _tokens}}) do
     :list_heredoc
+  end
+
+  defp current_token_type(%{current_token: {type, _, _, _}}) do
+    type
   end
 
   defp current_token_type(%{current_token: {type, _}}) do
