@@ -205,7 +205,7 @@ defmodule SpitfireToxicTest do
     end
 
     test "string heredoc" do
-      code = "\"\"\"\nfoo\n\"\"\""
+      code = "\"\"\"\nfo\n\\n\\\no\n\"\"\""
 
       assert Spitfire.parse(code) == s2q(code)
 
@@ -243,7 +243,15 @@ defmodule SpitfireToxicTest do
     end
 
     test "heredoc sigil" do
-      code = "~x\"\"\"\nfoo\n\"\"\"abc"
+      code = "~x\"\"\"\nfo\n\\n\\\no\n\"\"\"abc"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "~x\"\"\"\nfoo\n  \"\"\"abc"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "~x\"\"\"\n  foo\n  \"\"\"abc"
 
       assert Spitfire.parse(code) == s2q(code)
     end

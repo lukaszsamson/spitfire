@@ -2497,8 +2497,7 @@ defmodule Spitfire do
           end
         end)
 
-      trimmed = rev |> Enum.reverse() |> :erlang.list_to_binary()
-      Macro.unescape_string(trimmed)
+      rev |> Enum.reverse() |> :erlang.list_to_binary()
     end
   end
 
@@ -2707,13 +2706,20 @@ defmodule Spitfire do
               parts
             end
 
+          # Unescape all binary fragments after trimming
+          unescaped_parts =
+            Enum.map(trimmed_parts, fn
+              {:fragment, m, c} -> {:fragment, m, unescape_fragment(c)}
+              other -> other
+            end)
+
           # If only fragments and no interpolation, return a literal like s2q
-          if Enum.all?(trimmed_parts, fn
+          if Enum.all?(unescaped_parts, fn
                {:fragment, _m, _c} -> true
                _ -> false
              end) do
             merged =
-              trimmed_parts
+              unescaped_parts
               |> Enum.map(fn {:fragment, _m, c} -> c end)
               |> IO.iodata_to_binary()
 
@@ -2721,7 +2727,7 @@ defmodule Spitfire do
             {encode_literal(parser, literal, start_meta), parser}
           else
             # Build AST from parts
-            args = build_string_parts(trimmed_parts, kind)
+            args = build_string_parts(unescaped_parts, kind)
 
             # Add indentation metadata
             meta_with_indent =
