@@ -2753,7 +2753,8 @@ defmodule Spitfire do
       parser = next_token(parser)
 
       # Scan the sigil content (without unescaping)
-      {parts, parser, _end_meta, _end_type, _end_info} = scan_linearized(parser, :sigil_end, :sigil, no_unescape: true)
+      {parts, parser, _end_meta, _end_type, end_info} =
+        scan_linearized(parser, :sigil_end, :sigil, no_unescape: true)
 
       # Check for optional modifiers
       {modifiers, parser} =
@@ -2768,6 +2769,13 @@ defmodule Spitfire do
             {[], parser}
         end
 
+      # Trim heredoc-like indentation for triple-quoted sigils
+      parts =
+        case Map.get(end_info, :indentation) do
+          nil -> parts
+          indent -> trim_heredoc_parts(parts, indent)
+        end
+
       # Build sigil content as a binary node even when only fragments
       bs_args =
         case parts do
@@ -2777,7 +2785,11 @@ defmodule Spitfire do
 
       # Build the final sigil AST
       meta_with_delimiter = [{:delimiter, delimiter} | base_meta]
-      bs_meta = base_meta
+      bs_meta =
+        case Map.get(end_info, :indentation) do
+          nil -> base_meta
+          indent -> [{:indentation, indent} | base_meta]
+        end
       sigil_ast = {sigil_atom, meta_with_delimiter, [{:<<>>, bs_meta, bs_args}, modifiers]}
 
       {sigil_ast, parser}
