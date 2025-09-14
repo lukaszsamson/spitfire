@@ -2696,8 +2696,8 @@ defmodule Spitfire do
               {{:., start_meta, [:erlang, :binary_to_atom]}, meta_with_delimiter, [binary_ast, :utf8]}
             end
 
-          # We left the end token as current; advance once to start parsing the value
-          parser = next_token(parser)
+          # We left the end token as current; consume it and eat EOLs before the value
+          parser = parser |> next_token() |> eat_eol()
           # Parse the value with kw_identifier precedence
           {value, parser} = parse_expression(parser, @kw_identifier, false, false, false)
           {{key_ast, value}, parser}
