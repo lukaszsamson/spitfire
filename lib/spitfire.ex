@@ -2665,30 +2665,26 @@ defmodule Spitfire do
       # Scan the atom content
       {parts, parser, _end_meta} = scan_linearized(parser, end_token, :atom)
 
-      case parts do
-        [] ->
-          # Empty atom (shouldn't happen but handle gracefully)
-          atom = encode_literal(parser, :"", start_meta)
-          {atom, parser}
+      cond do
+        parts == [] ->
+          # Empty quoted atom (edge case)
+          {encode_literal(parser, :"", start_meta), parser}
 
-        [{:fragment, _meta, content}] when is_binary(content) ->
-          # Simple atom without interpolation
-          case safety do
-            :safe ->
-              # Can be a literal atom
-              atom_value = String.to_atom(content)
-              atom = encode_literal(parser, atom_value, start_meta)
-              {atom, parser}
+        Enum.all?(parts, fn
+          {:fragment, _m, _c} -> true
+          _ -> false
+        end) ->
+          # Only fragments, no interpolation: return literal atom regardless of safety
+          merged =
+            parts
+            |> Enum.map(fn {:fragment, _m, c} -> c end)
+            |> IO.iodata_to_binary()
 
-            :unsafe ->
-              # Must use binary_to_atom even if no interpolation
-              meta_with_delimiter = [{:delimiter, ~S'"'} | start_meta]
-              atom_ast = {{:., start_meta, [:erlang, :binary_to_atom]}, meta_with_delimiter, [content, :utf8]}
-              {atom_ast, parser}
-          end
+          atom_value = String.to_atom(merged)
+          {encode_literal(parser, atom_value, start_meta), parser}
 
-        _ ->
-          # Atom with interpolation or multiple parts - must use binary_to_atom
+        true ->
+          # Interpolated atom – build binary_to_atom({:<<>>,...}, :utf8)
           args = build_string_parts(parts, :atom)
           binary_ast = {:<<>>, start_meta, args}
           meta_with_delimiter = [{:delimiter, ~S'"'} | start_meta]
