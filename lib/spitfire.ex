@@ -2423,7 +2423,12 @@ defmodule Spitfire do
         {{:., open_meta, [Kernel, :to_string]}, call_meta, [expr]}
 
       :atom ->
-        expr
+        call_meta = [from_interpolation: true, closing: end_meta] ++ open_meta
+        {:"::", open_meta,
+         [
+           {{:., open_meta, [Kernel, :to_string]}, call_meta, [expr]},
+           {:binary, open_meta, nil}
+         ]}
 
       :sigil ->
         call_meta = [from_interpolation: true, closing: end_meta] ++ open_meta
@@ -2847,6 +2852,13 @@ defmodule Spitfire do
   defp parse_linearized_atom(parser, safety) do
     trace "parse_linearized_atom (#{safety})", trace_meta(parser) do
       start_meta = current_meta(parser)
+      # Capture the delimiter used for the quoted atom (" or ')
+      delim_str =
+        case parser.current_token do
+          {:atom_safe_start, _m, h} when is_integer(h) -> <<h>>
+          {:atom_unsafe_start, _m, h} when is_integer(h) -> <<h>>
+          _ -> "\""
+        end
 
       # Consume the start token
       parser = next_token(parser)
@@ -2883,7 +2895,7 @@ defmodule Spitfire do
           # Interpolated atom – build binary_to_atom({:<<>>,...}, :utf8)
           args = build_string_parts(parts, :atom)
           binary_ast = {:<<>>, start_meta, args}
-          meta_with_delimiter = [{:delimiter, ~S'"'} | start_meta]
+          meta_with_delimiter = [{:delimiter, delim_str} | start_meta]
           atom_ast = {{:., start_meta, [:erlang, :binary_to_atom]}, meta_with_delimiter, [binary_ast, :utf8]}
           {atom_ast, parser}
       end
