@@ -232,6 +232,18 @@ defmodule Spitfire do
 
   @terminals MapSet.new([:eol, :eof, :"}", :")", :"]", :">>"])
   @terminals_with_comma MapSet.put(@terminals, :",")
+
+  # Dynamic terminal set selection based on parser context
+  defp get_terminals(parser, with_comma \\ false) do
+    base = if with_comma, do: @terminals_with_comma, else: @terminals
+
+    if parser.interpolation_depth > 0 do
+      MapSet.put(base, :end_interpolation)
+    else
+      base
+    end
+  end
+
   defp(parse_expression(parser, assoc \\ @lowest, is_list \\ false, is_map \\ false, is_top \\ false, is_stab \\ false))
 
   defp parse_expression(parser, {associativity, precedence}, is_list, is_map, is_top, is_stab) do
@@ -280,6 +292,15 @@ defmodule Spitfire do
           :% -> &parse_struct_literal/1
           :ellipsis_op -> &parse_ellipsis_op/1
           nil -> &parse_nil_literal/1
+          # Linearized token handlers
+          :bin_string_start -> &parse_linearized_string(&1, :binary)
+          :list_string_start -> &parse_linearized_string(&1, :charlist)
+          :bin_heredoc_start -> &parse_linearized_heredoc(&1, :binary)
+          :list_heredoc_start -> &parse_linearized_heredoc(&1, :charlist)
+          :sigil_start -> &parse_linearized_sigil/1
+          :quoted_identifier_start -> &parse_linearized_identifier/1
+          :atom_safe_start -> &parse_linearized_atom(&1, :safe)
+          :atom_unsafe_start -> &parse_linearized_atom(&1, :unsafe)
           _ -> nil
         end
 
@@ -302,12 +323,7 @@ defmodule Spitfire do
       else
         {left, parser} = prefix.(parser)
 
-        terminals =
-          if is_top do
-            @terminals
-          else
-            @terminals_with_comma
-          end
+        terminals = get_terminals(parser, not is_top)
 
         {parser, is_valid} = validate_peek(parser, current_token_type(parser))
 
@@ -1359,7 +1375,9 @@ defmodule Spitfire do
                       nesting: 0,
                       fuel: 150,
                       errors: [],
-                      literal_encoder: parser.literal_encoder
+                      literal_encoder: parser.literal_encoder,
+                      interpolation_depth: 0,
+                      saved_nesting_stack: []
                     }
                     |> next_token()
                     |> next_token()
@@ -1435,7 +1453,9 @@ defmodule Spitfire do
                       nesting: 0,
                       fuel: 150,
                       errors: [],
-                      literal_encoder: parser.literal_encoder
+                      literal_encoder: parser.literal_encoder,
+                      interpolation_depth: 0,
+                      saved_nesting_stack: []
                     }
                     |> next_token()
                     |> next_token()
@@ -2174,7 +2194,9 @@ defmodule Spitfire do
                       peek_token: nil,
                       nesting: 0,
                       fuel: 150,
-                      literal_encoder: parser.literal_encoder
+                      literal_encoder: parser.literal_encoder,
+                      interpolation_depth: 0,
+                      saved_nesting_stack: []
                     }
                     |> next_token()
                     |> next_token()
@@ -2198,6 +2220,57 @@ defmodule Spitfire do
     end
   end
 
+  # Linearized token parsing functions for Toxic integration
+
+  defp parse_linearized_string(parser, kind) do
+    trace "parse_linearized_string (#{kind})", trace_meta(parser) do
+      # TODO: Implement linearized string parsing
+      # For now, delegate to existing string parsing
+      case kind do
+        :binary -> parse_string(parser)
+        :charlist -> parse_string(parser)
+      end
+    end
+  end
+
+  defp parse_linearized_heredoc(parser, kind) do
+    trace "parse_linearized_heredoc (#{kind})", trace_meta(parser) do
+      # TODO: Implement linearized heredoc parsing
+      # For now, delegate to existing string parsing
+      case kind do
+        :binary -> parse_string(parser)
+        :charlist -> parse_string(parser)
+      end
+    end
+  end
+
+  defp parse_linearized_sigil(parser) do
+    trace "parse_linearized_sigil", trace_meta(parser) do
+      # TODO: Implement linearized sigil parsing
+      # For now, delegate to existing sigil parsing
+      parse_sigil(parser)
+    end
+  end
+
+  defp parse_linearized_identifier(parser) do
+    trace "parse_linearized_identifier", trace_meta(parser) do
+      # TODO: Implement linearized identifier parsing
+      # For now, delegate to existing identifier parsing
+      parse_identifier(parser)
+    end
+  end
+
+  defp parse_linearized_atom(parser, safety) do
+    trace "parse_linearized_atom (#{safety})", trace_meta(parser) do
+      # TODO: Implement linearized atom parsing
+      # For now, delegate to existing atom parsing
+      case safety do
+        :safe -> parse_atom(parser)
+        :unsafe -> parse_atom(parser)
+      end
+    end
+  end
+
   defp new(code, opts) do
     %{
       stream: Spitfire.TokenStream.new(code, opts[:line] || 1, opts[:column] || 1, opts),
@@ -2206,8 +2279,10 @@ defmodule Spitfire do
       peek_token: nil,
       nesting: 0,
       literal_encoder: Keyword.get(opts, :literal_encoder),
-      interpolation_depth: 0,      # Track interpolation nesting level
-      saved_nesting_stack: [],     # Stack to save/restore nesting during interpolations
+      # Track interpolation nesting level
+      interpolation_depth: 0,
+      # Stack to save/restore nesting during interpolations
+      saved_nesting_stack: [],
       errors: []
     }
   end
@@ -2686,7 +2761,10 @@ defmodule Spitfire do
     true
   end
 
-  @ops MapSet.new(@operators ++ [:";", :eol, :eof, :",", :")", :do, :., :"}", :"]", :">>", :end, :block_identifier])
+  @ops MapSet.new(
+         @operators ++
+           [:";", :eol, :eof, :",", :")", :do, :., :"}", :"]", :">>", :end, :block_identifier, :end_interpolation]
+       )
   defp valid_peek?(_ctype, ptype) do
     MapSet.member?(@ops, ptype)
   end
