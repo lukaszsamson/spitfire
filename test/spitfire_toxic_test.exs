@@ -1,5 +1,15 @@
-defmodule SpitfireTest do
-  use ExUnit.Case, async: true
+defmodule SpitfireToxicTest do
+  # TODO: revert to true
+  use ExUnit.Case, async: false
+
+  setup do
+    original = Application.get_env(:spitfire, :tokenizer, :legacy)
+    Application.put_env(:spitfire, :tokenizer, :toxic)
+
+    on_exit(fn ->
+      Application.put_env(:spitfire, :tokenizer, original)
+    end)
+  end
 
   doctest Spitfire
 

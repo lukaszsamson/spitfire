@@ -21,13 +21,13 @@ defmodule Spitfire.LegacyTokenizer do
   end
 
   # Public: Advance and return next token plus updated stream
-  @spec next(t()) :: {term(), t()}
+  @spec next(t()) :: {:ok, term(), t()} | {:eof, t()}
   def next(%__MODULE__{pushback: [tok | rest]} = s) do
-    {tok, %__MODULE__{s | pushback: rest}}
+    {:ok, tok, %__MODULE__{s | pushback: rest}}
   end
 
   def next(%__MODULE__{tokens: [tok | rest]} = s) do
-    {tok, %__MODULE__{s | tokens: rest}}
+    {:ok, tok, %__MODULE__{s | tokens: rest}}
   end
 
   def next(%__MODULE__{tokens: [], eof?: false} = s) do
