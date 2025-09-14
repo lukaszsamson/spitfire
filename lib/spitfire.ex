@@ -2188,7 +2188,11 @@ defmodule Spitfire do
   defp parse_identifier(%{current_token: {identifier, _, token}} = parser)
        when identifier in [:identifier, :op_identifier] do
     trace "parse_identifier (#{identifier})", trace_meta(parser) do
-      if identifier == :identifier && MapSet.member?(@peeks, peek_token(parser)) do
+      stop_peek? =
+        MapSet.member?(@peeks, peek_token(parser)) ||
+          (parser.interpolation_depth > 0 and peek_token_type(parser) == :end_interpolation)
+
+      if identifier == :identifier && stop_peek? do
         parse_lone_identifier(parser)
       else
         meta = current_meta(parser)
@@ -2387,11 +2391,17 @@ defmodule Spitfire do
         # 3. Consume :begin_interpolation token
         open_meta = current_meta(parser)
         parser = next_token(parser)
+        # Eat any immediate EOLs after opening interpolation
+        parser = eat_eol(parser)
 
         # 4. Parse expression with :end_interpolation as terminal
         {expr, parser} = parse_expression(parser)
+        # Attach end_of_expression metadata for fidelity with legacy
+        expr = push_eoe(expr, peek_eoe(parser))
 
-        # 5. Expect and consume :end_interpolation (it will be at peek)
+        # 5. Skip any trailing EOLs, then expect and consume :end_interpolation
+        parser = eat_eol_at(parser, 1)
+
         if peek_token_type(parser) == :end_interpolation do
           parser = next_token(parser)
           end_meta = current_meta(parser)
@@ -3420,17 +3430,23 @@ defmodule Spitfire do
   defp validate_peek(parser, current_type) do
     peek = peek_token_type(parser)
 
-    if not valid_peek?(current_type, peek) && peek != :no_peek do
-      parser =
-        if MapSet.member?(@braces, peek) do
-          parser
-        else
-          next_token(parser)
-        end
-
-      {put_error(parser, {current_meta(parser), "syntax error"}), false}
-    else
+    # Inside an interpolation, :end_interpolation is a valid terminal peek.
+    # Do not treat it as a syntax error or advance tokens.
+    if parser.interpolation_depth > 0 and peek == :end_interpolation do
       {parser, true}
+    else
+      if not valid_peek?(current_type, peek) && peek != :no_peek do
+        parser =
+          if MapSet.member?(@braces, peek) do
+            parser
+          else
+            next_token(parser)
+          end
+
+        {put_error(parser, {current_meta(parser), "syntax error"}), false}
+      else
+        {parser, true}
+      end
     end
   end
 
