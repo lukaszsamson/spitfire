@@ -2349,14 +2349,17 @@ defmodule Spitfire do
         parser = %{parser | nesting: 0, saved_nesting_stack: [saved_nesting | parser.saved_nesting_stack]}
 
         # 3. Consume :begin_interpolation token
+        open_meta = current_meta(parser)
         parser = next_token(parser)
 
         # 4. Parse expression with :end_interpolation as terminal
         {expr, parser} = parse_expression(parser)
 
-        # 5. Expect and consume :end_interpolation
-        if current_token_type(parser) == :end_interpolation do
+        # 5. Expect and consume :end_interpolation (it will be at peek)
+        if peek_token_type(parser) == :end_interpolation do
+          parser = next_token(parser)
           end_meta = current_meta(parser)
+          # Advance past end_interpolation so current_token points to following content
           parser = next_token(parser)
 
           # 6. Restore nesting and pop depth
@@ -2370,7 +2373,7 @@ defmodule Spitfire do
           }
 
           # 7. Build interpolation AST based on kind
-          interp_ast = build_interpolation_ast(expr, end_meta, kind)
+          interp_ast = build_interpolation_ast(expr, open_meta, end_meta, kind)
 
           scan_loop(parser, [{:interpolation, end_meta, interp_ast} | accumulator], end_tokens, kind, opts)
         else
@@ -2405,36 +2408,32 @@ defmodule Spitfire do
   end
 
   # Helper function to build interpolation AST based on construct type
-  defp build_interpolation_ast(expr, end_meta, kind) do
-    meta = [from_interpolation: true, closing: end_meta]
-
+  defp build_interpolation_ast(expr, open_meta, end_meta, kind) do
     case kind do
       :binary ->
-        # For binary strings: to_string call + binary type
-        {:"::", meta,
+        call_meta = [from_interpolation: true, closing: end_meta] ++ open_meta
+        {:"::", open_meta,
          [
-           {{:., meta, [Kernel, :to_string]}, meta, [expr]},
-           {:binary, meta, nil}
+           {{:., open_meta, [Kernel, :to_string]}, call_meta, [expr]},
+           {:binary, open_meta, nil}
          ]}
 
       :charlist ->
-        # For charlists: to_string call (will be wrapped in to_charlist later)
-        {{:., meta, [Kernel, :to_string]}, meta, [expr]}
+        call_meta = [from_interpolation: true, closing: end_meta] ++ open_meta
+        {{:., open_meta, [Kernel, :to_string]}, call_meta, [expr]}
 
       :atom ->
-        # For atoms: just the expression (will be wrapped in binary_to_atom later)
         expr
 
       :sigil ->
-        # For sigils: to_string call + binary type
-        {:"::", meta,
+        call_meta = [from_interpolation: true, closing: end_meta] ++ open_meta
+        {:"::", open_meta,
          [
-           {{:., meta, [Kernel, :to_string]}, meta, [expr]},
-           {:binary, meta, nil}
+           {{:., open_meta, [Kernel, :to_string]}, call_meta, [expr]},
+           {:binary, open_meta, nil}
          ]}
 
       _ ->
-        # Default: just the expression
         expr
     end
   end
@@ -2532,13 +2531,15 @@ defmodule Spitfire do
 
       :begin_interpolation ->
         # Handle interpolation (simplified for identifiers)
+        open_meta = current_meta(parser)
         parser = next_token(parser)
         {expr, parser} = parse_expression(parser)
 
-        if current_token_type(parser) == :end_interpolation do
+        if peek_token_type(parser) == :end_interpolation do
+          parser = next_token(parser)
           end_meta = current_meta(parser)
           parser = next_token(parser)
-          interp_ast = build_interpolation_ast(expr, end_meta, :identifier)
+          interp_ast = build_interpolation_ast(expr, open_meta, end_meta, :identifier)
           scan_identifier_loop(parser, [{:interpolation, end_meta, interp_ast} | accumulator])
         else
           parser = put_error(parser, {current_meta(parser), "expected end of interpolation in identifier"})
