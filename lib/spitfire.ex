@@ -2223,14 +2223,15 @@ defmodule Spitfire do
   # Linearized token parsing functions for Toxic integration
 
   # Shared scanner for linearized constructs (strings, atoms, sigils, etc.)
-  defp scan_linearized(parser, end_token, kind, opts \\ []) do
-    trace "scan_linearized (#{end_token})", trace_meta(parser) do
+  # end_tokens may be a single atom or a list of acceptable end token types.
+  defp scan_linearized(parser, end_tokens, kind, opts \\ []) do
+    trace "scan_linearized (#{inspect(end_tokens)})", trace_meta(parser) do
       accumulator = []
-      scan_loop(parser, accumulator, end_token, kind, opts)
+      scan_loop(parser, accumulator, List.wrap(end_tokens), kind, opts)
     end
   end
 
-  defp scan_loop(parser, accumulator, end_token, kind, opts) do
+  defp scan_loop(parser, accumulator, end_tokens, kind, opts) do
     case current_token_type(parser) do
       :string_fragment ->
         # Grab fragment content from the full token tuple, not the token type
@@ -2242,7 +2243,7 @@ defmodule Spitfire do
 
         # For heredocs, trim whitespace using indent from end token (handled later)
         parser = next_token(parser)
-        scan_loop(parser, [{:fragment, meta, content} | accumulator], end_token, kind, opts)
+        scan_loop(parser, [{:fragment, meta, content} | accumulator], end_tokens, kind, opts)
 
       :begin_interpolation ->
         # 1. Push interpolation depth
@@ -2265,28 +2266,37 @@ defmodule Spitfire do
 
           # 6. Restore nesting and pop depth
           [saved | rest] = parser.saved_nesting_stack
-          parser = %{parser | nesting: saved, saved_nesting_stack: rest, interpolation_depth: parser.interpolation_depth - 1}
+
+          parser = %{
+            parser
+            | nesting: saved,
+              saved_nesting_stack: rest,
+              interpolation_depth: parser.interpolation_depth - 1
+          }
 
           # 7. Build interpolation AST based on kind
           interp_ast = build_interpolation_ast(expr, end_meta, kind)
 
-          scan_loop(parser, [{:interpolation, end_meta, interp_ast} | accumulator], end_token, kind, opts)
+          scan_loop(parser, [{:interpolation, end_meta, interp_ast} | accumulator], end_tokens, kind, opts)
         else
           # Error: expected :end_interpolation
           parser = put_error(parser, {current_meta(parser), "expected end of interpolation"})
-          {Enum.reverse(accumulator), parser, nil}
+          {Enum.reverse(accumulator), parser, nil, nil}
         end
 
-      ^end_token ->
-        # Found the end token - extract metadata and return
-        end_meta = current_meta(parser)
-        parser = next_token(parser)
-        {Enum.reverse(accumulator), parser, end_meta}
+      token ->
+        if token in end_tokens do
+          # Found the end token - extract metadata and return
+          end_meta = current_meta(parser)
+          parser = next_token(parser)
+          {Enum.reverse(accumulator), parser, end_meta, token}
+        else
+          # Unexpected token - error recovery
+          parser =
+            put_error(parser, {current_meta(parser), "unexpected token in #{kind}: #{current_token_type(parser)}"})
 
-      _ ->
-        # Unexpected token - error recovery
-        parser = put_error(parser, {current_meta(parser), "unexpected token in #{kind}: #{current_token_type(parser)}"})
-        {Enum.reverse(accumulator), parser, nil}
+          {Enum.reverse(accumulator), parser, nil, nil}
+        end
     end
   end
 
@@ -2297,10 +2307,11 @@ defmodule Spitfire do
     case kind do
       :binary ->
         # For binary strings: to_string call + binary type
-        {:"::", meta, [
-          {{:., meta, [Kernel, :to_string]}, meta, [expr]},
-          {:binary, meta, nil}
-        ]}
+        {:"::", meta,
+         [
+           {{:., meta, [Kernel, :to_string]}, meta, [expr]},
+           {:binary, meta, nil}
+         ]}
 
       :charlist ->
         # For charlists: to_string call (will be wrapped in to_charlist later)
@@ -2312,10 +2323,11 @@ defmodule Spitfire do
 
       :sigil ->
         # For sigils: to_string call + binary type
-        {:"::", meta, [
-          {{:., meta, [Kernel, :to_string]}, meta, [expr]},
-          {:binary, meta, nil}
-        ]}
+        {:"::", meta,
+         [
+           {{:., meta, [Kernel, :to_string]}, meta, [expr]},
+           {:binary, meta, nil}
+         ]}
 
       _ ->
         # Default: just the expression
@@ -2416,13 +2428,22 @@ defmodule Spitfire do
           {Enum.reverse(accumulator), parser, :quoted_identifier_end}
         end
 
-      end_token when end_token in [:quoted_identifier_end, :quoted_paren_identifier_end, :quoted_bracket_identifier_end, :quoted_op_identifier_end, :quoted_do_identifier_end] ->
+      end_token
+      when end_token in [
+             :quoted_identifier_end,
+             :quoted_paren_identifier_end,
+             :quoted_bracket_identifier_end,
+             :quoted_op_identifier_end,
+             :quoted_do_identifier_end
+           ] ->
         parser = next_token(parser)
         {Enum.reverse(accumulator), parser, end_token}
 
       _ ->
         # Unexpected token
-        parser = put_error(parser, {current_meta(parser), "unexpected token in identifier: #{current_token_type(parser)}"})
+        parser =
+          put_error(parser, {current_meta(parser), "unexpected token in identifier: #{current_token_type(parser)}"})
+
         {Enum.reverse(accumulator), parser, :quoted_identifier_end}
     end
   end
@@ -2437,12 +2458,10 @@ defmodule Spitfire do
       _ ->
         # Complex case with interpolations - for now just concatenate fragments
         # TODO: Handle interpolations properly
-        parts
-        |> Enum.map(fn
+        Enum.map_join(parts, "", fn
           {:fragment, _meta, content} -> content
           {:interpolation, _meta, _ast} -> "#{:interpolated}"
         end)
-        |> Enum.join("")
     end
   end
 
@@ -2454,15 +2473,46 @@ defmodule Spitfire do
       parser = next_token(parser)
 
       # Determine end token based on kind
-      end_token = case kind do
-        :binary -> :bin_string_end
-        :charlist -> :list_string_end
-      end
+      end_token =
+        case kind do
+          :binary -> :bin_string_end
+          :charlist -> :list_string_end
+        end
 
-      # Scan the linearized content
-      {parts, parser, _end_meta} = scan_linearized(parser, end_token, kind)
+      # Scan the linearized content; accept kw_identifier_*_end for strings used as keyword keys
+      end_tokens =
+        case kind do
+          :binary -> [:kw_identifier_safe_end, :kw_identifier_unsafe_end, end_token]
+          :charlist -> [:kw_identifier_safe_end, :kw_identifier_unsafe_end, end_token]
+        end
+
+      {parts, parser, _end_meta, end_type} = scan_linearized(parser, end_tokens, kind)
 
       cond do
+        end_type in [:kw_identifier_safe_end, :kw_identifier_unsafe_end] ->
+          # Quoted keyword identifier: build atom key and parse the value
+          has_only_fragments =
+            Enum.all?(parts, fn
+              {:fragment, _m, _c} -> true
+              _ -> false
+            end)
+
+          key_ast =
+            if has_only_fragments do
+              merged = parts |> Enum.map(fn {:fragment, _m, c} -> c end) |> IO.iodata_to_binary()
+              atom_value = String.to_atom(merged)
+              encode_literal(parser, atom_value, start_meta)
+            else
+              args = build_string_parts(parts, :atom)
+              binary_ast = {:<<>>, start_meta, args}
+              meta_with_delimiter = [{:delimiter, ~S'"'} | start_meta]
+              {{:., start_meta, [:erlang, :binary_to_atom]}, meta_with_delimiter, [binary_ast, :utf8]}
+            end
+
+          # Parse the value with kw_identifier precedence
+          {value, parser} = parse_expression(parser, @kw_identifier, false, false, false)
+          {{key_ast, value}, parser}
+
         parts == [] ->
           # Empty string
           literal = if kind == :binary, do: "", else: []
@@ -2506,43 +2556,48 @@ defmodule Spitfire do
       parser = next_token(parser)
 
       # Determine end token based on kind
-      end_token = case kind do
-        :binary -> :bin_heredoc_end
-        :charlist -> :list_heredoc_end
-      end
+      end_token =
+        case kind do
+          :binary -> :bin_heredoc_end
+          :charlist -> :list_heredoc_end
+        end
 
       # Scan the linearized content
-      {parts, parser, end_meta} = scan_linearized(parser, end_token, kind)
+      {parts, parser, end_meta, _end_type} = scan_linearized(parser, end_token, kind)
 
       # Extract indentation from end token metadata
-      indentation = if end_meta, do: end_meta[:indentation], else: nil
+      indentation = if end_meta, do: end_meta[:indentation]
 
       case parts do
         [] ->
           # Empty heredoc
-          literal = case kind do
-            :binary -> ""
-            :charlist -> []
-          end
+          literal =
+            case kind do
+              :binary -> ""
+              :charlist -> []
+            end
+
           {encode_literal(parser, literal, start_meta), parser}
 
         _ ->
           # Apply indentation trimming to fragments
-          trimmed_parts = if indentation do
-            trim_heredoc_parts(parts, indentation)
-          else
-            parts
-          end
+          trimmed_parts =
+            if indentation do
+              trim_heredoc_parts(parts, indentation)
+            else
+              parts
+            end
 
           # Build AST from parts
           args = build_string_parts(trimmed_parts, kind)
 
           # Add indentation metadata
-          meta_with_indent = if indentation do
-            [{:indentation, indentation}, {:delimiter, if(kind == :binary, do: ~s|"""|, else: ~s|'''|)} | start_meta]
-          else
-            [{:delimiter, if(kind == :binary, do: ~s|"""|, else: ~s|'''|)} | start_meta]
-          end
+          meta_with_indent =
+            if indentation do
+              [{:indentation, indentation}, {:delimiter, if(kind == :binary, do: ~s|"""|, else: ~s|'''|)} | start_meta]
+            else
+              [{:delimiter, if(kind == :binary, do: ~s|"""|, else: ~s|'''|)} | start_meta]
+            end
 
           case kind do
             :binary ->
@@ -2567,23 +2622,27 @@ defmodule Spitfire do
       {parts, parser, _end_meta} = scan_linearized(parser, :sigil_end, :sigil, no_unescape: true)
 
       # Check for optional modifiers
-      {modifiers, parser} = case current_token_type(parser) do
-        :sigil_modifiers ->
-          {mods, _meta} = {elem(current_token(parser), 2), current_meta(parser)}
-          {mods, next_token(parser)}
-        _ ->
-          {[], parser}
-      end
+      {modifiers, parser} =
+        case current_token_type(parser) do
+          :sigil_modifiers ->
+            {mods, _meta} = {elem(current_token(parser), 2), current_meta(parser)}
+            {mods, next_token(parser)}
+
+          _ ->
+            {[], parser}
+        end
 
       # Build sigil content
-      args = case parts do
-        [] ->
-          # Empty sigil
-          ""
-        _ ->
-          # Build binary from parts
-          build_sigil_content(parts)
-      end
+      args =
+        case parts do
+          [] ->
+            # Empty sigil
+            ""
+
+          _ ->
+            # Build binary from parts
+            build_sigil_content(parts)
+        end
 
       # Build the final sigil AST
       meta_with_delimiter = [{:delimiter, delimiter} | start_meta]
@@ -2604,20 +2663,24 @@ defmodule Spitfire do
       {parts, parser, end_token_type} = scan_linearized_identifier(parser)
 
       # Build the identifier content
-      content = case parts do
-        [] -> ""
-        _ ->
-          # Join all fragments and build interpolated content if needed
-          build_identifier_content(parts)
-      end
+      content =
+        case parts do
+          [] ->
+            ""
+
+          _ ->
+            # Join all fragments and build interpolated content if needed
+            build_identifier_content(parts)
+        end
 
       # Convert to atom
-      atom_value = if is_binary(content) do
-        String.to_atom(content)
-      else
-        # Interpolated content - this is complex, for now just use a placeholder
-        :interpolated_identifier
-      end
+      atom_value =
+        if is_binary(content) do
+          String.to_atom(content)
+        else
+          # Interpolated content - this is complex, for now just use a placeholder
+          :interpolated_identifier
+        end
 
       # Build the correct AST based on the end token type
       case end_token_type do
@@ -2657,10 +2720,11 @@ defmodule Spitfire do
       parser = next_token(parser)
 
       # Determine end token based on safety
-      end_token = case safety do
-        :safe -> :atom_safe_end
-        :unsafe -> :atom_unsafe_end
-      end
+      end_token =
+        case safety do
+          :safe -> :atom_safe_end
+          :unsafe -> :atom_unsafe_end
+        end
 
       # Scan the atom content
       {parts, parser, _end_meta} = scan_linearized(parser, end_token, :atom)
@@ -3186,7 +3250,21 @@ defmodule Spitfire do
 
   @ops MapSet.new(
          @operators ++
-           [:";", :eol, :eof, :",", :")", :do, :., :"}", :"]", :">>", :end, :block_identifier, :end_interpolation]
+           [
+             :";",
+             :eol,
+             :eof,
+             :",",
+             :")",
+             :do,
+             :.,
+             :"}",
+             :"]",
+             :">>",
+             :end,
+             :block_identifier,
+             :end_interpolation
+           ]
        )
   defp valid_peek?(_ctype, ptype) do
     MapSet.member?(@ops, ptype)

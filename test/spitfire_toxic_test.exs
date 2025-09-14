@@ -18,6 +18,44 @@ defmodule SpitfireToxicTest do
       code = "foo"
 
       assert Spitfire.parse(code) == s2q(code)
+
+      code = "foo[1]"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "foo(1)"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "foo +1"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "foo do\n:ok\nend"
+
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "identifier quoted" do
+      code = "D.\"foo\""
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "D.\"foo\"[1]"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "D.\"foo\"(1)"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "D.\"foo\" +1"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "D.\"foo\" do\n:ok\nend"
+
+      assert Spitfire.parse(code) == s2q(code)
     end
 
     test "number" do
@@ -44,6 +82,22 @@ defmodule SpitfireToxicTest do
       assert Spitfire.parse(code) == s2q(code)
 
       code = ":\"foo\""
+
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "keyword identifier" do
+      code = "[foo: 1]"
+
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "keyword identifier quoted" do
+      code = "[\"\": 1]"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "[\"foo\": 1]"
 
       assert Spitfire.parse(code) == s2q(code)
     end
