@@ -2623,7 +2623,7 @@ defmodule Spitfire do
             else
               args = build_string_parts(parts, :atom)
               binary_ast = {:<<>>, start_meta, args}
-              meta_with_delimiter = [{:delimiter, ~S'"'} | start_meta]
+              meta_with_delimiter = [{:delimiter, ~S'"'}, {:format, :keyword} | start_meta]
               {{:., start_meta, [:erlang, :binary_to_atom]}, meta_with_delimiter, [binary_ast, :utf8]}
             end
 
