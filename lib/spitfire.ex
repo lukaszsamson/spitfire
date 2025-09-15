@@ -308,7 +308,6 @@ defmodule Spitfire do
           :bin_heredoc_start -> &parse_linearized_heredoc(&1, :binary)
           :list_heredoc_start -> &parse_linearized_heredoc(&1, :charlist)
           :sigil_start -> &parse_linearized_sigil/1
-          :quoted_identifier_start -> &parse_linearized_identifier/1
           :atom_safe_start -> &parse_linearized_atom(&1, :safe)
           :atom_unsafe_start -> &parse_linearized_atom(&1, :unsafe)
           _ -> nil
@@ -1135,12 +1134,9 @@ defmodule Spitfire do
           parser = next_token(parser)
           id_start_meta = current_meta(parser)
 
-          delim_str =
-            case parser.current_token do
-              {:quoted_identifier_start, _m, h} when is_integer(h) -> <<h>>
-              {:quoted_identifier_start, _m, d} when is_binary(d) -> d
-              _ -> ~S'"'
-            end
+          {:quoted_identifier_start, _m, h} = parser.current_token
+
+          delim_str = <<h>>
 
           # Scan the quoted identifier and classify its end
           # Advance past the start token to the first content token
@@ -2924,72 +2920,50 @@ defmodule Spitfire do
         scan_linearized(parser, end_token, kind, no_unescape: true)
 
       # Extract indentation from end token
-      indentation = Map.get(end_info, :indentation)
+      indentation = Map.fetch!(end_info, :indentation)
 
-      case parts do
-        [] ->
-          # Empty heredoc
-          literal =
-            case kind do
-              :binary -> ""
-              :charlist -> []
-            end
+      # Apply indentation trimming to fragments
+      trimmed_parts = trim_heredoc_parts(parts, indentation)
 
-          {encode_literal(parser, literal, start_meta), parser}
+      # Unescape all binary fragments after trimming
+      unescaped_parts =
+        Enum.map(trimmed_parts, fn
+          {:fragment, m, c} -> {:fragment, m, unescape_fragment(c)}
+          other -> other
+        end)
 
-        _ ->
-          # Apply indentation trimming to fragments
-          trimmed_parts =
-            if indentation do
-              trim_heredoc_parts(parts, indentation)
-            else
-              parts
-            end
+      # If only fragments and no interpolation, return a literal like s2q
+      if Enum.all?(unescaped_parts, fn
+           {:fragment, _m, _c} -> true
+           _ -> false
+         end) do
+        merged =
+          unescaped_parts
+          |> Enum.map(fn {:fragment, _m, c} -> c end)
+          |> IO.iodata_to_binary()
 
-          # Unescape all binary fragments after trimming
-          unescaped_parts =
-            Enum.map(trimmed_parts, fn
-              {:fragment, m, c} -> {:fragment, m, unescape_fragment(c)}
-              other -> other
-            end)
+        literal = if kind == :binary, do: merged, else: String.to_charlist(merged)
+        {encode_literal(parser, literal, start_meta), parser}
+      else
+        # Build AST from parts
+        args = build_string_parts(unescaped_parts, kind)
 
-          # If only fragments and no interpolation, return a literal like s2q
-          if Enum.all?(unescaped_parts, fn
-               {:fragment, _m, _c} -> true
-               _ -> false
-             end) do
-            merged =
-              unescaped_parts
-              |> Enum.map(fn {:fragment, _m, c} -> c end)
-              |> IO.iodata_to_binary()
+        # Add metadata with correct order: delimiter first, then indentation (if any)
+        meta_with_indent =
+          [
+            {:delimiter, if(kind == :binary, do: ~s|"""|, else: ~s|'''|)},
+            {:indentation, indentation} | start_meta
+          ]
 
-            literal = if kind == :binary, do: merged, else: String.to_charlist(merged)
-            {encode_literal(parser, literal, start_meta), parser}
-          else
-            # Build AST from parts
-            args = build_string_parts(unescaped_parts, kind)
+        case kind do
+          :binary ->
+            # Build binary heredoc: {:<<>>, meta, args}
+            {{:<<>>, meta_with_indent, args}, parser}
 
-            # Add metadata with correct order: delimiter first, then indentation (if any)
-            meta_with_indent =
-              if indentation do
-                [
-                  {:delimiter, if(kind == :binary, do: ~s|"""|, else: ~s|'''|)},
-                  {:indentation, indentation} | start_meta
-                ]
-              else
-                [{:delimiter, if(kind == :binary, do: ~s|"""|, else: ~s|'''|)} | start_meta]
-              end
-
-            case kind do
-              :binary ->
-                # Build binary heredoc: {:<<>>, meta, args}
-                {{:<<>>, meta_with_indent, args}, parser}
-
-              :charlist ->
-                # Build charlist wrapped in List.to_charlist
-                {{{:., start_meta, [List, :to_charlist]}, meta_with_indent, [args]}, parser}
-            end
-          end
+          :charlist ->
+            # Build charlist wrapped in List.to_charlist
+            {{{:., start_meta, [List, :to_charlist]}, meta_with_indent, [args]}, parser}
+        end
       end
     end
   end
@@ -3010,11 +2984,9 @@ defmodule Spitfire do
         case peek_token_type(parser) do
           :sigil_modifiers ->
             parser = next_token(parser)
+            {:sigil_modifiers, _meta, mods} = parser.current_token
 
-            case parser.current_token do
-              {:sigil_modifiers, _meta, mods} -> {mods, parser}
-              _ -> {[], parser}
-            end
+            {mods, parser}
 
           _ ->
             {[], parser}
@@ -3049,60 +3021,12 @@ defmodule Spitfire do
     end
   end
 
-  defp parse_linearized_identifier(parser) do
-    trace "parse_linearized_identifier", trace_meta(parser) do
-      # Consume the start token
-      parser = next_token(parser)
-
-      # Scan until we find one of the identifier end tokens
-      {parts, parser, end_token_type} = scan_linearized_identifier(parser)
-
-      # We left the end token as current; advance once to move past it
-      parser = next_token(parser)
-
-      # Build the identifier content
-      content =
-        case parts do
-          [] ->
-            ""
-
-          _ ->
-            # Join all fragments and build interpolated content if needed
-            build_identifier_content(parts)
-        end
-
-      # Convert to atom
-      atom_value =
-        if is_binary(content) do
-          String.to_atom(content)
-        else
-          # Interpolated content - this is complex, for now just use a placeholder
-          :interpolated_identifier
-        end
-
-      # Build the correct AST based on the end token type
-      case end_token_type do
-        # Return the plain atom; delimiter and no_parens metadata will be attached by callers
-        :quoted_identifier_end -> {atom_value, parser}
-        :quoted_paren_identifier_end -> {atom_value, parser}
-        :quoted_bracket_identifier_end -> {atom_value, parser}
-        :quoted_op_identifier_end -> {atom_value, parser}
-        :quoted_do_identifier_end -> {atom_value, parser}
-        _ -> {atom_value, parser}
-      end
-    end
-  end
-
   defp parse_linearized_atom(parser, safety) do
     trace "parse_linearized_atom (#{safety})", trace_meta(parser) do
       start_meta = current_meta(parser)
       # Capture the delimiter used for the quoted atom (" or ')
-      delim_str =
-        case parser.current_token do
-          {:atom_safe_start, _m, h} when is_integer(h) -> <<h>>
-          {:atom_unsafe_start, _m, h} when is_integer(h) -> <<h>>
-          _ -> "\""
-        end
+      {_kind, _m, h} = parser.current_token
+      delim_str = <<h>>
 
       # Consume the start token
       parser = next_token(parser)
