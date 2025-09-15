@@ -398,7 +398,7 @@ defmodule Spitfire do
           {left, parser}
         end
       end
-      |> tap(fn {v, p} -> IO.puts("current_token: #{inspect(p.current_token)}") end)
+      # |> tap(fn {v, p} -> IO.puts("current_token: #{inspect(p.current_token)}") end)
     end
   end
 
@@ -959,7 +959,6 @@ defmodule Spitfire do
       meta = current_meta(parser)
       parser = parser |> next_token() |> eat_eol()
       {rhs, parser} = parse_expression(parser, @lowest, false, false, false)
-      IO.puts("after parse_expression: #{inspect(parser.current_token)}")
 
       extra_meta = [from_brackets: true]
 
@@ -970,7 +969,6 @@ defmodule Spitfire do
         end
 
       parser = parser |> next_token() |> eat_eol()
-      IO.puts("getting closing from: #{inspect(parser.current_token)}")
       closing = current_meta(parser)
       meta = extra_meta ++ newlines ++ [{:closing, closing} | meta]
 
