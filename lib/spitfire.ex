@@ -2682,41 +2682,67 @@ defmodule Spitfire do
   end
 
   # Helper function to trim whitespace from heredoc parts based on indentation
+  # This needs to process all parts together to track line start state correctly
   defp trim_heredoc_parts(parts, indentation) do
-    for part <- parts do
-      case part do
-        {:fragment, meta, content} ->
-          # Trim whitespace from the fragment content based on indentation
-          trimmed_content = trim_heredoc_fragment(content, indentation)
-          {:fragment, meta, trimmed_content}
-
-        other ->
-          # Keep interpolations as-is
-          other
-      end
-    end
-  end
-
-  # Trim up to `indentation` leading spaces/tabs from each line
-  defp trim_heredoc_fragment(content, indentation) do
     indent = indentation || 0
 
     if indent <= 0 do
-      content
+      parts
     else
-      {rev, _sol, _rem} =
-        content
-        |> :binary.bin_to_list()
-        |> Enum.reduce({[], true, indent}, fn ch, {acc, sol, rem} ->
-          cond do
-            ch == ?\n -> {[?\n | acc], true, indent}
-            sol and rem > 0 and (ch == ?\s or ch == ?\t) -> {acc, true, rem - 1}
-            true -> {[ch | acc], false, rem}
-          end
-        end)
-
-      rev |> Enum.reverse() |> :erlang.list_to_binary()
+      {trimmed_parts, _at_line_start, _spaces_left} =
+        trim_heredoc_parts_loop(parts, indent, true, indent, [])
+      Enum.reverse(trimmed_parts)
     end
+  end
+
+  # Process parts sequentially, maintaining line start state across fragments and interpolations
+  defp trim_heredoc_parts_loop([part | rest], indent, at_line_start, spaces_left, acc) do
+    case part do
+      {:fragment, meta, content} ->
+        {trimmed_content, new_at_line_start, new_spaces_left} =
+          trim_heredoc_fragment(content, indent, at_line_start, spaces_left)
+        new_part = {:fragment, meta, trimmed_content}
+        trim_heredoc_parts_loop(rest, indent, new_at_line_start, new_spaces_left, [new_part | acc])
+
+      interpolation ->
+        # Interpolation counts as content on this line; no more trimming after it on this line
+        new_at_line_start = false
+        trim_heredoc_parts_loop(rest, indent, new_at_line_start, 0, [interpolation | acc])
+    end
+  end
+
+  defp trim_heredoc_parts_loop([], _indent, at_line_start, spaces_left, acc) do
+    {acc, at_line_start, spaces_left}
+  end
+
+  # Trim up to `indentation` leading spaces/tabs from each line, maintaining state
+  defp trim_heredoc_fragment(content, indent, at_line_start, spaces_left) do
+    chars = :binary.bin_to_list(content)
+    {rev_chars, final_at_line_start, final_spaces_left} =
+      trim_chars(chars, indent, at_line_start, spaces_left, [])
+
+    trimmed_content = rev_chars |> Enum.reverse() |> :erlang.list_to_binary()
+    {trimmed_content, final_at_line_start, final_spaces_left}
+  end
+
+  defp trim_chars([?\n | rest], indent, _at_line_start, _spaces_left, acc) do
+    # Newline resets indentation trimming for next characters
+    trim_chars(rest, indent, true, indent, [?\n | acc])
+  end
+
+  defp trim_chars([ch | rest], indent, true, spaces_left, acc)
+       when spaces_left > 0 and (ch == ?\s or ch == ?\t) do
+    # Trim up to indent horizontal spaces at start of line
+    trim_chars(rest, indent, true, spaces_left - 1, acc)
+  end
+
+  defp trim_chars([ch | rest], indent, _at_line_start, spaces_left, acc) do
+    # Regular character - keep and mark that we're no longer at line start
+    trim_chars(rest, indent, false, spaces_left, [ch | acc])
+  end
+
+  defp trim_chars([], _indent, at_line_start, spaces_left, acc) do
+    {acc, at_line_start, spaces_left}
   end
 
   # Helper function to build sigil content from parts
