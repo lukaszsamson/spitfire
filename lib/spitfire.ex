@@ -235,7 +235,7 @@ defmodule Spitfire do
   @terminals_with_comma MapSet.put(@terminals, :",")
 
   # Dynamic terminal set selection based on parser context
-  defp get_terminals(parser, with_comma \\ false) do
+  defp get_terminals(parser, with_comma) do
     base = if with_comma, do: @terminals_with_comma, else: @terminals
 
     if parser.interpolation_depth > 0 do
@@ -398,6 +398,7 @@ defmodule Spitfire do
           {left, parser}
         end
       end
+
       # |> tap(fn {v, p} -> IO.puts("current_token: #{inspect(p.current_token)}") end)
     end
   end
@@ -2691,6 +2692,7 @@ defmodule Spitfire do
     else
       {trimmed_parts, _at_line_start, _spaces_left} =
         trim_heredoc_parts_loop(parts, indent, true, indent, [])
+
       Enum.reverse(trimmed_parts)
     end
   end
@@ -2701,7 +2703,9 @@ defmodule Spitfire do
       {:fragment, meta, content} ->
         {trimmed_content, new_at_line_start, new_spaces_left} =
           trim_heredoc_fragment(content, indent, at_line_start, spaces_left)
+
         new_part = {:fragment, meta, trimmed_content}
+
         trim_heredoc_parts_loop(rest, indent, new_at_line_start, new_spaces_left, [new_part | acc])
 
       interpolation ->
@@ -2718,6 +2722,7 @@ defmodule Spitfire do
   # Trim up to `indentation` leading spaces/tabs from each line, maintaining state
   defp trim_heredoc_fragment(content, indent, at_line_start, spaces_left) do
     chars = :binary.bin_to_list(content)
+
     {rev_chars, final_at_line_start, final_spaces_left} =
       trim_chars(chars, indent, at_line_start, spaces_left, [])
 
@@ -2743,20 +2748,6 @@ defmodule Spitfire do
 
   defp trim_chars([], _indent, at_line_start, spaces_left, acc) do
     {acc, at_line_start, spaces_left}
-  end
-
-  # Helper function to build sigil content from parts
-  defp build_sigil_content(parts) do
-    case parts do
-      [{:fragment, _meta, content}] when is_binary(content) ->
-        # Single fragment - return as string literal
-        content
-
-      _ ->
-        # Multiple parts or interpolations - build binary
-        args = build_string_parts(parts, :sigil)
-        {:<<>>, [], args}
-    end
   end
 
   # Special scanner for identifiers that can have multiple end token types
@@ -3572,25 +3563,26 @@ defmodule Spitfire do
     [delimiter: ~s"'''", indentation: indent]
   end
 
-  # For charlist literals, prefer delimiter metadata over closing
-  defp additional_meta(literal, %{current_token: {:list_string, _, _}}) when is_list(literal) do
-    [delimiter: "'"]
-  end
-
   defp additional_meta(literal, %{current_token: {:list_string_end, _, _}})
        when is_list(literal) do
     [delimiter: "'"]
   end
 
-  # For charlist heredoc literals from Toxic, attach delimiter and indentation
-  defp additional_meta(literal, %{current_token: {:list_heredoc_end, _, _delim, indent}})
-       when is_list(literal) do
+  defp additional_meta(_, %{current_token: {:bin_string_end, _, _}}) do
+    [delimiter: ~s'"']
+  end
+
+  defp additional_meta(_, %{current_token: {:bin_heredoc_end, _, _delim, indent}}) do
+    [delimiter: ~s'"""', indentation: indent]
+  end
+
+  defp additional_meta(_, %{current_token: {:list_heredoc_end, _, _delim, indent}}) do
     [delimiter: ~s"'''", indentation: indent]
   end
 
-  defp additional_meta(literal, %{current_token: {:list_heredoc_end, _, indent}})
-       when is_list(literal) do
-    [delimiter: ~s"'''", indentation: indent]
+  defp additional_meta(_, %{current_token: {type, _, h}})
+       when type in [:atom_safe_end, :atom_unsafe_end] and is_integer(h) do
+    [delimiter: <<h>>]
   end
 
   defp additional_meta(literal, parser) when is_list(literal) do
@@ -3616,44 +3608,6 @@ defmodule Spitfire do
   defp additional_meta(_, %{current_token: {type, _, indent, _token}})
        when type in [:bin_heredoc] do
     [delimiter: ~s'"""', indentation: indent]
-  end
-
-  # Delimiter for linearized end tokens
-  defp additional_meta(_, %{current_token: {:bin_string_end, _, _}}) do
-    [delimiter: ~s'"']
-  end
-
-  defp additional_meta(_, %{current_token: {:list_string_end, _, _}}) do
-    [delimiter: "'"]
-  end
-
-  # Toxic heredoc ends may carry both delimiter and indentation as a 4-tuple
-  defp additional_meta(_, %{current_token: {:bin_heredoc_end, _, _delim, indent}}) do
-    [delimiter: ~s'"""', indentation: indent]
-  end
-
-  defp additional_meta(_, %{current_token: {:list_heredoc_end, _, _delim, indent}}) do
-    [delimiter: ~s"'''", indentation: indent]
-  end
-
-  # Fallback 3-tuple shapes (if any)
-  defp additional_meta(_, %{current_token: {:bin_heredoc_end, _, indent}}) do
-    [delimiter: ~s'"""', indentation: indent]
-  end
-
-  defp additional_meta(_, %{current_token: {:list_heredoc_end, _, indent}}) do
-    [delimiter: ~s"'''", indentation: indent]
-  end
-
-  # Delimiter for linearized quoted atoms (safe/unsafe end tokens)
-  defp additional_meta(_, %{current_token: {type, _, h}})
-       when type in [:atom_safe_end, :atom_unsafe_end] and is_integer(h) do
-    [delimiter: <<h>>]
-  end
-
-  defp additional_meta(_, %{current_token: {type, _, d}})
-       when type in [:atom_safe_end, :atom_unsafe_end] and is_binary(d) do
-    [delimiter: d]
   end
 
   defp additional_meta(_literal, %{current_token: {:char, _, token}}) do
