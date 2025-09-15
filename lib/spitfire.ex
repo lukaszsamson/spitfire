@@ -1399,7 +1399,8 @@ defmodule Spitfire do
         {pairs, parser} = parse_comma_list(parser |> next_token() |> eat_eol())
         parser = parser |> next_token() |> eat_eol()
         closing = [closing: current_meta(parser)]
-        ast = {{:., meta, [lhs]}, newlines ++ closing ++ meta, pairs}
+        args = wrap_trailing_keywords(pairs)
+        ast = {{:., meta, [lhs]}, newlines ++ closing ++ meta, args}
 
         {ast, parser}
       end
@@ -2121,7 +2122,8 @@ defmodule Spitfire do
             parser = next_token(parser)
             closing = current_meta(parser)
 
-            ast = {token, newlines ++ [{:closing, closing} | meta], List.wrap(pairs)}
+            args = wrap_trailing_keywords(pairs)
+            ast = {token, newlines ++ [{:closing, closing} | meta], args}
 
             if peek_token(parser) == :do and parser.nesting == 0 do
               parser = next_token(parser)
@@ -2132,7 +2134,7 @@ defmodule Spitfire do
 
           _ ->
             parser = put_error(parser, {error_meta, "missing closing parentheses for function invocation"})
-            {{token, newlines ++ meta, List.wrap(pairs)}, parser}
+            {{token, newlines ++ meta, wrap_trailing_keywords(pairs)}, parser}
         end
       end
     end
@@ -2280,10 +2282,75 @@ defmodule Spitfire do
 
         closing = current_meta(parser)
 
-        {{lhs, newlines ++ [{:closing, closing} | meta], List.wrap(pairs)}, parser}
+        args = wrap_trailing_keywords(pairs)
+
+        {{lhs, newlines ++ [{:closing, closing} | meta], args}, parser}
       end
     end
   end
+
+  # Group trailing keyword pairs into a single keyword list argument
+  defp wrap_trailing_keywords(args) do
+    # Walk from the end collecting trailing keyword pairs. If we encounter a
+    # keyword list, merge collected pairs into it. Otherwise, wrap collected
+    # pairs into a new list argument.
+    rev = Enum.reverse(args)
+    {leading_rev, trailing_pairs, base_kw_list} = collect_trailing_keywords(rev, [], nil)
+
+    cond do
+      base_kw_list != nil and trailing_pairs != [] ->
+        combined = Enum.reverse(base_kw_list) ++ Enum.reverse(trailing_pairs)
+        Enum.reverse(leading_rev, [combined])
+
+      base_kw_list != nil ->
+        Enum.reverse(leading_rev, [base_kw_list])
+
+      trailing_pairs != [] ->
+        Enum.reverse(leading_rev, [Enum.reverse(trailing_pairs)])
+
+      true ->
+        args
+    end
+  end
+
+  defp collect_trailing_keywords([item | rest], acc_pairs, base_kw_list) do
+    cond do
+      base_kw_list == nil and kw_pair?(item) ->
+        collect_trailing_keywords(rest, [item | acc_pairs], nil)
+
+      base_kw_list == nil and is_list(item) and keyword_list?(item) ->
+        # Found a base keyword list; absorb preceding keyword pairs into it
+        {leading_rev, combined} = absorb_preceding_pairs(rest, item)
+        {leading_rev, acc_pairs, combined}
+
+      true ->
+        {[item | rest], acc_pairs, base_kw_list}
+    end
+  end
+
+  defp collect_trailing_keywords([], acc_pairs, base_kw_list) do
+    {[], acc_pairs, base_kw_list}
+  end
+
+  defp keyword_list?(list) when is_list(list) do
+    Enum.all?(list, &kw_pair?/1)
+  end
+
+  defp absorb_preceding_pairs([pair | rest], list) do
+    if kw_pair?(pair) do
+      absorb_preceding_pairs(rest, [pair | list])
+    else
+      {[pair | rest], list}
+    end
+  end
+
+  defp absorb_preceding_pairs([], list), do: {[], list}
+
+  defp kw_pair?({key, _value}) when is_atom(key), do: true
+
+  defp kw_pair?({{{:., _, [:erlang, :binary_to_atom]}, _, [_bin, :utf8]}, _value}), do: true
+
+  defp kw_pair?(_), do: false
 
   defp parse_lone_identifier(%{current_token: {_type, token_meta, token}} = parser) do
     trace "parse_lone_identifier", trace_meta(parser) do
@@ -3365,16 +3432,37 @@ defmodule Spitfire do
     %{parser | nesting: nesting + 1}
   end
 
+  # Normalize ranged meta: {{line, col}, {end_line, end_col}, extra}
+  defp encode_literal(%{literal_encoder: encoder} = parser, literal, {{line, col}, _end_pos, _extra})
+       when is_function(encoder) do
+    meta = additional_meta(literal, parser) ++ [line: line, column: col]
+
+    case parser.literal_encoder.(literal, meta) do
+      {:ok, ast} -> ast
+      {:error, reason} -> Logger.error(reason); literal
+    end
+  end
+
+  # Legacy meta shape: {line, col, extra}
   defp encode_literal(%{literal_encoder: encoder} = parser, literal, {line, col, _}) when is_function(encoder) do
     meta = additional_meta(literal, parser) ++ [line: line, column: col]
 
     case parser.literal_encoder.(literal, meta) do
-      {:ok, ast} ->
-        ast
+      {:ok, ast} -> ast
+      {:error, reason} -> Logger.error(reason); literal
+    end
+  end
 
-      {:error, reason} ->
-        Logger.error(reason)
-        literal
+  # Keyword meta (e.g., from linearized starts) with :line/:column
+  defp encode_literal(%{literal_encoder: encoder} = parser, literal, meta_kw)
+       when is_function(encoder) and is_list(meta_kw) do
+    line = Keyword.get(meta_kw, :line)
+    col = Keyword.get(meta_kw, :column)
+    meta = additional_meta(literal, parser) ++ [line: line, column: col]
+
+    case parser.literal_encoder.(literal, meta) do
+      {:ok, ast} -> ast
+      {:error, reason} -> Logger.error(reason); literal
     end
   end
 
@@ -3391,6 +3479,24 @@ defmodule Spitfire do
   end
 
   defp additional_meta(_, %{current_token: {type, _, indent, _token}}) when type in [:list_heredoc] do
+    [delimiter: ~s"'''", indentation: indent]
+  end
+
+  # For charlist literals, prefer delimiter metadata over closing
+  defp additional_meta(literal, %{current_token: {:list_string, _, _}}) when is_list(literal) do
+    [delimiter: "'"]
+  end
+
+  defp additional_meta(literal, %{current_token: {:list_string_end, _, _}}) when is_list(literal) do
+    [delimiter: "'"]
+  end
+
+  # For charlist heredoc literals from Toxic, attach delimiter and indentation
+  defp additional_meta(literal, %{current_token: {:list_heredoc_end, _, _delim, indent}}) when is_list(literal) do
+    [delimiter: ~s"'''", indentation: indent]
+  end
+
+  defp additional_meta(literal, %{current_token: {:list_heredoc_end, _, indent}}) when is_list(literal) do
     [delimiter: ~s"'''", indentation: indent]
   end
 
@@ -3415,6 +3521,44 @@ defmodule Spitfire do
 
   defp additional_meta(_, %{current_token: {type, _, indent, _token}}) when type in [:bin_heredoc] do
     [delimiter: ~s'"""', indentation: indent]
+  end
+
+  # Delimiter for linearized end tokens
+  defp additional_meta(_, %{current_token: {:bin_string_end, _, _}}) do
+    [delimiter: ~s'"']
+  end
+
+  defp additional_meta(_, %{current_token: {:list_string_end, _, _}}) do
+    [delimiter: "'"]
+  end
+
+  # Toxic heredoc ends may carry both delimiter and indentation as a 4-tuple
+  defp additional_meta(_, %{current_token: {:bin_heredoc_end, _, _delim, indent}}) do
+    [delimiter: ~s'"""', indentation: indent]
+  end
+
+  defp additional_meta(_, %{current_token: {:list_heredoc_end, _, _delim, indent}}) do
+    [delimiter: ~s"'''", indentation: indent]
+  end
+
+  # Fallback 3-tuple shapes (if any)
+  defp additional_meta(_, %{current_token: {:bin_heredoc_end, _, indent}}) do
+    [delimiter: ~s'"""', indentation: indent]
+  end
+
+  defp additional_meta(_, %{current_token: {:list_heredoc_end, _, indent}}) do
+    [delimiter: ~s"'''", indentation: indent]
+  end
+
+  # Delimiter for linearized quoted atoms (safe/unsafe end tokens)
+  defp additional_meta(_, %{current_token: {type, _, h}})
+       when type in [:atom_safe_end, :atom_unsafe_end] and is_integer(h) do
+    [delimiter: <<h>>]
+  end
+
+  defp additional_meta(_, %{current_token: {type, _, d}})
+       when type in [:atom_safe_end, :atom_unsafe_end] and is_binary(d) do
+    [delimiter: d]
   end
 
   defp additional_meta(_literal, %{current_token: {:char, _, token}}) do

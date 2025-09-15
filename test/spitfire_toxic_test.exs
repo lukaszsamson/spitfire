@@ -2239,6 +2239,7 @@ defmodule SpitfireToxicTest do
         ~S'"foo"',
         ~S"'foo'",
         ~S':"foo"',
+        ~S":'foo'",
         ~S":foo",
         ~S'''
         """
