@@ -414,6 +414,10 @@ defmodule SpitfireToxicTest do
       code = "\"\"\"\nfoo\#{1}bar\n  \"\"\""
 
       assert Spitfire.parse(code) == s2q(code)
+
+      code = "\"\"\"\n  \#{inspect(date1)} with \#{inspect(date2)}\n  \"\"\""
+
+      assert Spitfire.parse(code) == s2q(code)
     end
 
     test "charlist heredoc" do
