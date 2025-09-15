@@ -3529,6 +3529,55 @@ defmodule SpitfireToxicTest do
     end
   end
 
+  @regressions ["/Users/lukaszsamson/elixir/lib/eex/test/eex_test.exs",
+ "/Users/lukaszsamson/elixir/lib/elixir/lib/access.ex",
+ "/Users/lukaszsamson/elixir/lib/elixir/lib/calendar/date.ex",
+ "/Users/lukaszsamson/elixir/lib/elixir/lib/calendar/naive_datetime.ex",
+ "/Users/lukaszsamson/elixir/lib/elixir/lib/module/types/expr.ex",
+ "/Users/lukaszsamson/elixir/lib/elixir/lib/module/types/helpers.ex",
+ "/Users/lukaszsamson/elixir/lib/elixir/lib/module/types/of.ex",
+ "/Users/lukaszsamson/elixir/lib/ex_unit/lib/ex_unit/assertions.ex",
+ "/Users/lukaszsamson/elixir/lib/ex_unit/test/ex_unit/doc_test_test.exs",
+ "/Users/lukaszsamson/elixir/lib/logger/lib/logger.ex",
+ "/Users/lukaszsamson/elixir/lib/mix/lib/mix/local.ex",
+ "/Users/lukaszsamson/elixir/lib/mix/lib/mix/local/installer.ex",
+ "/Users/lukaszsamson/elixir/lib/mix/lib/mix/scm/path.ex",
+ "/Users/lukaszsamson/elixir/lib/mix/lib/mix/sync/lock.ex",
+ "/Users/lukaszsamson/elixir/lib/mix/lib/mix/tasks/app.config.ex",
+ "/Users/lukaszsamson/elixir/lib/mix/lib/mix/tasks/loadconfig.ex",
+ "/Users/lukaszsamson/elixir/lib/mix/lib/mix/tasks/local.rebar.ex",
+ "/Users/lukaszsamson/elixir/lib/mix/lib/mix/tasks/release.ex",
+ "/Users/lukaszsamson/elixir/lib/mix/lib/mix/utils.ex"]
+
+ test "regressions" do
+  # file = "/Users/lukaszsamson/elixir/lib/elixir/lib/calendar/date.ex"
+  file = __DIR__ <> "/repro.ex"
+  code = file |> File.read!()
+
+  assert Spitfire.parse(code) == s2q(code)
+ end
+
+  test "elixir sources" do
+    files =
+        Enum.module_info()[:compile][:source]
+        |> Path.join("../../..")
+        |> Path.expand()
+        |> Path.join("**/*.ex*")
+        |> Path.wildcard()
+
+      for file <- files do
+
+        code = file |> File.read!()
+        # lines = String.split(source, "\n")
+        # assert Spitfire.parse(code) == s2q(code)
+        res = Spitfire.parse(code) == s2q(code)
+        if not(res) do
+        IO.puts(file)
+        end
+        # assert res
+      end
+  end
+
   defp s2q(code, opts \\ []) do
     Code.string_to_quoted(
       code,
