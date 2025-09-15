@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Read(//Users/lukaszsamson/claude_fun/toxic/**)",
-      "Bash(mix test:*)"
+      "Bash(mix test:*)",
+      "Bash(elixir:*)"
     ],
     "deny": [],
     "ask": []
