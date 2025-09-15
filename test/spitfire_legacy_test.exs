@@ -2046,7 +2046,9 @@ defmodule SpitfireLegacyTest do
       code = "foo $bar, baz"
 
       assert Spitfire.parse(code) ==
-               {:error, {:foo, [line: 1, column: 1], [{:__block__, [error: true, line: 1, column: 5], []}]},
+               {:error,
+                {:foo, [line: 1, column: 1],
+                 [{:__block__, [error: true, line: 1, column: 5], []}]},
                 [{[line: 1, column: 5], "unknown token: %"}]}
     end
 
@@ -2059,9 +2061,16 @@ defmodule SpitfireLegacyTest do
       assert Spitfire.parse(code) ==
                {:error,
                 {:<<>>,
-                 [{:end_of_expression, [newlines: 1, line: 2, column: 4]}, {:closing, []}, {:line, 1}, {:column, 1}],
-                 [{:"::", [newlines: 1, line: 1, column: 6], [{:one, [line: 1, column: 3], nil}, :ok]}]},
-                [{[line: 1, column: 1], "missing closing brackets for bitstring"}]}
+                 [
+                   {:end_of_expression, [newlines: 1, line: 2, column: 4]},
+                   {:closing, []},
+                   {:line, 1},
+                   {:column, 1}
+                 ],
+                 [
+                   {:"::", [newlines: 1, line: 1, column: 6],
+                    [{:one, [line: 1, column: 3], nil}, :ok]}
+                 ]}, [{[line: 1, column: 1], "missing closing brackets for bitstring"}]}
     end
 
     test "missing closing parentheses" do
@@ -2070,8 +2079,10 @@ defmodule SpitfireLegacyTest do
       assert Spitfire.parse(code) ==
                {
                  :error,
-                 {{:*, [line: 1, column: 3], [1, {:__block__, [error: true, line: 1, column: 3], []}]},
-                  [{:closing, [line: 1, column: 10]}, {:line, 1}, {:column, 3}], [{:+, [line: 1, column: 8], [2, 3]}]},
+                 {{:*, [line: 1, column: 3],
+                   [1, {:__block__, [error: true, line: 1, column: 3], []}]},
+                  [{:closing, [line: 1, column: 10]}, {:line, 1}, {:column, 3}],
+                  [{:+, [line: 1, column: 8], [2, 3]}]},
                  [
                    {[line: 1, column: 3], "malformed right-hand side of * operator"},
                    {[line: 1, column: 3], "missing closing parentheses for function invocation"}
@@ -2092,7 +2103,8 @@ defmodule SpitfireLegacyTest do
       """
 
       assert Spitfire.parse(code) ==
-               {:error, {:__block__, [], [[1], :ok]}, [{[line: 1, column: 1], "missing closing bracket for list"}]}
+               {:error, {:__block__, [], [[1], :ok]},
+                [{[line: 1, column: 1], "missing closing bracket for list"}]}
 
       code = """
       [1, 2, 3,,
@@ -2118,7 +2130,13 @@ defmodule SpitfireLegacyTest do
                {:error,
                 {:__block__, [],
                  [
-                   {:{}, [end_of_expression: [newlines: 1, line: 1, column: 3], closing: [], line: 1, column: 1], [1]},
+                   {:{},
+                    [
+                      end_of_expression: [newlines: 1, line: 1, column: 3],
+                      closing: [],
+                      line: 1,
+                      column: 1
+                    ], [1]},
                    :ok
                  ]}, [{[line: 1, column: 1], "missing closing brace for tuple"}]}
     end
@@ -2136,14 +2154,16 @@ defmodule SpitfireLegacyTest do
     test "missing comma in list" do
       code = ~S'[:foo :bar, :baz]'
 
-      assert Spitfire.parse(code) == {:error, [:foo, :baz], [{[line: 1, column: 7], "syntax error"}]}
+      assert Spitfire.parse(code) ==
+               {:error, [:foo, :baz], [{[line: 1, column: 7], "syntax error"}]}
     end
 
     test "missing comma in map" do
       code = ~S'%{foo: :bar baz: :boo}'
 
       assert Spitfire.parse(code) ==
-               {:error, {:%{}, [{:closing, [line: 1, column: 22]}, line: 1, column: 1], [foo: :bar]},
+               {:error,
+                {:%{}, [{:closing, [line: 1, column: 22]}, line: 1, column: 1], [foo: :bar]},
                 [
                   {[line: 1, column: 13], "syntax error"},
                   {[line: 1, column: 18], "syntax error"}
@@ -2153,7 +2173,8 @@ defmodule SpitfireLegacyTest do
     test "missing comma in tuple" do
       code = ~S'{:foo :bar, :baz}'
 
-      assert Spitfire.parse(code) == {:error, {:foo, :baz}, [{[line: 1, column: 7], "syntax error"}]}
+      assert Spitfire.parse(code) ==
+               {:error, {:foo, :baz}, [{[line: 1, column: 7], "syntax error"}]}
     end
 
     test "missing end in block" do
@@ -2184,7 +2205,12 @@ defmodule SpitfireLegacyTest do
                            {
                              :.,
                              [line: 2, column: 7],
-                             [{:__aliases__, [{:last, [line: 2, column: 3]}, {:line, 2}, {:column, 3}], [:Some]}, :thing]
+                             [
+                               {:__aliases__,
+                                [{:last, [line: 2, column: 3]}, {:line, 2}, {:column, 3}],
+                                [:Some]},
+                               :thing
+                             ]
                            },
                            [
                              {:end_of_expression, [newlines: 1, line: 2, column: 15]},
@@ -2241,7 +2267,11 @@ defmodule SpitfireLegacyTest do
                              {:__block__, [],
                               [
                                 {{:., [line: 3, column: 9],
-                                  [{:__aliases__, [last: [line: 3, column: 5], line: 3, column: 5], [:Some]}, :thing]},
+                                  [
+                                    {:__aliases__,
+                                     [last: [line: 3, column: 5], line: 3, column: 5], [:Some]},
+                                    :thing
+                                  ]},
                                  [
                                    end_of_expression: [newlines: 1, line: 3, column: 17],
                                    closing: [line: 3, column: 16],
@@ -2281,7 +2311,8 @@ defmodule SpitfireLegacyTest do
                       column: 1
                     ],
                     [
-                      {:+, [line: 1, column: 7], [1, {:__block__, [error: true, line: 1, column: 7], []}]}
+                      {:+, [line: 1, column: 7],
+                       [1, {:__block__, [error: true, line: 1, column: 7], []}]}
                     ]},
                    {:bar,
                     [
@@ -2310,7 +2341,8 @@ defmodule SpitfireLegacyTest do
                   {:+, [newlines: 2, line: 1, column: 7],
                    [
                      1,
-                     {:bar, [{:closing, [line: 3, column: 8]}, line: 3, column: 1], [{:two, [line: 3, column: 5], nil}]}
+                     {:bar, [{:closing, [line: 3, column: 8]}, line: 3, column: 1],
+                      [{:two, [line: 3, column: 5], nil}]}
                    ]}
                 ]},
                [{[line: 1, column: 4], "missing closing parentheses for function invocation"}]
@@ -2335,7 +2367,10 @@ defmodule SpitfireLegacyTest do
                    {:new_list, [line: 1, column: 1], nil},
                    {
                      {:., [line: 2, column: 7],
-                      [{:__aliases__, [last: [line: 2, column: 3], line: 2, column: 3], [:Enum]}, :map]},
+                      [
+                        {:__aliases__, [last: [line: 2, column: 3], line: 2, column: 3], [:Enum]},
+                        :map
+                      ]},
                      [line: 2, column: 8],
                      [
                        {:some_list, [line: 2, column: 12], nil},
@@ -2354,7 +2389,11 @@ defmodule SpitfireLegacyTest do
                                   {:closing, [line: 5, column: 19]},
                                   {:line, 5},
                                   {:column, 1}
-                                ], [{:pid, [line: 5, column: 6], nil}, {:new_list, [line: 5, column: 11], nil}]}
+                                ],
+                                [
+                                  {:pid, [line: 5, column: 6], nil},
+                                  {:new_list, [line: 5, column: 11], nil}
+                                ]}
                              ]
                            }
                          ]
@@ -2407,8 +2446,16 @@ defmodule SpitfireLegacyTest do
                          :__block__,
                          [],
                          [
-                           {:import, [end_of_expression: [newlines: 2, line: 2, column: 13], line: 2, column: 3],
-                            [{:__aliases__, [last: [line: 2, column: 10], line: 2, column: 10], [:Baz]}]},
+                           {:import,
+                            [
+                              end_of_expression: [newlines: 2, line: 2, column: 13],
+                              line: 2,
+                              column: 3
+                            ],
+                            [
+                              {:__aliases__, [last: [line: 2, column: 10], line: 2, column: 10],
+                               [:Baz]}
+                            ]},
                            {
                              :def,
                              [
@@ -2424,8 +2471,12 @@ defmodule SpitfireLegacyTest do
                                  do:
                                    {:__block__, [],
                                     [
-                                      {:=, [end_of_expression: [newlines: 1, line: 5, column: 14], line: 5, column: 9],
-                                       [{:var, [line: 5, column: 5], nil}, 123]},
+                                      {:=,
+                                       [
+                                         end_of_expression: [newlines: 1, line: 5, column: 14],
+                                         line: 5,
+                                         column: 9
+                                       ], [{:var, [line: 5, column: 5], nil}, 123]},
                                       {:{},
                                        [
                                          {:end_of_expression, [newlines: 1, line: 6, column: 6]},
@@ -2443,7 +2494,11 @@ defmodule SpitfireLegacyTest do
                               {:end, [line: 11, column: 3]},
                               {:line, 9},
                               {:column, 3}
-                            ], [{:local_function, [line: 9, column: 7], nil}, [do: {:__block__, [], []}]]}
+                            ],
+                            [
+                              {:local_function, [line: 9, column: 7], nil},
+                              [do: {:__block__, [], []}]
+                            ]}
                          ]
                        }
                      ]
@@ -2490,8 +2545,16 @@ defmodule SpitfireLegacyTest do
                          :__block__,
                          [],
                          [
-                           {:import, [end_of_expression: [newlines: 2, line: 2, column: 13], line: 2, column: 3],
-                            [{:__aliases__, [last: [line: 2, column: 10], line: 2, column: 10], [:Baz]}]},
+                           {:import,
+                            [
+                              end_of_expression: [newlines: 2, line: 2, column: 13],
+                              line: 2,
+                              column: 3
+                            ],
+                            [
+                              {:__aliases__, [last: [line: 2, column: 10], line: 2, column: 10],
+                               [:Baz]}
+                            ]},
                            {
                              :def,
                              [
@@ -2507,9 +2570,14 @@ defmodule SpitfireLegacyTest do
                                  do:
                                    {:__block__, [],
                                     [
-                                      {:=, [end_of_expression: [newlines: 1, line: 5, column: 14], line: 5, column: 9],
-                                       [{:var, [line: 5, column: 5], nil}, 123]},
-                                      {:{}, [closing: [], line: 6, column: 5], [{:var, [line: 6, column: 6], nil}]}
+                                      {:=,
+                                       [
+                                         end_of_expression: [newlines: 1, line: 5, column: 14],
+                                         line: 5,
+                                         column: 9
+                                       ], [{:var, [line: 5, column: 5], nil}, 123]},
+                                      {:{}, [closing: [], line: 6, column: 5],
+                                       [{:var, [line: 6, column: 6], nil}]}
                                     ]}
                                ]
                              ]
@@ -2521,7 +2589,11 @@ defmodule SpitfireLegacyTest do
                               {:end, [line: 11, column: 3]},
                               {:line, 9},
                               {:column, 3}
-                            ], [{:local_function, [line: 9, column: 7], nil}, [do: {:__block__, [], []}]]}
+                            ],
+                            [
+                              {:local_function, [line: 9, column: 7], nil},
+                              [do: {:__block__, [], []}]
+                            ]}
                          ]
                        }
                      ]
@@ -2583,12 +2655,14 @@ defmodule SpitfireLegacyTest do
                          [foo: {:s, [line: 2, column: 8], nil}]
                        ]}
                     ]},
-                   {:s, [end_of_expression: [newlines: 1, line: 3, column: 13], line: 2, column: 8],
+                   {:s,
+                    [end_of_expression: [newlines: 1, line: 3, column: 13], line: 2, column: 8],
                     [{:__cursor__, [closing: [line: 3, column: 12], line: 3, column: 1], []}]},
                    {:__block__, [error: true, line: 4, column: 1], []},
                    {{:., [line: 5, column: 15],
                      [
-                       {:__aliases__, [last: [line: 5, column: 12], line: 5, column: 8], [:Foo, :Bar]},
+                       {:__aliases__, [last: [line: 5, column: 12], line: 5, column: 8],
+                        [:Foo, :Bar]},
                        :load
                      ]}, [closing: [line: 5, column: 41], line: 5, column: 16],
                     [
@@ -2650,8 +2724,16 @@ defmodule SpitfireLegacyTest do
                        :__block__,
                        [],
                        [
-                         {:import, [end_of_expression: [newlines: 2, line: 2, column: 13], line: 2, column: 3],
-                          [{:__aliases__, [last: [line: 2, column: 10], line: 2, column: 10], [:Baz]}]},
+                         {:import,
+                          [
+                            end_of_expression: [newlines: 2, line: 2, column: 13],
+                            line: 2,
+                            column: 3
+                          ],
+                          [
+                            {:__aliases__, [last: [line: 2, column: 10], line: 2, column: 10],
+                             [:Baz]}
+                          ]},
                          {
                            :def,
                            [
@@ -2667,8 +2749,12 @@ defmodule SpitfireLegacyTest do
                                do:
                                  {:__block__, [],
                                   [
-                                    {:=, [end_of_expression: [newlines: 1, line: 5, column: 14], line: 5, column: 9],
-                                     [{:var, [line: 5, column: 5], nil}, 123]},
+                                    {:=,
+                                     [
+                                       end_of_expression: [newlines: 1, line: 5, column: 14],
+                                       line: 5,
+                                       column: 9
+                                     ], [{:var, [line: 5, column: 5], nil}, 123]},
                                     [{:var, [line: 6, column: 6], nil}]
                                   ]}
                              ]
@@ -2681,7 +2767,11 @@ defmodule SpitfireLegacyTest do
                             {:end, [line: 11, column: 3]},
                             {:line, 9},
                             {:column, 3}
-                          ], [{:local_function, [line: 9, column: 7], nil}, [do: {:__block__, [], []}]]}
+                          ],
+                          [
+                            {:local_function, [line: 9, column: 7], nil},
+                            [do: {:__block__, [], []}]
+                          ]}
                        ]
                      }
                    ]
@@ -2703,17 +2793,29 @@ defmodule SpitfireLegacyTest do
 
       assert result == {
                :error,
-               {:defmodule, [do: [line: 1, column: 20], end: [line: 1, column: 20], line: 1, column: 1],
+               {:defmodule,
+                [do: [line: 1, column: 20], end: [line: 1, column: 20], line: 1, column: 1],
                 [
                   {:__aliases__, [last: [line: 1, column: 11], line: 1, column: 11], [:MyModule]},
                   [
                     do:
                       {:__block__, [],
                        [
-                         {:import, [end_of_expression: [newlines: 1, line: 2, column: 14], line: 2, column: 3],
-                          [{:__aliases__, [last: [line: 2, column: 10], line: 2, column: 10], [:List]}]},
+                         {:import,
+                          [
+                            end_of_expression: [newlines: 1, line: 2, column: 14],
+                            line: 2,
+                            column: 3
+                          ],
+                          [
+                            {:__aliases__, [last: [line: 2, column: 10], line: 2, column: 10],
+                             [:List]}
+                          ]},
                          {:=, [line: 3, column: 7],
-                          [{:var, [line: 3, column: 3], nil}, {:__block__, [error: true, line: 3, column: 7], []}]}
+                          [
+                            {:var, [line: 3, column: 3], nil},
+                            {:__block__, [error: true, line: 3, column: 7], []}
+                          ]}
                        ]}
                   ]
                 ]},
@@ -2778,7 +2880,8 @@ defmodule SpitfireLegacyTest do
       '''
 
       assert {:ok,
-              {:defmodule, [do: [line: 1, column: 15], end: [line: 3, column: 16], line: 1, column: 1],
+              {:defmodule,
+               [do: [line: 1, column: 15], end: [line: 3, column: 16], line: 1, column: 1],
                [
                  {:__aliases__, [last: [line: 1, column: 11], line: 1, column: 11], [:Foo]},
                  [
@@ -2793,7 +2896,9 @@ defmodule SpitfireLegacyTest do
                       [
                         {:foo, [closing: [line: 2, column: 11], line: 2, column: 7], []},
                         [
-                          do: {:__cursor__, [closing: [line: 3, column: 12], line: 3, column: 1], []}
+                          do:
+                            {:__cursor__, [closing: [line: 3, column: 12], line: 3, column: 1],
+                             []}
                         ]
                       ]}
                  ]
@@ -2809,7 +2914,8 @@ defmodule SpitfireLegacyTest do
       '''
 
       assert {:ok,
-              {:defmodule, [do: [line: 1, column: 15], end: [line: 4, column: 17], line: 1, column: 1],
+              {:defmodule,
+               [do: [line: 1, column: 15], end: [line: 4, column: 17], line: 1, column: 1],
                [
                  {:__aliases__, [last: [line: 1, column: 11], line: 1, column: 11], [:Foo]},
                  [
@@ -2825,7 +2931,9 @@ defmodule SpitfireLegacyTest do
                         {:foo, [closing: [line: 2, column: 11], line: 2, column: 7], []},
                         [
                           do: [
-                            foo: {:__cursor__, [closing: [line: 4, column: 12], line: 4, column: 1], []}
+                            foo:
+                              {:__cursor__, [closing: [line: 4, column: 12], line: 4, column: 1],
+                               []}
                           ]
                         ]
                       ]}
@@ -2862,7 +2970,11 @@ defmodule SpitfireLegacyTest do
                         [
                           do: {
                             {:., [line: 3, column: 9],
-                             [{:__aliases__, [last: [line: 3, column: 5], line: 3, column: 5], [:Enum]}, :map]},
+                             [
+                               {:__aliases__, [last: [line: 3, column: 5], line: 3, column: 5],
+                                [:Enum]},
+                               :map
+                             ]},
                             [closing: [line: 9, column: 19], line: 3, column: 10],
                             [
                               {:items, [line: 3, column: 14], nil},
@@ -2887,11 +2999,17 @@ defmodule SpitfireLegacyTest do
                                           {:i, [line: 4, column: 12], nil},
                                           [
                                             do: [
-                                              {:->, [newlines: 1, line: 5, column: 13], [[:ok], :ok]},
+                                              {:->, [newlines: 1, line: 5, column: 13],
+                                               [[:ok], :ok]},
                                               {:->, [newlines: 1, line: 8, column: 16],
                                                [
                                                  [{:error, [line: 8, column: 10], nil}],
-                                                 {:__cursor__, [closing: [line: 9, column: 12], line: 9, column: 1], []}
+                                                 {:__cursor__,
+                                                  [
+                                                    closing: [line: 9, column: 12],
+                                                    line: 9,
+                                                    column: 1
+                                                  ], []}
                                                ]}
                                             ]
                                           ]
@@ -2913,7 +3031,10 @@ defmodule SpitfireLegacyTest do
   end
 
   defp s2q(code, opts \\ []) do
-    Code.string_to_quoted(code, Keyword.merge([columns: true, token_metadata: true, emit_warnings: false], opts))
+    Code.string_to_quoted(
+      code,
+      Keyword.merge([columns: true, token_metadata: true, emit_warnings: false], opts)
+    )
   end
 
   defp s2qwc(code, opts \\ []) do

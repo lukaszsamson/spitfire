@@ -127,7 +127,8 @@ defmodule Spitfire do
     at_op: @at_op
   }
 
-  @spec parse(String.t(), Keyword.t()) :: {:ok, Macro.t()} | {:error, :no_fuel_remaining} | {:error, Macro.t(), list()}
+  @spec parse(String.t(), Keyword.t()) ::
+          {:ok, Macro.t()} | {:error, :no_fuel_remaining} | {:error, Macro.t(), list()}
   def parse(code, opts \\ []) do
     parser = code |> new(opts) |> next_token() |> next_token()
 
@@ -244,7 +245,16 @@ defmodule Spitfire do
     end
   end
 
-  defp(parse_expression(parser, assoc \\ @lowest, is_list \\ false, is_map \\ false, is_top \\ false, is_stab \\ false))
+  defp(
+    parse_expression(
+      parser,
+      assoc \\ @lowest,
+      is_list \\ false,
+      is_map \\ false,
+      is_top \\ false,
+      is_stab \\ false
+    )
+  )
 
   defp parse_expression(parser, {associativity, precedence}, is_list, is_map, is_top, is_stab) do
     trace "parse_expression", trace_meta(parser) do
@@ -328,7 +338,8 @@ defmodule Spitfire do
         {parser, is_valid} = validate_peek(parser, current_token_type(parser))
 
         if is_valid do
-          while (is_nil(Map.get(parser, :stab_state)) and not MapSet.member?(terminals, peek_token(parser))) &&
+          while (is_nil(Map.get(parser, :stab_state)) and
+                   not MapSet.member?(terminals, peek_token(parser))) &&
                   (current_token(parser) != :do and peek_token(parser) != :eol) &&
                   calc_prec(parser, associativity, precedence) <- {left, parser} do
             parser = consume_fuel(parser)
@@ -387,7 +398,8 @@ defmodule Spitfire do
         else
           {left, parser}
         end
-      end |> tap(fn {v, p} -> IO.puts("current_token: #{inspect(p.current_token)}") end)
+      end
+      |> tap(fn {v, p} -> IO.puts("current_token: #{inspect(p.current_token)}") end)
     end
   end
 
@@ -412,7 +424,8 @@ defmodule Spitfire do
 
         cond do
           # if the next token is the closing paren or if the next token is a newline and the next next token is the closing paren
-          peek_token(parser) == :")" || (peek_token(parser) == :eol && peek_token(next_token(parser)) == :")") ->
+          peek_token(parser) == :")" ||
+              (peek_token(parser) == :eol && peek_token(next_token(parser)) == :")") ->
             parser =
               parser
               |> Map.put(:nesting, old_nesting)
@@ -448,7 +461,8 @@ defmodule Spitfire do
             # second conditon checks of the next next token is a closing paren or another expression
             {exprs, parser} =
               while2 current_token(parser) == :-> ||
-                       (peek_token(parser) == :eol && parser |> next_token() |> peek_token() != :")") <- parser do
+                       (peek_token(parser) == :eol &&
+                          parser |> next_token() |> peek_token() != :")") <- parser do
                 {ast, parser} =
                   case Map.get(parser, :stab_state) do
                     %{ast: lhs} ->
@@ -809,7 +823,8 @@ defmodule Spitfire do
           parser = Map.put(parser, :nesting, 0)
 
           {exprs, parser} =
-            while2 Map.get(parser, :stab_state) == nil and peek_token(parser) not in [:eof, :end, :")", :block_identifier] <-
+            while2 Map.get(parser, :stab_state) == nil and
+                     peek_token(parser) not in [:eof, :end, :")", :block_identifier] <-
                      parser do
               parser = next_token(parser)
               {ast, parser} = parse_expression(parser, @lowest, false, false, true, true)
@@ -829,7 +844,8 @@ defmodule Spitfire do
 
           meta =
             case lhs do
-              {type, [{:parens, _parens} = paren_meta | _], _} when type in [:__block__, :comma] ->
+              {type, [{:parens, _parens} = paren_meta | _], _}
+              when type in [:__block__, :comma] ->
                 [paren_meta | meta]
 
               _ ->
@@ -885,7 +901,9 @@ defmodule Spitfire do
       {rhs, parser} =
         case rhs do
           {:__block__, [{:error, true} | _], []} ->
-            parser = put_error(pre_parser, {meta, "malformed right-hand side of #{token} operator"})
+            parser =
+              put_error(pre_parser, {meta, "malformed right-hand side of #{token} operator"})
+
             {{:__block__, [{:error, true} | meta], []}, parser}
 
           _ ->
@@ -1116,6 +1134,7 @@ defmodule Spitfire do
           # Handle remote calls with quoted identifiers: D."foo", D."foo"(1), D."foo"[1], D."foo" + 1, D."foo" do ... end
           parser = next_token(parser)
           id_start_meta = current_meta(parser)
+
           delim_str =
             case parser.current_token do
               {:quoted_identifier_start, _m, h} when is_integer(h) -> <<h>>
@@ -1128,7 +1147,9 @@ defmodule Spitfire do
           parser = next_token(parser)
           {parts, parser, end_type} = scan_linearized_identifier(parser)
           content = build_identifier_content(parts)
-          callee_atom = if is_binary(content), do: String.to_atom(content), else: :interpolated_identifier
+
+          callee_atom =
+            if is_binary(content), do: String.to_atom(content), else: :interpolated_identifier
 
           base_call_meta = [{:delimiter, delim_str} | id_start_meta]
 
@@ -1143,8 +1164,14 @@ defmodule Spitfire do
               case current_token(parser1) do
                 :"(" ->
                   {{lhs_dot, call_meta, args}, parser2} = parse_call_expression(parser1, dot_ast)
+
                   # Preserve newlines and closing from call_meta, but replace base meta with base_call_meta
-                  newlines = case Keyword.get(call_meta, :newlines) do nil -> []; nl -> [newlines: nl] end
+                  newlines =
+                    case Keyword.get(call_meta, :newlines) do
+                      nil -> []
+                      nl -> [newlines: nl]
+                    end
+
                   closing = Keyword.get(call_meta, :closing)
                   new_meta = newlines ++ [{:closing, closing} | base_call_meta]
                   {{lhs_dot, new_meta, args}, parser2}
@@ -1162,7 +1189,9 @@ defmodule Spitfire do
               parser1 = next_token(parser)
 
               case current_token(parser1) do
-                :"[" -> parse_access_expression(parser1, base_ast)
+                :"[" ->
+                  parse_access_expression(parser1, base_ast)
+
                 _ ->
                   ast = put_elem(base_ast, 1, [no_parens: true] ++ base_call_meta)
                   {ast, parser1}
@@ -1172,8 +1201,11 @@ defmodule Spitfire do
               # Expect a following :do; otherwise fall back to no-parens call-site.
               base_ast = {{token, meta, [lhs, callee_atom]}, base_call_meta, []}
               parser1 = next_token(parser)
+
               case current_token_type(parser1) do
-                :do -> parse_do_block(parser1, base_ast)
+                :do ->
+                  parse_do_block(parser1, base_ast)
+
                 _ ->
                   ast = put_elem(base_ast, 1, [no_parens: true] ++ base_call_meta)
                   {ast, parser1}
@@ -1237,7 +1269,8 @@ defmodule Spitfire do
           parser = parser |> next_token() |> eat_eol()
 
           multis =
-            {{:., dot_meta, [lhs, :{}]}, newlines ++ [{:closing, current_meta(parser)} | dot_meta], multis}
+            {{:., dot_meta, [lhs, :{}]},
+             newlines ++ [{:closing, current_meta(parser)} | dot_meta], multis}
 
           {multis, parser}
 
@@ -1267,7 +1300,8 @@ defmodule Spitfire do
         type when type in [:identifier, :paren_identifier, :do_identifier] ->
           parser = next_token(parser)
 
-          {{rhs, next_meta, args}, parser} = parse_expression(parser, precedence, false, false, false)
+          {{rhs, next_meta, args}, parser} =
+            parse_expression(parser, precedence, false, false, false)
 
           args =
             if args == nil do
@@ -1293,6 +1327,7 @@ defmodule Spitfire do
           parser = next_token(parser)
           base_meta = current_meta(parser)
           quoted? = current_token_type(parser) == :quoted_identifier_start
+
           delim_str =
             if quoted? do
               case parser.current_token do
@@ -1306,7 +1341,9 @@ defmodule Spitfire do
 
           {rhs, parser} = parse_expression(parser, @lowest, false, false, false)
 
-          call_meta = if quoted?, do: [no_parens: true, delimiter: delim_str] ++ base_meta, else: base_meta
+          call_meta =
+            if quoted?, do: [no_parens: true, delimiter: delim_str] ++ base_meta, else: base_meta
+
           ast = {{token, meta, [lhs, rhs]}, call_meta, []}
 
           {ast, parser}
@@ -1425,7 +1462,9 @@ defmodule Spitfire do
     trace "parse_atom (unsafe)", trace_meta(parser) do
       meta = current_meta(parser)
       {args, parser} = parse_interpolation(parser, tokens)
-      {{{:., meta, [:erlang, :binary_to_atom]}, [{:delimiter, ~S'"'} | meta], [{:<<>>, meta, args}, :utf8]}, parser}
+
+      {{{:., meta, [:erlang, :binary_to_atom]}, [{:delimiter, ~S'"'} | meta],
+        [{:<<>>, meta, args}, :utf8]}, parser}
     end
   end
 
@@ -1520,8 +1559,8 @@ defmodule Spitfire do
                   ast
                 end
 
-              {{:., meta, [Kernel, :to_string]}, [from_interpolation: true, closing: [line: cline, column: ccol]] ++ meta,
-               [ast]}
+              {{:., meta, [Kernel, :to_string]},
+               [from_interpolation: true, closing: [line: cline, column: ccol]] ++ meta, [ast]}
           end
         end
 
@@ -1532,11 +1571,13 @@ defmodule Spitfire do
           []
         end
 
-      {{{:., meta, [List, :to_charlist]}, [{:delimiter, ~s|'''|} | extra_meta ++ meta], [args]}, parser}
+      {{{:., meta, [List, :to_charlist]}, [{:delimiter, ~s|'''|} | extra_meta ++ meta], [args]},
+       parser}
     end
   end
 
-  defp parse_string(%{current_token: {:bin_string, meta, [string]}} = parser) when is_binary(string) do
+  defp parse_string(%{current_token: {:bin_string, meta, [string]}} = parser)
+       when is_binary(string) do
     trace "parse_string (bin_string)", trace_meta(parser) do
       string = encode_literal(parser, string, meta)
       {string, parser}
@@ -1598,8 +1639,8 @@ defmodule Spitfire do
                   ast
                 end
 
-              {{:., meta, [Kernel, :to_string]}, [from_interpolation: true, closing: [line: cline, column: ccol]] ++ meta,
-               [ast]}
+              {{:., meta, [Kernel, :to_string]},
+               [from_interpolation: true, closing: [line: cline, column: ccol]] ++ meta, [ast]}
           end
         end
 
@@ -1614,7 +1655,9 @@ defmodule Spitfire do
     end
   end
 
-  defp parse_sigil(%{current_token: {:sigil, _meta, token, tokens, mods, indentation, delimiter}} = parser) do
+  defp parse_sigil(
+         %{current_token: {:sigil, _meta, token, tokens, mods, indentation, delimiter}} = parser
+       ) do
     trace "parse_sigil", trace_meta(parser) do
       meta = current_meta(parser)
 
@@ -1692,7 +1735,9 @@ defmodule Spitfire do
             :">>" ->
               parser = eat_eol_at(parser, 1)
               parser = next_token(parser)
-              {{:<<>>, newlines ++ [{:closing, current_meta(parser)} | meta], pairs}, eat_eol(parser)}
+
+              {{:<<>>, newlines ++ [{:closing, current_meta(parser)} | meta], pairs},
+               eat_eol(parser)}
 
             _ ->
               all_pairs = pairs |> Enum.reverse() |> Enum.zip(Process.get(:comma_list_parsers))
@@ -1705,7 +1750,10 @@ defmodule Spitfire do
                    |> put_in([:current_token], {:fake_closing_bracket, nil})
                    |> put_in([:peek_token], parser.current_token)
                    |> put_in([:errors], parser_for_errors.errors)
-                   |> update_in([:stream], &Spitfire.TokenStream.push_back(&1, [parser.peek_token]))}
+                   |> update_in(
+                     [:stream],
+                     &Spitfire.TokenStream.push_back(&1, [parser.peek_token])
+                   )}
                 else
                   _ ->
                     parser = next_token(parser)
@@ -1714,7 +1762,10 @@ defmodule Spitfire do
                      parser
                      |> put_in([:current_token], {:">>", nil})
                      |> put_in([:peek_token], parser.current_token)
-                     |> update_in([:stream], &Spitfire.TokenStream.push_back(&1, [parser.peek_token]))}
+                     |> update_in(
+                       [:stream],
+                       &Spitfire.TokenStream.push_back(&1, [parser.peek_token])
+                     )}
                 end
 
               Process.put(:comma_list_parsers, old_comma_list_parsers)
@@ -1723,7 +1774,8 @@ defmodule Spitfire do
 
               {pairs, _} = pairs |> Enum.reverse() |> Enum.unzip()
 
-              {{:<<>>, newlines ++ [{:closing, current_meta(parser)} | meta], List.wrap(pairs)}, parser}
+              {{:<<>>, newlines ++ [{:closing, current_meta(parser)} | meta], List.wrap(pairs)},
+               parser}
           end
       end
     end
@@ -1823,7 +1875,8 @@ defmodule Spitfire do
         {parser, is_valid} = validate_peek(parser, current_token_type(parser))
 
         if is_valid do
-          while peek_token(parser) not in terminals && calc_prec(parser, associativity, precedence) <- {left, parser} do
+          while peek_token(parser) not in terminals &&
+                  calc_prec(parser, associativity, precedence) <- {left, parser} do
             infix =
               case peek_token_type(parser) do
                 :. -> &parse_dot_expression/2
@@ -1961,7 +2014,10 @@ defmodule Spitfire do
                      |> put_in([:current_token], {:fake_closing_brace, nil})
                      |> put_in([:peek_token], parser.current_token)
                      |> put_in([:errors], parser_for_errors.errors)
-                     |> update_in([:stream], &Spitfire.TokenStream.push_back(&1, [parser.peek_token]))}
+                     |> update_in(
+                       [:stream],
+                       &Spitfire.TokenStream.push_back(&1, [parser.peek_token])
+                     )}
                   else
                     _ ->
                       parser = next_token(parser)
@@ -1970,7 +2026,10 @@ defmodule Spitfire do
                        parser
                        |> put_in([:current_token], {:"}", nil})
                        |> put_in([:peek_token], parser.current_token)
-                       |> update_in([:stream], &Spitfire.TokenStream.push_back(&1, [parser.peek_token]))}
+                       |> update_in(
+                         [:stream],
+                         &Spitfire.TokenStream.push_back(&1, [parser.peek_token])
+                       )}
                   end
 
                 Process.put(:comma_list_parsers, old_comma_list_parsers)
@@ -2055,7 +2114,10 @@ defmodule Spitfire do
                    |> put_in([:current_token], {:fake_closing_bracket, nil})
                    |> put_in([:peek_token], parser.current_token)
                    |> put_in([:errors], parser_for_errors.errors)
-                   |> update_in([:stream], &Spitfire.TokenStream.push_back(&1, [parser.peek_token]))}
+                   |> update_in(
+                     [:stream],
+                     &Spitfire.TokenStream.push_back(&1, [parser.peek_token])
+                   )}
                 else
                   _ ->
                     parser = next_token(parser)
@@ -2064,7 +2126,10 @@ defmodule Spitfire do
                      parser
                      |> put_in([:current_token], {:"]", nil})
                      |> put_in([:peek_token], parser.current_token)
-                     |> update_in([:stream], &Spitfire.TokenStream.push_back(&1, [parser.peek_token]))}
+                     |> update_in(
+                       [:stream],
+                       &Spitfire.TokenStream.push_back(&1, [parser.peek_token])
+                     )}
                 end
 
               Process.put(:comma_list_parsers, old_comma_list_parsers)
@@ -2133,7 +2198,12 @@ defmodule Spitfire do
             end
 
           _ ->
-            parser = put_error(parser, {error_meta, "missing closing parentheses for function invocation"})
+            parser =
+              put_error(
+                parser,
+                {error_meta, "missing closing parentheses for function invocation"}
+              )
+
             {{token, newlines ++ meta, wrap_trailing_keywords(pairs)}, parser}
         end
       end
@@ -2178,7 +2248,9 @@ defmodule Spitfire do
     :when_op
   ]
 
-  @peeks MapSet.new([:";", :eol, :eof, :end, :",", :")", :do, :., :"}", :"]", :">>"] ++ @operators)
+  @peeks MapSet.new(
+           [:";", :eol, :eof, :end, :",", :")", :do, :., :"}", :"]", :">>"] ++ @operators
+         )
 
   defp parse_identifier(%{current_token: {_identifier, _, token}} = parser)
        when token in [:__MODULE__, :__ENV__, :__DIR__, :__CALLER__] do
@@ -2412,7 +2484,8 @@ defmodule Spitfire do
               {:"::", meta,
                [
                  {{:., meta, [Kernel, :to_string]},
-                  [from_interpolation: true, closing: [line: cline, column: ccol]] ++ meta, [ast]},
+                  [from_interpolation: true, closing: [line: cline, column: ccol]] ++ meta,
+                  [ast]},
                  {:binary, meta, nil}
                ]}
           end
@@ -2453,7 +2526,12 @@ defmodule Spitfire do
 
         # 2. Save and reset nesting
         saved_nesting = parser.nesting
-        parser = %{parser | nesting: 0, saved_nesting_stack: [saved_nesting | parser.saved_nesting_stack]}
+
+        parser = %{
+          parser
+          | nesting: 0,
+            saved_nesting_stack: [saved_nesting | parser.saved_nesting_stack]
+        }
 
         # 3. Consume :begin_interpolation token
         open_meta = current_meta(parser)
@@ -2463,6 +2541,7 @@ defmodule Spitfire do
 
         # 4. Parse expression with :end_interpolation as terminal (unless empty)
         empty_interp? = current_token_type(parser) == :end_interpolation
+
         {expr, parser} =
           if empty_interp? do
             {{:__block__, [], []}, parser}
@@ -2504,7 +2583,14 @@ defmodule Spitfire do
 
         # 7. Build interpolation AST based on kind
         interp_ast = build_interpolation_ast(expr, open_meta, end_meta || open_meta, kind)
-        scan_loop(parser, [{:interpolation, end_meta || open_meta, interp_ast} | accumulator], end_tokens, kind, opts)
+
+        scan_loop(
+          parser,
+          [{:interpolation, end_meta || open_meta, interp_ast} | accumulator],
+          end_tokens,
+          kind,
+          opts
+        )
 
       token ->
         if token in end_tokens do
@@ -2515,7 +2601,8 @@ defmodule Spitfire do
 
           end_info =
             case parser.current_token do
-              {t, _m, _delim, indent} when t in [:bin_heredoc_end, :list_heredoc_end, :sigil_end] ->
+              {t, _m, _delim, indent}
+              when t in [:bin_heredoc_end, :list_heredoc_end, :sigil_end] ->
                 %{indentation: indent}
 
               _ ->
@@ -2526,7 +2613,10 @@ defmodule Spitfire do
         else
           # Unexpected token - error recovery
           parser =
-            put_error(parser, {current_meta(parser), "unexpected token in #{kind}: #{current_token_type(parser)}"})
+            put_error(
+              parser,
+              {current_meta(parser), "unexpected token in #{kind}: #{current_token_type(parser)}"}
+            )
 
           {Enum.reverse(accumulator), parser, nil, nil, %{}}
         end
@@ -2677,7 +2767,12 @@ defmodule Spitfire do
           interp_ast = build_interpolation_ast(expr, open_meta, end_meta, :identifier)
           scan_identifier_loop(parser, [{:interpolation, end_meta, interp_ast} | accumulator])
         else
-          parser = put_error(parser, {current_meta(parser), "expected end of interpolation in identifier"})
+          parser =
+            put_error(
+              parser,
+              {current_meta(parser), "expected end of interpolation in identifier"}
+            )
+
           {Enum.reverse(accumulator), parser, :quoted_identifier_end}
         end
 
@@ -2696,7 +2791,11 @@ defmodule Spitfire do
       _ ->
         # Unexpected token
         parser =
-          put_error(parser, {current_meta(parser), "unexpected token in identifier: #{current_token_type(parser)}"})
+          put_error(
+            parser,
+            {current_meta(parser),
+             "unexpected token in identifier: #{current_token_type(parser)}"}
+          )
 
         {Enum.reverse(accumulator), parser, :quoted_identifier_end}
     end
@@ -2760,7 +2859,9 @@ defmodule Spitfire do
               args = build_string_parts(parts, :atom)
               binary_ast = {:<<>>, start_meta, args}
               meta_with_delimiter = [{:delimiter, ~S'"'}, {:format, :keyword} | start_meta]
-              {{:., start_meta, [:erlang, :binary_to_atom]}, meta_with_delimiter, [binary_ast, :utf8]}
+
+              {{:., start_meta, [:erlang, :binary_to_atom]}, meta_with_delimiter,
+               [binary_ast, :utf8]}
             end
 
           # We left the end token as current; consume it and eat EOLs before the value
@@ -2871,7 +2972,10 @@ defmodule Spitfire do
             # Add metadata with correct order: delimiter first, then indentation (if any)
             meta_with_indent =
               if indentation do
-                [{:delimiter, if(kind == :binary, do: ~s|"""|, else: ~s|'''|)}, {:indentation, indentation} | start_meta]
+                [
+                  {:delimiter, if(kind == :binary, do: ~s|"""|, else: ~s|'''|)},
+                  {:indentation, indentation} | start_meta
+                ]
               else
                 [{:delimiter, if(kind == :binary, do: ~s|"""|, else: ~s|'''|)} | start_meta]
               end
@@ -2906,6 +3010,7 @@ defmodule Spitfire do
         case peek_token_type(parser) do
           :sigil_modifiers ->
             parser = next_token(parser)
+
             case parser.current_token do
               {:sigil_modifiers, _meta, mods} -> {mods, parser}
               _ -> {[], parser}
@@ -3035,7 +3140,11 @@ defmodule Spitfire do
           args = build_string_parts(parts, :atom)
           binary_ast = {:<<>>, start_meta, args}
           meta_with_delimiter = [{:delimiter, delim_str} | start_meta]
-          atom_ast = {{:., start_meta, [:erlang, :binary_to_atom]}, meta_with_delimiter, [binary_ast, :utf8]}
+
+          atom_ast =
+            {{:., start_meta, [:erlang, :binary_to_atom]}, meta_with_delimiter,
+             [binary_ast, :utf8]}
+
           {atom_ast, parser}
       end
     end
@@ -3096,7 +3205,8 @@ defmodule Spitfire do
     eat_at(parser, [:eol, :";"], idx)
   end
 
-  defp eat_at(parser, tokens, idx) when is_list(tokens), do: eat_at(parser, Map.new(tokens, &{&1, true}), idx)
+  defp eat_at(parser, tokens, idx) when is_list(tokens),
+    do: eat_at(parser, Map.new(tokens, &{&1, true}), idx)
 
   defp eat_at(%{stream: stream} = parser, tokens, 1) when is_map(tokens) do
     if tokens[peek_token_type(parser)] do
@@ -3145,7 +3255,8 @@ defmodule Spitfire do
     token
   end
 
-  defp peek_token_eat_eol(%{peek_token: {type, _, _, _}}) when type in [:list_heredoc, :bin_heredoc] do
+  defp peek_token_eat_eol(%{peek_token: {type, _, _, _}})
+       when type in [:list_heredoc, :bin_heredoc] do
     type
   end
 
@@ -3181,7 +3292,9 @@ defmodule Spitfire do
     :eof
   end
 
-  defp current_token_type(%{current_token: {:sigil, _meta, _token, _tokens, _mods, _, _delimiter}}) do
+  defp current_token_type(%{
+         current_token: {:sigil, _meta, _token, _tokens, _mods, _, _delimiter}
+       }) do
     :sigil
   end
 
@@ -3229,7 +3342,9 @@ defmodule Spitfire do
     :eof
   end
 
-  defp current_token(%{current_token: {:sigil, _meta, token, _tokens, _mods, _indent, _delimiter}}) do
+  defp current_token(%{
+         current_token: {:sigil, _meta, token, _tokens, _mods, _indent, _delimiter}
+       }) do
     token
   end
 
@@ -3285,7 +3400,9 @@ defmodule Spitfire do
     token
   end
 
-  defp current_meta(%{current_token: {:sigil, {line, col, _}, _token, _tokens, _mods, _, _delimiter}}) do
+  defp current_meta(%{
+         current_token: {:sigil, {line, col, _}, _token, _tokens, _mods, _, _delimiter}
+       }) do
     [line: line, column: col]
   end
 
@@ -3333,11 +3450,13 @@ defmodule Spitfire do
     [newlines: newlines, line: line, column: col]
   end
 
-  defp current_eoe(%{current_token: {token, {{line, col}, _end_pos, _extra}, _}}) when token in [:eol, :";"] do
+  defp current_eoe(%{current_token: {token, {{line, col}, _end_pos, _extra}, _}})
+       when token in [:eol, :";"] do
     [line: line, column: col]
   end
 
-  defp current_eoe(%{current_token: {token, {{line, col}, _end_pos}, _}}) when token in [:eol, :";"] do
+  defp current_eoe(%{current_token: {token, {{line, col}, _end_pos}, _}})
+       when token in [:eol, :";"] do
     [line: line, column: col]
   end
 
@@ -3364,7 +3483,8 @@ defmodule Spitfire do
     [newlines: newlines, line: line, column: col]
   end
 
-  defp peek_eoe(%{peek_token: {token, {{line, col}, _end_pos, _extra}, _}}) when token in [:eol, :";"] do
+  defp peek_eoe(%{peek_token: {token, {{line, col}, _end_pos, _extra}, _}})
+       when token in [:eol, :";"] do
     [line: line, column: col]
   end
 
@@ -3372,7 +3492,8 @@ defmodule Spitfire do
     [line: line, column: col]
   end
 
-  defp peek_eoe(%{peek_token: {token, {line, col, newlines}}}) when token in [:eol, :";"] and is_integer(newlines) do
+  defp peek_eoe(%{peek_token: {token, {line, col, newlines}}})
+       when token in [:eol, :";"] and is_integer(newlines) do
     [newlines: newlines, line: line, column: col]
   end
 
@@ -3388,11 +3509,13 @@ defmodule Spitfire do
     nil
   end
 
-  defp current_newlines(%{current_token: {_token, {_line, _col, newlines}, _}}) when is_integer(newlines) do
+  defp current_newlines(%{current_token: {_token, {_line, _col, newlines}, _}})
+       when is_integer(newlines) do
     newlines
   end
 
-  defp current_newlines(%{current_token: {_token, {_line, _col, newlines}}}) when is_integer(newlines) do
+  defp current_newlines(%{current_token: {_token, {_line, _col, newlines}}})
+       when is_integer(newlines) do
     newlines
   end
 
@@ -3408,7 +3531,8 @@ defmodule Spitfire do
     nil
   end
 
-  defp peek_newlines(%{peek_token: {token, {_line, _col, newlines}}}, token) when is_integer(newlines) do
+  defp peek_newlines(%{peek_token: {token, {_line, _col, newlines}}}, token)
+       when is_integer(newlines) do
     newlines
   end
 
@@ -3433,23 +3557,36 @@ defmodule Spitfire do
   end
 
   # Normalize ranged meta: {{line, col}, {end_line, end_col}, extra}
-  defp encode_literal(%{literal_encoder: encoder} = parser, literal, {{line, col}, _end_pos, _extra})
+  defp encode_literal(
+         %{literal_encoder: encoder} = parser,
+         literal,
+         {{line, col}, _end_pos, _extra}
+       )
        when is_function(encoder) do
     meta = additional_meta(literal, parser) ++ [line: line, column: col]
 
     case parser.literal_encoder.(literal, meta) do
-      {:ok, ast} -> ast
-      {:error, reason} -> Logger.error(reason); literal
+      {:ok, ast} ->
+        ast
+
+      {:error, reason} ->
+        Logger.error(reason)
+        literal
     end
   end
 
   # Legacy meta shape: {line, col, extra}
-  defp encode_literal(%{literal_encoder: encoder} = parser, literal, {line, col, _}) when is_function(encoder) do
+  defp encode_literal(%{literal_encoder: encoder} = parser, literal, {line, col, _})
+       when is_function(encoder) do
     meta = additional_meta(literal, parser) ++ [line: line, column: col]
 
     case parser.literal_encoder.(literal, meta) do
-      {:ok, ast} -> ast
-      {:error, reason} -> Logger.error(reason); literal
+      {:ok, ast} ->
+        ast
+
+      {:error, reason} ->
+        Logger.error(reason)
+        literal
     end
   end
 
@@ -3461,8 +3598,12 @@ defmodule Spitfire do
     meta = additional_meta(literal, parser) ++ [line: line, column: col]
 
     case parser.literal_encoder.(literal, meta) do
-      {:ok, ast} -> ast
-      {:error, reason} -> Logger.error(reason); literal
+      {:ok, ast} ->
+        ast
+
+      {:error, reason} ->
+        Logger.error(reason)
+        literal
     end
   end
 
@@ -3478,7 +3619,8 @@ defmodule Spitfire do
     [format: :keyword]
   end
 
-  defp additional_meta(_, %{current_token: {type, _, indent, _token}}) when type in [:list_heredoc] do
+  defp additional_meta(_, %{current_token: {type, _, indent, _token}})
+       when type in [:list_heredoc] do
     [delimiter: ~s"'''", indentation: indent]
   end
 
@@ -3487,16 +3629,19 @@ defmodule Spitfire do
     [delimiter: "'"]
   end
 
-  defp additional_meta(literal, %{current_token: {:list_string_end, _, _}}) when is_list(literal) do
+  defp additional_meta(literal, %{current_token: {:list_string_end, _, _}})
+       when is_list(literal) do
     [delimiter: "'"]
   end
 
   # For charlist heredoc literals from Toxic, attach delimiter and indentation
-  defp additional_meta(literal, %{current_token: {:list_heredoc_end, _, _delim, indent}}) when is_list(literal) do
+  defp additional_meta(literal, %{current_token: {:list_heredoc_end, _, _delim, indent}})
+       when is_list(literal) do
     [delimiter: ~s"'''", indentation: indent]
   end
 
-  defp additional_meta(literal, %{current_token: {:list_heredoc_end, _, indent}}) when is_list(literal) do
+  defp additional_meta(literal, %{current_token: {:list_heredoc_end, _, indent}})
+       when is_list(literal) do
     [delimiter: ~s"'''", indentation: indent]
   end
 
@@ -3515,11 +3660,13 @@ defmodule Spitfire do
     [token: to_string(token)]
   end
 
-  defp additional_meta(_, %{current_token: {type, _, _token}}) when type in [:bin_string, :atom_quoted] do
+  defp additional_meta(_, %{current_token: {type, _, _token}})
+       when type in [:bin_string, :atom_quoted] do
     [delimiter: ~s'"']
   end
 
-  defp additional_meta(_, %{current_token: {type, _, indent, _token}}) when type in [:bin_heredoc] do
+  defp additional_meta(_, %{current_token: {type, _, indent, _token}})
+       when type in [:bin_heredoc] do
     [delimiter: ~s'"""', indentation: indent]
   end
 
@@ -3569,7 +3716,8 @@ defmodule Spitfire do
     []
   end
 
-  defp additional_meta(_, %{current_token: {type, _, _}}) when type in [:do, :atom, :identifier, :block_identifier] do
+  defp additional_meta(_, %{current_token: {type, _, _}})
+       when type in [:do, :atom, :identifier, :block_identifier] do
     []
   end
 
@@ -3621,7 +3769,9 @@ defmodule Spitfire do
     true
   end
 
-  @ops MapSet.new(@operators ++ [:"[", :";", :eol, :eof, :",", :")", :do, :., :"}", :"]", :">>", :end])
+  @ops MapSet.new(
+         @operators ++ [:"[", :";", :eol, :eof, :",", :")", :do, :., :"}", :"]", :">>", :end]
+       )
   defp valid_peek?(:"}", ptype) do
     MapSet.member?(@ops, ptype)
   end
@@ -3716,7 +3866,8 @@ defmodule Spitfire do
   defp next_eol_count([?\r, ?\n | rest], count), do: next_eol_count(rest, count + 1)
   defp next_eol_count(_, count), do: count
 
-  defp previous_eol_count([{token, {_, _, count}} | _]) when token in [:eol, :",", :";"] and count > 0 do
+  defp previous_eol_count([{token, {_, _, count}} | _])
+       when token in [:eol, :",", :";"] and count > 0 do
     count
   end
 

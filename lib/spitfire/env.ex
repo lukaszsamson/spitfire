@@ -64,7 +64,8 @@ defmodule Spitfire.Env do
   Please see the tests for example usage.
   """
   @spec expand(Macro.t(), String.t()) ::
-          {ast :: ast(), final_state :: state(), final_env :: final_env(), cursor_env :: cursor_env()}
+          {ast :: ast(), final_state :: state(), final_env :: final_env(),
+           cursor_env :: cursor_env()}
   def expand(ast, file) do
     env = env()
 
@@ -85,7 +86,9 @@ defmodule Spitfire.Env do
           functions:
             Enum.filter(Map.get(state, :functions, []), fn {m, _} -> m == cursor_env.module end) ++
               cursor_env.functions,
-          macros: Enum.filter(Map.get(state, :macros, []), fn {m, _} -> m == cursor_env.module end) ++ cursor_env.macros,
+          macros:
+            Enum.filter(Map.get(state, :macros, []), fn {m, _} -> m == cursor_env.module end) ++
+              cursor_env.macros,
           attrs: Enum.uniq(Map.get(cursor_state, :attrs, [])),
           variables: for({name, nil} <- cursor_env.versioned_vars, do: name)
         }
@@ -278,7 +281,8 @@ defmodule Spitfire.Env do
 
   ## Remote call
 
-  defp expand({{:., dot_meta, [module, fun]}, meta, args}, state, env) when is_atom(fun) and is_list(args) do
+  defp expand({{:., dot_meta, [module, fun]}, meta, args}, state, env)
+       when is_atom(fun) and is_list(args) do
     {module, state, env} = expand(module, state, env)
     arity = length(args)
 
@@ -356,7 +360,8 @@ defmodule Spitfire.Env do
   # For the language server, we only want to capture definitions,
   # we don't care when they are used.
 
-  defp expand({var, meta, ctx} = ast, state, %{context: :match} = env) when is_atom(var) and is_atom(ctx) do
+  defp expand({var, meta, ctx} = ast, state, %{context: :match} = env)
+       when is_atom(var) and is_atom(ctx) do
     ctx = Keyword.get(meta, :context, ctx)
     vv = Map.update(env.versioned_vars, var, ctx, fn _ -> ctx end)
 
@@ -397,7 +402,8 @@ defmodule Spitfire.Env do
     end
   end
 
-  defp expand_macro(_meta, Kernel, type, args, _callback, state, env) when type in [:def, :defmacro, :defp, :defmacrop] do
+  defp expand_macro(_meta, Kernel, type, args, _callback, state, env)
+       when type in [:def, :defmacro, :defp, :defmacrop] do
     # extract the name, params, guards, and blocks
     {name, params, guards, blocks} =
       case args do
@@ -444,7 +450,12 @@ defmodule Spitfire.Env do
 
     funcs =
       if is_atom(name) do
-        Map.update(state[state_key], env.module, [{name, arity}], &Keyword.put_new(&1, name, arity))
+        Map.update(
+          state[state_key],
+          env.module,
+          [{name, arity}],
+          &Keyword.put_new(&1, name, arity)
+        )
       else
         state[state_key]
       end
@@ -452,7 +463,8 @@ defmodule Spitfire.Env do
     {Enum.reverse(blocks), put_in(state[state_key], funcs), env}
   end
 
-  defp expand_macro(meta, Kernel, :@, [{name, _, p}] = args, callback, state, env) when is_list(p) do
+  defp expand_macro(meta, Kernel, :@, [{name, _, p}] = args, callback, state, env)
+       when is_list(p) do
     state = update_in(state.attrs, &[to_string(name) | &1])
     expand_macro_callback(meta, Kernel, :@, args, callback, state, env)
   end

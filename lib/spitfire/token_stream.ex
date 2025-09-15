@@ -18,17 +18,26 @@ defmodule Spitfire.TokenStream do
       :toxic ->
         # Defer integrating token-shape adaptation until Phase 2.
         # For Phase 1, use legacy to avoid changing parser semantics.
-        %__MODULE__{backend: Toxic.TokenStream, state: Toxic.TokenStream.new(code, line, column, opts)}
+        %__MODULE__{
+          backend: Toxic.TokenStream,
+          state: Toxic.TokenStream.new(code, line, column, opts)
+        }
 
       :legacy ->
-        %__MODULE__{backend: Spitfire.LegacyTokenizer, state: Spitfire.LegacyTokenizer.new(code, line, column, opts)}
+        %__MODULE__{
+          backend: Spitfire.LegacyTokenizer,
+          state: Spitfire.LegacyTokenizer.new(code, line, column, opts)
+        }
     end
   end
 
   # TODO: this call is not needed with toxic
   @spec from_tokens(list()) :: t()
   def from_tokens(tokens) do
-    %__MODULE__{backend: Spitfire.LegacyTokenizer, state: Spitfire.LegacyTokenizer.from_tokens(tokens)}
+    %__MODULE__{
+      backend: Spitfire.LegacyTokenizer,
+      state: Spitfire.LegacyTokenizer.from_tokens(tokens)
+    }
   end
 
   @spec next(t()) :: {term(), t()}

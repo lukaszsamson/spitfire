@@ -62,7 +62,9 @@ defmodule Spitfire.EnvTest do
     assert {:&&&, 2} in (cursor_env.functions |> List.keyfind(Bitwise, 0) |> elem(1))
 
     # imported functions that were imported inside a macro
-    env_test_functions = cursor_env.functions |> List.keyfind(Spitfire.EnvTest.Functions, 0) |> elem(1)
+    env_test_functions =
+      cursor_env.functions |> List.keyfind(Spitfire.EnvTest.Functions, 0) |> elem(1)
+
     assert {:foo, 0} in env_test_functions
     assert {:bar, 0} in env_test_functions
     assert {:baz, 0} in env_test_functions
