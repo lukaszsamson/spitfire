@@ -701,7 +701,6 @@ defmodule Spitfire do
             _ ->
               parser = next_token(parser)
               {item, parser} = parse_expression(parser, precedence, is_list, is_map, false)
-              dbg(item)
 
               # track 2-tuple literals for keyword merging avoidance
               if is_tuple(item) and tuple_size(item) == 2 do
@@ -786,12 +785,12 @@ defmodule Spitfire do
         {pair, true, parser}
 
       :bin_string_start ->
-        {item, parser} = parse_linearized_string(parser, :binary)
+        {item, parser} = parse_expression(parser, @list_comma, false, false, false)
         {is_kw_pair, parser} = pop_kw_pair_flag(parser)
         {item, is_kw_pair, parser}
 
       :list_string_start ->
-        {item, parser} = parse_linearized_string(parser, :charlist)
+        {item, parser} = parse_expression(parser, @list_comma, false, false, false)
         {is_kw_pair, parser} = pop_kw_pair_flag(parser)
         {item, is_kw_pair, parser}
 

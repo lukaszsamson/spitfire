@@ -3649,6 +3649,14 @@ defmodule SpitfireToxicTest do
     assert Spitfire.parse(code) == s2q(code)
   end
 
+  test "concat arg regression" do
+    code = """
+    foo("." <> "f")
+    """
+
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
   @regressions [
     "/Users/lukaszsamson/elixir/lib/eex/test/eex_test.exs",
     "/Users/lukaszsamson/elixir/lib/elixir/lib/access.ex",
@@ -3691,10 +3699,11 @@ defmodule SpitfireToxicTest do
       code = file |> File.read!()
       # lines = String.split(source, "\n")
       # assert Spitfire.parse(code) == s2q(code)
+      IO.puts("Parsing: #{file}")
       res = Spitfire.parse(code) == s2q(code)
 
       if not res do
-        IO.puts(file)
+        IO.puts("Failed: #{file}")
       end
 
       # assert res
