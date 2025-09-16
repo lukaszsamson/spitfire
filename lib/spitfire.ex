@@ -775,6 +775,9 @@ defmodule Spitfire do
   end
 
   defp parse_fn_arg_item(parser) do
+    # Reset per-item keyword flag to avoid leaking state across items/expressions
+    parser = Map.put(parser, :produced_kw_pair, false)
+
     case current_token_type(parser) do
       :kw_identifier ->
         {pair, parser} = parse_kw_identifier(parser)
