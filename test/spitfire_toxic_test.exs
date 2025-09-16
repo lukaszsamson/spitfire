@@ -124,6 +124,186 @@ defmodule SpitfireToxicTest do
 
       assert Spitfire.parse(code) == s2q(code)
     end
+
+    test "tuple arg wrapped in list" do
+      code = "{1, [foo: 1]}"
+
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "tuple arg quoted wrapped in list" do
+      code = "{1, [\"foo\": 1]}"
+
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "tuple arg negative case" do
+      code = "{1, {:foo, 1}}"
+
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "tuple arg negative case quoted" do
+      code = "{1, {:'foo', 1}}"
+
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "call arg positive case" do
+      code = "foo(1, foo: 1)"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "D.foo(1, foo: 1)"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "D.'foo'(1, foo: 1)"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "foo 1, foo: 1"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "D.foo 1, foo: 1"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "foo.(1, foo: 1)"
+
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "call arg positive case wrapped in list" do
+      code = "foo(1, [foo: 1])"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "D.foo(1, [foo: 1])"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "D.'foo'(1, [foo: 1])"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "foo 1, [foo: 1]"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "D.foo 1, [foo: 1]"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "foo.(1, [foo: 1])"
+
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "call arg positive case quoted" do
+      code = "foo(1, 'foo': 1)"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "D.foo(1, 'foo': 1)"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "D.'foo'(1, 'foo': 1)"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "foo 1, 'foo': 1"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "D.foo 1, 'foo': 1"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "foo.(1, 'foo': 1)"
+
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "call arg positive case quoted wrapped in list" do
+      code = "foo(1, ['foo': 1])"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "D.foo(1, ['foo': 1])"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "D.'foo'(1, ['foo': 1])"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "foo 1, ['foo': 1]"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "D.foo 1, ['foo': 1]"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "foo.(1, ['foo': 1])"
+
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "call arg negative case" do
+      code = "foo(1, {:foo, 1})"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "D.foo(1, {:foo, 1})"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "D.'foo'(1, {:foo, 1})"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "foo 1, {:foo, 1}"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "D.foo 1, {:foo, 1}"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "foo.(1, {:foo, 1})"
+
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "call arg negative case quoted" do
+      code = "foo(1, {:'foo', 1})"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "D.foo(1, {:'foo', 1})"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "D.'foo'(1, {:'foo', 1})"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "foo 1, {:'foo', 1}"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "D.foo 1, {:'foo', 1}"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "foo.(1, {:'foo', 1})"
+
+      assert Spitfire.parse(code) == s2q(code)
+    end
   end
 
   describe "tokens after" do

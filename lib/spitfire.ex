@@ -719,6 +719,74 @@ defmodule Spitfire do
     end
   end
 
+  # Tuple argument comma-list: detect lone keyword pairs at token-time and wrap them
+  # into a keyword list. This mirrors how s2q treats `{1, foo: 1}` as `{1, [foo: 1]}`.
+  defp parse_tuple_args_comma_list(parser) do
+    trace "parse_tuple_args_comma_list", trace_meta(parser) do
+      {first, first_is_kw_pair, parser} = parse_tuple_arg_item(parser)
+
+      Process.put(:comma_list_parsers, [parser])
+
+      {rest, parser} =
+        while2 peek_token(parser) == :"," <- parser do
+          parser = next_token(parser)
+
+          case peek_token(parser) do
+            :"}" -> {:filter, {nil, parser}}
+            _ ->
+              parser = next_token(parser)
+              {item, is_kw_pair, parser} = parse_tuple_arg_item(parser)
+
+              clp = Process.get(:comma_list_parsers)
+              Process.put(:comma_list_parsers, [parser | clp])
+
+              {{item, is_kw_pair}, parser}
+          end
+        end
+
+      items = [{first, first_is_kw_pair} | rest]
+
+      args =
+        Enum.map(items, fn
+          {pair, true} -> [pair]
+          {other, _} -> other
+        end)
+
+      {args, parser}
+    end
+  end
+
+  defp parse_tuple_arg_item(parser) do
+    # Reset per-item flag
+    parser = Map.put(parser, :produced_kw_pair, false)
+
+    case current_token_type(parser) do
+      :kw_identifier ->
+        {pair, parser} = parse_kw_identifier(parser)
+        {pair, true, parser}
+
+      :kw_identifier_unsafe ->
+        {pair, parser} = parse_kw_identifier(parser)
+        {pair, true, parser}
+
+      :bin_string_start ->
+        {item, parser} = parse_expression(parser, @list_comma, false, false, false)
+        {{is_kw_pair, source}, parser} = pop_kw_pair_flag(parser)
+        is_kw_pair = is_kw_pair and source == :string
+        {item, is_kw_pair, parser}
+
+      :list_string_start ->
+        {item, parser} = parse_expression(parser, @list_comma, false, false, false)
+        {{is_kw_pair, source}, parser} = pop_kw_pair_flag(parser)
+        is_kw_pair = is_kw_pair and source == :string
+        {item, is_kw_pair, parser}
+
+      _ ->
+        {item, parser} = parse_expression(parser, @list_comma, false, false, false)
+        {item, false, parser}
+    end
+  end
+
   # Specialized comma-list for function call arguments.
   # It detects trailing keyword pairs (based on token-time flags) and
   # folds them into a single keyword list argument, matching s2q behavior.
@@ -1542,7 +1610,11 @@ defmodule Spitfire do
         ast = {{:., meta, [lhs]}, newlines ++ closing ++ meta, []}
         {ast, parser}
       else
-        {pairs, parser} = parse_comma_list(parser |> next_token() |> eat_eol())
+        {pairs, parser} =
+          parser
+          |> next_token()
+          |> eat_eol()
+          |> parse_fn_args_comma_list()
         parser = parser |> next_token() |> eat_eol()
         closing = [closing: current_meta(parser)]
         ast = {{:., meta, [lhs]}, newlines ++ closing ++ meta, pairs}
@@ -2103,7 +2175,7 @@ defmodule Spitfire do
 
         true ->
           old_comma_list_parsers = Process.get(:comma_list_parsers)
-          {pairs, parser} = parse_comma_list(parser)
+          {pairs, parser} = parse_tuple_args_comma_list(parser)
 
           {pairs, parser} =
             case peek_token_eat_eol(parser) do
