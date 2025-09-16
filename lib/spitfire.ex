@@ -571,7 +571,7 @@ defmodule Spitfire do
       parser = parser |> next_token() |> eat_eol()
 
       {expr, parser} = parse_expression(parser, @kw_identifier, false, false, false)
-
+      parser = Map.put(parser, :produced_kw_pair, true)
       {{token, expr}, parser}
     end
   end
@@ -591,8 +591,22 @@ defmodule Spitfire do
             {t, meta, args}
         end
 
+      parser = Map.put(parser, :produced_kw_pair, true)
       {{atom, expr}, parser}
     end
+  end
+
+  defp parse_keyword_pair(%{current_token: {type, _, _}} = parser)
+       when type in [:kw_identifier, :kw_identifier_unsafe] do
+    parse_kw_identifier(parser)
+  end
+
+  defp parse_keyword_pair(%{current_token: {:bin_string_start, _, _}} = parser) do
+    parse_linearized_string(parser, :binary)
+  end
+
+  defp parse_keyword_pair(%{current_token: {:list_string_start, _, _}} = parser) do
+    parse_linearized_string(parser, :charlist)
   end
 
   defp parse_bracketless_kw_list(%{current_token: {:kw_identifier, meta, token}} = parser) do
@@ -605,7 +619,7 @@ defmodule Spitfire do
       {kvs, parser} =
         while2 peek_token(parser) == :"," <- parser do
           parser = parser |> next_token() |> next_token()
-          {pair, parser} = parse_kw_identifier(parser)
+          {pair, parser} = parse_keyword_pair(parser)
 
           {pair, parser}
         end
@@ -632,7 +646,7 @@ defmodule Spitfire do
       {kvs, parser} =
         while2 peek_token(parser) == :"," <- parser do
           parser = parser |> next_token() |> next_token()
-          {pair, parser} = parse_kw_identifier(parser)
+          {pair, parser} = parse_keyword_pair(parser)
 
           {pair, parser}
         end
@@ -665,6 +679,13 @@ defmodule Spitfire do
   defp parse_comma_list(parser, precedence, is_list, is_map) do
     trace "parse_comma_list", trace_meta(parser) do
       {front, parser} = parse_expression(parser, precedence, is_list, is_map, false)
+
+      # track 2-tuple literals for keyword merging avoidance (front element)
+      if is_tuple(front) and tuple_size(front) == 2 do
+        set = Process.get(:kw_tuple_literals) || MapSet.new()
+        Process.put(:kw_tuple_literals, MapSet.put(set, front))
+      end
+
       # we zip together the expression and parser state so that we can potentially
       # backtrack later
       Process.put(:comma_list_parsers, [parser])
@@ -680,6 +701,13 @@ defmodule Spitfire do
             _ ->
               parser = next_token(parser)
               {item, parser} = parse_expression(parser, precedence, is_list, is_map, false)
+              dbg(item)
+
+              # track 2-tuple literals for keyword merging avoidance
+              if is_tuple(item) and tuple_size(item) == 2 do
+                set = Process.get(:kw_tuple_literals) || MapSet.new()
+                Process.put(:kw_tuple_literals, MapSet.put(set, item))
+              end
 
               clp = Process.get(:comma_list_parsers)
               Process.put(:comma_list_parsers, [parser | clp])
@@ -689,6 +717,87 @@ defmodule Spitfire do
         end
 
       {[front | items], parser}
+    end
+  end
+
+  # Specialized comma-list for function call arguments.
+  # It detects trailing keyword pairs (based on token-time flags) and
+  # folds them into a single keyword list argument, matching s2q behavior.
+  defp parse_fn_args_comma_list(parser) do
+    trace "parse_fn_args_comma_list", trace_meta(parser) do
+      {first, first_is_kw_pair, parser} = parse_fn_arg_item(parser)
+
+      # Track parsers for potential error backtracking (same as parse_comma_list)
+      Process.put(:comma_list_parsers, [parser])
+
+      {rest, parser} =
+        while2 peek_token(parser) == :"," <- parser do
+          parser = next_token(parser)
+
+          case peek_token(parser) do
+            delimiter when delimiter in [:")", :"}" ] ->
+              {:filter, {nil, parser}}
+
+            _ ->
+              parser = next_token(parser)
+              {item, is_kw_pair, parser} = parse_fn_arg_item(parser)
+
+              clp = Process.get(:comma_list_parsers)
+              Process.put(:comma_list_parsers, [parser | clp])
+
+              {{item, is_kw_pair}, parser}
+          end
+        end
+
+      items = [{first, first_is_kw_pair} | rest]
+
+      # Split into leading non-keyword args and trailing keyword pairs
+      {trailing_kw_rev, rest_rev} =
+        items
+        |> Enum.reverse()
+        |> Enum.split_while(fn {_it, is_kw_pair} -> is_kw_pair end)
+
+      case trailing_kw_rev do
+        [] ->
+          {Enum.map(items, &elem(&1, 0)), parser}
+
+        _ ->
+          trailing_kw = Enum.reverse(trailing_kw_rev) |> Enum.map(&elem(&1, 0))
+          leading = Enum.reverse(rest_rev) |> Enum.map(&elem(&1, 0))
+          {leading ++ [trailing_kw], parser}
+      end
+    end
+  end
+
+  defp pop_kw_pair_flag(parser) do
+    is_kw_pair = Map.get(parser, :produced_kw_pair) == true
+    parser = Map.put(parser, :produced_kw_pair, false)
+    {is_kw_pair, parser}
+  end
+
+  defp parse_fn_arg_item(parser) do
+    case current_token_type(parser) do
+      :kw_identifier ->
+        {pair, parser} = parse_kw_identifier(parser)
+        {pair, true, parser}
+
+      :kw_identifier_unsafe ->
+        {pair, parser} = parse_kw_identifier(parser)
+        {pair, true, parser}
+
+      :bin_string_start ->
+        {item, parser} = parse_linearized_string(parser, :binary)
+        {is_kw_pair, parser} = pop_kw_pair_flag(parser)
+        {item, is_kw_pair, parser}
+
+      :list_string_start ->
+        {item, parser} = parse_linearized_string(parser, :charlist)
+        {is_kw_pair, parser} = pop_kw_pair_flag(parser)
+        {item, is_kw_pair, parser}
+
+      _ ->
+        {item, parser} = parse_expression(parser, @list_comma, false, false, false)
+        {item, false, parser}
     end
   end
 
@@ -1431,8 +1540,7 @@ defmodule Spitfire do
         {pairs, parser} = parse_comma_list(parser |> next_token() |> eat_eol())
         parser = parser |> next_token() |> eat_eol()
         closing = [closing: current_meta(parser)]
-        args = wrap_trailing_keywords(pairs)
-        ast = {{:., meta, [lhs]}, newlines ++ closing ++ meta, args}
+        ast = {{:., meta, [lhs]}, newlines ++ closing ++ meta, pairs}
 
         {ast, parser}
       end
@@ -2171,7 +2279,7 @@ defmodule Spitfire do
           parser
           |> next_token()
           |> eat_eol()
-          |> parse_comma_list()
+          |> parse_fn_args_comma_list()
 
         parser = Map.put(parser, :nesting, old_nesting)
 
@@ -2182,8 +2290,7 @@ defmodule Spitfire do
             parser = next_token(parser)
             closing = current_meta(parser)
 
-            args = wrap_trailing_keywords(pairs)
-            ast = {token, newlines ++ [{:closing, closing} | meta], args}
+            ast = {token, newlines ++ [{:closing, closing} | meta], pairs}
 
             if peek_token(parser) == :do and parser.nesting == 0 do
               parser = next_token(parser)
@@ -2199,7 +2306,7 @@ defmodule Spitfire do
                 {error_meta, "missing closing parentheses for function invocation"}
               )
 
-            {{token, newlines ++ meta, wrap_trailing_keywords(pairs)}, parser}
+            {{token, newlines ++ meta, pairs}, parser}
         end
       end
     end
@@ -2268,20 +2375,41 @@ defmodule Spitfire do
         parser = next_token(parser)
 
         parser = push_nesting(parser)
-        {first_arg, parser} = parse_expression(parser)
+        {first_arg, first_is_kw, parser} = parse_fn_arg_item(parser)
 
-        front = first_arg
-
-        {args, parser} =
+        {rest_items, parser} =
           while2 peek_token(parser) == :"," <- parser do
-            parser
-            |> next_token()
-            |> next_token()
-            |> parse_expression()
+            parser = next_token(parser)
+            parser = next_token(parser)
+            {item, is_kw, parser} = parse_fn_arg_item(parser)
+            {{item, is_kw}, parser}
           end
 
-        args = [front | args]
+        items = [{first_arg, first_is_kw} | rest_items]
+
+        {trailing_kw_rev, rest_rev} =
+          items
+          |> Enum.reverse()
+          |> Enum.split_while(fn {_it, is_kw} -> is_kw end)
+
+        args =
+          case trailing_kw_rev do
+            [] -> Enum.map(items, &elem(&1, 0))
+            _ ->
+              trailing_kw = Enum.reverse(trailing_kw_rev) |> Enum.map(&elem(&1, 0))
+              leading = Enum.reverse(rest_rev) |> Enum.map(&elem(&1, 0))
+              leading ++ [trailing_kw]
+          end
+
         parser = pop_nesting(parser)
+
+        # In no-parens calls followed by a do-block, ensure :do is the current token.
+        parser =
+          if parser.nesting == 0 and current_token(parser) != :do and peek_token(parser) == :do do
+            next_token(parser)
+          else
+            parser
+          end
 
         if parser.nesting == 0 && current_token(parser) == :do do
           parse_do_block(parser, {token, meta, args})
@@ -2334,7 +2462,7 @@ defmodule Spitfire do
           parser
           |> next_token()
           |> eat_eol()
-          |> parse_comma_list()
+          |> parse_fn_args_comma_list()
 
         parser = eat_eol_at(parser, 1)
 
@@ -2349,75 +2477,10 @@ defmodule Spitfire do
 
         closing = current_meta(parser)
 
-        args = wrap_trailing_keywords(pairs)
-
-        {{lhs, newlines ++ [{:closing, closing} | meta], args}, parser}
+        {{lhs, newlines ++ [{:closing, closing} | meta], pairs}, parser}
       end
     end
   end
-
-  # Group trailing keyword pairs into a single keyword list argument
-  defp wrap_trailing_keywords(args) do
-    # Walk from the end collecting trailing keyword pairs. If we encounter a
-    # keyword list, merge collected pairs into it. Otherwise, wrap collected
-    # pairs into a new list argument.
-    rev = Enum.reverse(args)
-    {leading_rev, trailing_pairs, base_kw_list} = collect_trailing_keywords(rev, [], nil)
-
-    cond do
-      base_kw_list != nil and trailing_pairs != [] ->
-        combined = Enum.reverse(base_kw_list) ++ Enum.reverse(trailing_pairs)
-        Enum.reverse(leading_rev, [combined])
-
-      base_kw_list != nil ->
-        Enum.reverse(leading_rev, [base_kw_list])
-
-      trailing_pairs != [] ->
-        Enum.reverse(leading_rev, [Enum.reverse(trailing_pairs)])
-
-      true ->
-        args
-    end
-  end
-
-  defp collect_trailing_keywords([item | rest], acc_pairs, base_kw_list) do
-    cond do
-      base_kw_list == nil and kw_pair?(item) ->
-        collect_trailing_keywords(rest, [item | acc_pairs], nil)
-
-      base_kw_list == nil and is_list(item) and keyword_list?(item) ->
-        # Found a base keyword list; absorb preceding keyword pairs into it
-        {leading_rev, combined} = absorb_preceding_pairs(rest, item)
-        {leading_rev, acc_pairs, combined}
-
-      true ->
-        {[item | rest], acc_pairs, base_kw_list}
-    end
-  end
-
-  defp collect_trailing_keywords([], acc_pairs, base_kw_list) do
-    {[], acc_pairs, base_kw_list}
-  end
-
-  defp keyword_list?(list) when is_list(list) do
-    Enum.all?(list, &kw_pair?/1)
-  end
-
-  defp absorb_preceding_pairs([pair | rest], list) do
-    if kw_pair?(pair) do
-      absorb_preceding_pairs(rest, [pair | list])
-    else
-      {[pair | rest], list}
-    end
-  end
-
-  defp absorb_preceding_pairs([], list), do: {[], list}
-
-  defp kw_pair?({key, _value}) when is_atom(key), do: true
-
-  defp kw_pair?({{{:., _, [:erlang, :binary_to_atom]}, _, [_bin, :utf8]}, _value}), do: true
-
-  defp kw_pair?(_), do: false
 
   defp parse_lone_identifier(%{current_token: {_type, token_meta, token}} = parser) do
     trace "parse_lone_identifier", trace_meta(parser) do
@@ -2854,7 +2917,7 @@ defmodule Spitfire do
 
       cond do
         end_type in [:kw_identifier_safe_end, :kw_identifier_unsafe_end] ->
-          # Quoted keyword identifier: build atom key and parse the value
+          # Quoted keyword identifier: build atom key and parse the value, return a pair
           has_only_fragments =
             Enum.all?(parts, fn
               {:fragment, _m, _c} -> true
@@ -2879,6 +2942,7 @@ defmodule Spitfire do
           parser = parser |> next_token() |> eat_eol()
           # Parse the value with kw_identifier precedence
           {value, parser} = parse_expression(parser, @kw_identifier, false, false, false)
+          parser = Map.put(parser, :produced_kw_pair, true)
           {{key_ast, value}, parser}
 
         parts == [] ->
