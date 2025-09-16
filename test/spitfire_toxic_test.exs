@@ -149,6 +149,24 @@ defmodule SpitfireToxicTest do
       assert Spitfire.parse(code) == s2q(code)
     end
 
+    test "tuple arg multiple" do
+      code = "{1, foo: 1, bar: 2}"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "{1, foo: 1, 'bar': 2}"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "{1, 'foo': 1, 'bar': 2}"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "{1, 'foo': 1, bar: 2}"
+
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
     test "call arg positive case" do
       code = "foo(1, foo: 1)"
 
@@ -171,6 +189,82 @@ defmodule SpitfireToxicTest do
       assert Spitfire.parse(code) == s2q(code)
 
       code = "foo.(1, foo: 1)"
+
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "call arg multiple" do
+      code = "foo(1, foo: 1, bar: 2)"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "D.foo(1, foo: 1, bar: 2)"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "D.'foo'(1, foo: 1, bar: 2)"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "foo 1, foo: 1, bar: 2"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "D.foo 1, foo: 1, bar: 2"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "foo.(1, foo: 1, bar: 2)"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+
+      code = "foo(1, foo: 1, 'bar': 2)"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "D.foo(1, foo: 1, 'bar': 2)"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "D.'foo'(1, foo: 1, 'bar': 2)"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "foo 1, foo: 1, 'bar': 2"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "D.foo 1, foo: 1, 'bar': 2"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "foo.(1, foo: 1, 'bar': 2)"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+
+      code = "foo(1, 'foo': 1, bar: 2)"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "D.foo(1, 'foo': 1, bar: 2)"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "D.'foo'(1, 'foo': 1, bar: 2)"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "foo 1, 'foo': 1, bar: 2"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "D.foo 1, 'foo': 1, bar: 2"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "foo.(1, 'foo': 1, bar: 2)"
 
       assert Spitfire.parse(code) == s2q(code)
     end

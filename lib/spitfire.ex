@@ -746,13 +746,21 @@ defmodule Spitfire do
 
       items = [{first, first_is_kw_pair} | rest]
 
-      args =
-        Enum.map(items, fn
-          {pair, true} -> [pair]
-          {other, _} -> other
-        end)
+      # Group trailing keyword pairs into a single keyword list element
+      {trailing_kw_rev, rest_rev} =
+        items
+        |> Enum.reverse()
+        |> Enum.split_while(fn {_it, is_kw_pair} -> is_kw_pair end)
 
-      {args, parser}
+      case trailing_kw_rev do
+        [] ->
+          {Enum.map(items, &elem(&1, 0)), parser}
+
+        _ ->
+          trailing_kw = Enum.reverse(trailing_kw_rev) |> Enum.map(&elem(&1, 0))
+          leading = Enum.reverse(rest_rev) |> Enum.map(&elem(&1, 0))
+          {leading ++ [trailing_kw], parser}
+      end
     end
   end
 
