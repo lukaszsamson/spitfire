@@ -112,6 +112,18 @@ defmodule SpitfireToxicTest do
 
       assert Spitfire.parse(code) == s2q(code)
     end
+
+    test "tuple arg" do
+      code = "{1, foo: 1}"
+
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "tuple arg quoted" do
+      code = "{1, \"foo\": 1}"
+
+      assert Spitfire.parse(code) == s2q(code)
+    end
   end
 
   describe "tokens after" do
@@ -3674,9 +3686,41 @@ defmodule SpitfireToxicTest do
     assert Spitfire.parse(code) == s2q(code)
   end
 
-  test "nested call interpolated regression 1" do
+  test "nested call and keyword list" do
     code = """
     foo("asd": bar("sss": 1), "aa": ['ss': %{"ds": [s: 1, "a\#{[as: 1]}s": 1]}])
+    """
+
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
+  test "empty qualified tuple" do
+    code = """
+    Foo.{}
+    """
+
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
+  test "atom struct" do
+    code = """
+    %:foo{}
+    """
+
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
+  test "quoted atom struct" do
+    code = """
+    %:"User"{}
+    """
+
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
+  test "fn guard no args" do
+    code = """
+    fn () when node() == :a -> true end
     """
 
     assert Spitfire.parse(code) == s2q(code)
@@ -3712,28 +3756,28 @@ defmodule SpitfireToxicTest do
     assert Spitfire.parse(code) == s2q(code)
   end
 
-  test "elixir sources" do
-    files = @regressions
-    # Enum.module_info()[:compile][:source]
-    # |> Path.join("../../..")
-    # |> Path.expand()
-    # |> Path.join("**/*.ex*")
-    # |> Path.wildcard()
+  # test "elixir sources" do
+  #   # files = @regressions
+  #   files = Enum.module_info()[:compile][:source]
+  #   |> Path.join("../../..")
+  #   |> Path.expand()
+  #   |> Path.join("**/*.ex*")
+  #   |> Path.wildcard()
 
-    for file <- files do
-      code = file |> File.read!()
-      # lines = String.split(source, "\n")
-      # assert Spitfire.parse(code) == s2q(code)
-      IO.puts("Parsing: #{file}")
-      res = Spitfire.parse(code) == s2q(code)
+  #   for file <- files do
+  #     code = file |> File.read!()
+  #     # lines = String.split(source, "\n")
+  #     # assert Spitfire.parse(code) == s2q(code)
+  #     # IO.puts("Parsing: #{file}")
+  #     res = Spitfire.parse(code) == s2q(code)
 
-      if not res do
-        IO.puts("Failed: #{file}")
-      end
+  #     if not res do
+  #       IO.puts("Failed: #{file}")
+  #     end
 
-      # assert res
-    end
-  end
+  #     # assert res
+  #   end
+  # end
 
   defp s2q(code, opts \\ []) do
     Code.string_to_quoted(
