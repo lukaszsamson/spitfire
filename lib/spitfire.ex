@@ -571,7 +571,7 @@ defmodule Spitfire do
       parser = parser |> next_token() |> eat_eol()
 
       {expr, parser} = parse_expression(parser, @kw_identifier, false, false, false)
-      parser = Map.put(parser, :produced_kw_pair, true)
+      parser = parser |> Map.put(:produced_kw_pair, true) |> Map.put(:produced_kw_source, :token)
       {{token, expr}, parser}
     end
   end
@@ -591,7 +591,7 @@ defmodule Spitfire do
             {t, meta, args}
         end
 
-      parser = Map.put(parser, :produced_kw_pair, true)
+      parser = parser |> Map.put(:produced_kw_pair, true) |> Map.put(:produced_kw_source, :token)
       {{atom, expr}, parser}
     end
   end
@@ -770,8 +770,9 @@ defmodule Spitfire do
 
   defp pop_kw_pair_flag(parser) do
     is_kw_pair = Map.get(parser, :produced_kw_pair) == true
-    parser = Map.put(parser, :produced_kw_pair, false)
-    {is_kw_pair, parser}
+    source = Map.get(parser, :produced_kw_source)
+    parser = parser |> Map.put(:produced_kw_pair, false) |> Map.put(:produced_kw_source, nil)
+    {{is_kw_pair, source}, parser}
   end
 
   defp parse_fn_arg_item(parser) do
@@ -789,12 +790,14 @@ defmodule Spitfire do
 
       :bin_string_start ->
         {item, parser} = parse_expression(parser, @list_comma, false, false, false)
-        {is_kw_pair, parser} = pop_kw_pair_flag(parser)
+        {{is_kw_pair, source}, parser} = pop_kw_pair_flag(parser)
+        is_kw_pair = is_kw_pair and source == :string
         {item, is_kw_pair, parser}
 
       :list_string_start ->
         {item, parser} = parse_expression(parser, @list_comma, false, false, false)
-        {is_kw_pair, parser} = pop_kw_pair_flag(parser)
+        {{is_kw_pair, source}, parser} = pop_kw_pair_flag(parser)
+        is_kw_pair = is_kw_pair and source == :string
         {item, is_kw_pair, parser}
 
       _ ->
@@ -2944,7 +2947,7 @@ defmodule Spitfire do
           parser = parser |> next_token() |> eat_eol()
           # Parse the value with kw_identifier precedence
           {value, parser} = parse_expression(parser, @kw_identifier, false, false, false)
-          parser = Map.put(parser, :produced_kw_pair, true)
+          parser = parser |> Map.put(:produced_kw_pair, true) |> Map.put(:produced_kw_source, :string)
           {{key_ast, value}, parser}
 
         parts == [] ->

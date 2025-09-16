@@ -3657,6 +3657,31 @@ defmodule SpitfireToxicTest do
     assert Spitfire.parse(code) == s2q(code)
   end
 
+  test "call after keyword list regression" do
+    code = """
+    [abc: 1]
+    foo("")
+    """
+
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
+  test "nested call interpolated regression" do
+    code = """
+    join("mix_lock_\#{url_encode64(padding: false)}")
+    """
+
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
+  test "nested call interpolated regression 1" do
+    code = """
+    foo("asd": bar("sss": 1), "aa": ['ss': %{"ds": [s: 1, "a\#{[as: 1]}s": 1]}])
+    """
+
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
   @regressions [
     "/Users/lukaszsamson/elixir/lib/eex/test/eex_test.exs",
     "/Users/lukaszsamson/elixir/lib/elixir/lib/access.ex",
