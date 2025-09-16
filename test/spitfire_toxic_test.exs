@@ -113,6 +113,72 @@ defmodule SpitfireToxicTest do
       assert Spitfire.parse(code) == s2q(code)
     end
 
+    # test "bitstring arg" do
+    #   code = "<<1, foo: 1>>"
+
+    #   assert Spitfire.parse(code) == s2q(code)
+    # end
+
+    # test "bitstring arg quoted" do
+    #   code = "<<1, 'foo': 1>>"
+
+    #   assert Spitfire.parse(code) == s2q(code)
+    # end
+
+    # test "bitstring arg negative case" do
+    #   code = "<<1, {:foo, 1}>>"
+
+    #   assert Spitfire.parse(code) == s2q(code)
+    # end
+
+    # test "bitstring arg quoted negative case" do
+    #   code = "<<1, {:'foo', 1}>>"
+
+    #   assert Spitfire.parse(code) == s2q(code)
+    # end
+
+    test "access arg" do
+      code = "a[foo: 1]"
+
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "access arg quoted" do
+      code = "a['foo': 1]"
+
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "access arg multiple" do
+      code = "a[foo: 1, bar: 2]"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "a[foo: 1, 'bar': 2]"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "a['foo': 1, 'bar': 2]"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "a['foo': 1, bar: 2]"
+
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "access arg negative case" do
+      code = "a[{:foo, 1}]"
+
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "access arg quoted negative case" do
+      code = "a[{:'foo', 1}]"
+
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
     test "tuple arg" do
       code = "{1, foo: 1}"
 
@@ -395,6 +461,250 @@ defmodule SpitfireToxicTest do
       assert Spitfire.parse(code) == s2q(code)
 
       code = "foo.(1, {:'foo', 1})"
+
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "missing parens" do
+      code = """
+      IO.inspect arg, 'a': 1, label: if true, do: "foo", else: "baz"
+      """
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = """
+      IO.inspect arg, 'label': 1, b: if true, do: "foo", else: "baz"
+      """
+
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "trailing comma" do
+      code = "[asd: 1,]"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "['asd': 1,]"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "foo(asd: 1,)"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "foo('asd': 1,)"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "foo.(asd: 1,)"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "foo.('asd': 1,)"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "D.foo(asd: 1,)"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "D.foo('asd': 1,)"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "foo[asd: 1,]"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "foo['asd': 1,]"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "{1, asd: 1,}"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "{1, 'asd': 1,}"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "%{asd: 1,}"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "%{'asd': 1,}"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "%{a | asd: 1,}"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "%{a | 'asd': 1,}"
+
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "eol after :" do
+      code = "[asd:\n1]"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "['asd':\n1]"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "foo(asd:\n1)"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "foo('asd':\n1)"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "foo asd:\n1"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "foo 'asd':\n1"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "foo.(asd:\n1)"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "foo.('asd':\n1)"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "D.foo(asd:\n1)"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "D.foo('asd':\n1)"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "D.foo asd:\n1"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "D.foo 'asd':\n1"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "foo[asd:\n1]"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "foo['asd':\n1]"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "{1, asd:\n1}"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "{1, 'asd':\n1}"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "%{asd:\n1}"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "%{'asd':\n1}"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "%{a | asd:\n1}"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "%{a | 'asd':\n1}"
+
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "eol after first" do
+      code = "[asd:\n1,\nb: 1]"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "['asd':\n1,\nb: 1]"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "foo(asd:\n1,\nb: 1)"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "foo('asd':\n1,\nb: 1)"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "foo asd:\n1,\nb: 1"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "foo 'asd':\n1,\nb: 1"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "foo.(asd:\n1,\nb: 1)"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "foo.('asd':\n1,\nb: 1)"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "D.foo(asd:\n1,\nb: 1)"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "D.foo('asd':\n1,\nb: 1)"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "D.foo asd:\n1,\nb: 1"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "D.foo 'asd':\n1,\nb: 1"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "foo[asd:\n1,\nb: 1]"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "foo['asd':\n1,\nb: 1]"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "{1, asd:\n1,\nb: 1}"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "{1, 'asd':\n1,\nb: 1}"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "%{asd:\n1,\nb: 1}"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "%{'asd':\n1,\nb: 1}"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "%{a | asd:\n1,\nb: 1}"
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "%{a | 'asd':\n1,\nb: 1}"
 
       assert Spitfire.parse(code) == s2q(code)
     end
@@ -4030,28 +4340,28 @@ defmodule SpitfireToxicTest do
     assert Spitfire.parse(code) == s2q(code)
   end
 
-  # test "elixir sources" do
-  #   # files = @regressions
-  #   files = Enum.module_info()[:compile][:source]
-  #   |> Path.join("../../..")
-  #   |> Path.expand()
-  #   |> Path.join("**/*.ex*")
-  #   |> Path.wildcard()
+  test "elixir sources" do
+    # files = @regressions
+    files = Enum.module_info()[:compile][:source]
+    |> Path.join("../../..")
+    |> Path.expand()
+    |> Path.join("**/*.ex*")
+    |> Path.wildcard()
 
-  #   for file <- files do
-  #     code = file |> File.read!()
-  #     # lines = String.split(source, "\n")
-  #     # assert Spitfire.parse(code) == s2q(code)
-  #     # IO.puts("Parsing: #{file}")
-  #     res = Spitfire.parse(code) == s2q(code)
+    for file <- files do
+      code = file |> File.read!()
+      # lines = String.split(source, "\n")
+      # assert Spitfire.parse(code) == s2q(code)
+      # IO.puts("Parsing: #{file}")
+      res = Spitfire.parse(code) == s2q(code)
 
-  #     if not res do
-  #       IO.puts("Failed: #{file}")
-  #     end
+      if not res do
+        IO.puts("Failed: #{file}")
+      end
 
-  #     # assert res
-  #   end
-  # end
+      # assert res
+    end
+  end
 
   defp s2q(code, opts \\ []) do
     Code.string_to_quoted(

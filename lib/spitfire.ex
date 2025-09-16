@@ -618,10 +618,15 @@ defmodule Spitfire do
 
       {kvs, parser} =
         while2 peek_token(parser) == :"," <- parser do
-          parser = parser |> next_token() |> next_token()
-          {pair, parser} = parse_keyword_pair(parser)
+          parser = parser |> next_token()
+          case peek_token(parser) do
+            :"]" -> {:filter, {nil, parser}}
+            _ ->
+              parser = next_token(parser)
+              {pair, parser} = parse_keyword_pair(parser)
 
-          {pair, parser}
+              {pair, parser}
+          end
         end
 
       {[{token, value} | kvs], parser}
@@ -645,10 +650,15 @@ defmodule Spitfire do
 
       {kvs, parser} =
         while2 peek_token(parser) == :"," <- parser do
-          parser = parser |> next_token() |> next_token()
-          {pair, parser} = parse_keyword_pair(parser)
+          parser = parser |> next_token()
+          case peek_token(parser) do
+            :"]" -> {:filter, {nil, parser}}
+            _ ->
+              parser = next_token(parser)
+              {pair, parser} = parse_keyword_pair(parser)
 
-          {pair, parser}
+              {pair, parser}
+          end
         end
 
       {[{atom, value} | kvs], parser}
@@ -1149,7 +1159,48 @@ defmodule Spitfire do
     trace "parse_access_expression", trace_meta(parser) do
       meta = current_meta(parser)
       parser = parser |> next_token() |> eat_eol()
-      {rhs, parser} = parse_expression(parser, @lowest, false, false, false)
+
+      # Detect keyword list bracket arg at token-time
+      {rhs, parser} =
+        case current_token_type(parser) do
+          type when type in [:kw_identifier, :kw_identifier_unsafe] ->
+            parse_bracketless_kw_list(parser)
+
+          type when type in [:bin_string_start, :list_string_start] ->
+            # Parse potentially quoted keyword pair, then collect additional pairs separated by commas
+            {first, is_kw, parser1} = parse_fn_arg_item(parser)
+
+            if is_kw do
+              {kvs, parser2} =
+                while2 peek_token(parser1) == :"," <- parser1 do
+                  parser1 = parser1 |> next_token()
+
+                  case peek_token(parser1) do
+                    :"]" ->
+                      {:filter, {nil, parser1}}
+
+                    _ ->
+                      parser1 = next_token(parser1)
+
+                      case current_token_type(parser1) do
+                        type when type in [:kw_identifier, :kw_identifier_unsafe, :bin_string_start, :list_string_start] ->
+                          parse_keyword_pair(parser1)
+
+                        _ ->
+                          {:filter, {nil, parser1}}
+                      end
+                  end
+                end
+
+              {[first | kvs], parser2}
+            else
+              # Not a keyword pair, treat entire content as container expr from original state
+              parse_expression(parser, @lowest, false, false, false)
+            end
+
+          _ ->
+            parse_expression(parser, @lowest, false, false, false)
+        end
 
       extra_meta = [from_brackets: true]
 
@@ -1157,6 +1208,14 @@ defmodule Spitfire do
         case peek_newlines(parser, :eol) do
           nil -> []
           nl -> [newlines: nl]
+        end
+
+      # Optional trailing comma allowed only for container_expr variant; we conservatively allow it
+      parser =
+        if peek_token(parser) == :"," do
+          parser |> next_token() |> eat_eol()
+        else
+          parser
         end
 
       parser = parser |> next_token() |> eat_eol()
