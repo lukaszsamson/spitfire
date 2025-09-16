@@ -38,7 +38,6 @@ defmodule SpitfireToxicTest do
       assert Spitfire.parse(code) == s2q(code)
     end
 
-
     test "quoted single list" do
       code = "[\"foo\": 1]"
 
@@ -63,7 +62,6 @@ defmodule SpitfireToxicTest do
       assert Spitfire.parse(code) == s2q(code)
     end
 
-
     test "quoted and not quoted single list" do
       code = "[\"foo\": 1, abc: :ok]"
 
@@ -87,7 +85,6 @@ defmodule SpitfireToxicTest do
 
       assert Spitfire.parse(code) == s2q(code)
     end
-
 
     test "not quoted and quoted single list" do
       code = "[abc: :ok, \"foo\": 1]"
@@ -284,7 +281,6 @@ defmodule SpitfireToxicTest do
 
       assert Spitfire.parse(code) == s2q(code)
 
-
       code = "foo(1, foo: 1, 'bar': 2)"
 
       assert Spitfire.parse(code) == s2q(code)
@@ -308,7 +304,6 @@ defmodule SpitfireToxicTest do
       code = "foo.(1, foo: 1, 'bar': 2)"
 
       assert Spitfire.parse(code) == s2q(code)
-
 
       code = "foo(1, 'foo': 1, bar: 2)"
 
@@ -4342,11 +4337,12 @@ defmodule SpitfireToxicTest do
 
   test "elixir sources" do
     # files = @regressions
-    files = Enum.module_info()[:compile][:source]
-    |> Path.join("../../..")
-    |> Path.expand()
-    |> Path.join("**/*.ex*")
-    |> Path.wildcard()
+    files =
+      Enum.module_info()[:compile][:source]
+      |> Path.join("../../..")
+      |> Path.expand()
+      |> Path.join("**/*.ex*")
+      |> Path.wildcard()
 
     for file <- files do
       code = file |> File.read!()

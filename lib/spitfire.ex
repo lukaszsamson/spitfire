@@ -619,8 +619,11 @@ defmodule Spitfire do
       {kvs, parser} =
         while2 peek_token(parser) == :"," <- parser do
           parser = parser |> next_token()
+
           case peek_token(parser) do
-            :"]" -> {:filter, {nil, parser}}
+            :"]" ->
+              {:filter, {nil, parser}}
+
             _ ->
               parser = next_token(parser)
               {pair, parser} = parse_keyword_pair(parser)
@@ -651,8 +654,11 @@ defmodule Spitfire do
       {kvs, parser} =
         while2 peek_token(parser) == :"," <- parser do
           parser = parser |> next_token()
+
           case peek_token(parser) do
-            :"]" -> {:filter, {nil, parser}}
+            :"]" ->
+              {:filter, {nil, parser}}
+
             _ ->
               parser = next_token(parser)
               {pair, parser} = parse_keyword_pair(parser)
@@ -742,7 +748,9 @@ defmodule Spitfire do
           parser = next_token(parser)
 
           case peek_token(parser) do
-            :"}" -> {:filter, {nil, parser}}
+            :"}" ->
+              {:filter, {nil, parser}}
+
             _ ->
               parser = next_token(parser)
               {item, is_kw_pair, parser} = parse_tuple_arg_item(parser)
@@ -820,7 +828,7 @@ defmodule Spitfire do
           parser = next_token(parser)
 
           case peek_token(parser) do
-            delimiter when delimiter in [:")", :"}" ] ->
+            delimiter when delimiter in [:")", :"}"] ->
               {:filter, {nil, parser}}
 
             _ ->
@@ -1183,7 +1191,13 @@ defmodule Spitfire do
                       parser1 = next_token(parser1)
 
                       case current_token_type(parser1) do
-                        type when type in [:kw_identifier, :kw_identifier_unsafe, :bin_string_start, :list_string_start] ->
+                        type
+                        when type in [
+                               :kw_identifier,
+                               :kw_identifier_unsafe,
+                               :bin_string_start,
+                               :list_string_start
+                             ] ->
                           parse_keyword_pair(parser1)
 
                         _ ->
@@ -1682,6 +1696,7 @@ defmodule Spitfire do
           |> next_token()
           |> eat_eol()
           |> parse_fn_args_comma_list()
+
         parser = parser |> next_token() |> eat_eol()
         closing = [closing: current_meta(parser)]
         ast = {{:., meta, [lhs]}, newlines ++ closing ++ meta, pairs}
@@ -2538,7 +2553,9 @@ defmodule Spitfire do
 
         args =
           case trailing_kw_rev do
-            [] -> Enum.map(items, &elem(&1, 0))
+            [] ->
+              Enum.map(items, &elem(&1, 0))
+
             _ ->
               trailing_kw = Enum.reverse(trailing_kw_rev) |> Enum.map(&elem(&1, 0))
               leading = Enum.reverse(rest_rev) |> Enum.map(&elem(&1, 0))
@@ -3086,7 +3103,10 @@ defmodule Spitfire do
           parser = parser |> next_token() |> eat_eol()
           # Parse the value with kw_identifier precedence
           {value, parser} = parse_expression(parser, @kw_identifier, false, false, false)
-          parser = parser |> Map.put(:produced_kw_pair, true) |> Map.put(:produced_kw_source, :string)
+
+          parser =
+            parser |> Map.put(:produced_kw_pair, true) |> Map.put(:produced_kw_source, :string)
+
           {{key_ast, value}, parser}
 
         parts == [] ->
