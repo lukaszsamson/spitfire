@@ -4305,6 +4305,416 @@ defmodule SpitfireToxicTest do
     assert Spitfire.parse(code) == s2q(code)
   end
 
+  describe "interpolation inside interpolation" do
+    test "terminators in interpolation" do
+      code = """
+      defp do_at() do
+        "\#{{}}"
+      end
+      """
+
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "interpolation in terminator" do
+      code = """
+      {"\#{line_number} | \#{indentation}\#{expr}\n \#{number_padding}| \#{arrow}", line_number + 1}
+      """
+
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "sigil inside interpolation" do
+      code = """
+      :"foo\#{~s/\\n/}bar"\
+      """
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = """
+      :"foo\#{~s/\\n/a}bar"\
+      """
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = """
+      ["foo\#{~s/\\n/}bar": 1]\
+      """
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = """
+      "foo\#{~s/\\n/}bar"\
+      """
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = """
+      'foo\#{~s/\\n/}bar'\
+      """
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = """
+      \"""
+      foo\#{~s/\\n/}bar
+      \"""\
+      """
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = """
+      '''
+      foo\#{~s/\\n/}bar
+      '''\
+      """
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = """
+      ~c"foo\#{~s/\\n/}bar"\
+      """
+
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "quoted atom inside interpolation" do
+      code = """
+      :"foo\#{:"a"}bar"\
+      """
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = """
+      ["foo\#{:"a"}bar": 1]\
+      """
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = """
+      "foo\#{:"a"}bar"\
+      """
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = """
+      'foo\#{:"a"}bar'\
+      """
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = """
+      \"""
+      foo\#{:"a"}bar
+      \"""\
+      """
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = """
+      '''
+      foo\#{:"a"}bar
+      '''\
+      """
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = """
+      ~c"foo\#{:"a"}bar"\
+      """
+
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "quoted kw_identifier inside interpolation" do
+      code = """
+      :"foo\#{["a": 1]}bar"\
+      """
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = """
+      ["foo\#{["a": 1]}bar": 1]\
+      """
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = """
+      "foo\#{["a": 1]}bar"\
+      """
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = """
+      'foo\#{["a": 1]}bar'\
+      """
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = """
+      \"""
+      foo\#{["a": 1]}bar
+      \"""\
+      """
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = """
+      '''
+      foo\#{["a": 1]}bar
+      '''\
+      """
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = """
+      ~c"foo\#{["a": 1]}bar"\
+      """
+
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "bin_string inside interpolation" do
+      code = """
+      :"foo\#{"a"}bar"\
+      """
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = """
+      ["foo\#{"a"}bar": 1]\
+      """
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = """
+      "foo\#{"a"}bar"\
+      """
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = """
+      'foo\#{"a"}bar'\
+      """
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = """
+      \"""
+      foo\#{"a"}bar
+      \"""\
+      """
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = """
+      '''
+      foo\#{"a"}bar
+      '''\
+      """
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = """
+      ~c"foo\#{"a"}bar"\
+      """
+
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "charlist_string inside interpolation" do
+      code = """
+      :"foo\#{'a'}bar"\
+      """
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = """
+      ["foo\#{'a'}bar": 1]\
+      """
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = """
+      "foo\#{'a'}bar"\
+      """
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = """
+      'foo\#{'a'}bar'\
+      """
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = """
+      \"""
+      foo\#{'a'}bar
+      \"""\
+      """
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = """
+      '''
+      foo\#{'a'}bar
+      '''\
+      """
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = """
+      ~c"foo\#{'a'}bar"\
+      """
+
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "bin_heredoc inside interpolation" do
+      code = """
+      :"foo\#{\"""\na\n\"""}bar"\
+      """
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = """
+      ["foo\#{\"""\na\n\"""}bar": 1]\
+      """
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = """
+      "foo\#{\"""\na\n\"""}bar"\
+      """
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = """
+      'foo\#{\"""\na\n\"""}bar'\
+      """
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = """
+      \"""
+      foo\#{\"""\na\n\"""}bar
+      \"""\
+      """
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = """
+      '''
+      foo\#{\"""\na\n\"""}bar
+      '''\
+      """
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = """
+      ~c"foo\#{\"""\na\n\"""}bar"\
+      """
+
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "charlist_heredoc inside interpolation" do
+      code = """
+      :"foo\#{'''\na\n'''}bar"\
+      """
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = """
+      ["foo\#{'''\na\n'''}bar": 1]\
+      """
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = """
+      "foo\#{'''\na\n'''}bar"\
+      """
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = """
+      'foo\#{'''\na\n'''}bar'\
+      """
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = """
+      \"""
+      foo\#{'''\na\n'''}bar
+      \"""\
+      """
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = """
+      '''
+      foo\#{'''\na\n'''}bar
+      '''\
+      """
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = """
+      ~c"foo\#{'''\na\n'''}bar"\
+      """
+
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "quoted identifier inside interpolation" do
+      code = """
+      :"foo\#{K.'a'}bar"\
+      """
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = """
+      ["foo\#{K.'a'()}bar": 1]\
+      """
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = """
+      "foo\#{K.'a'[1]}bar"\
+      """
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = """
+      'foo\#{K.'a' +1}bar'\
+      """
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = """
+      \"""
+      foo\#{K.'a' do\n:ok\nend}bar
+      \"""\
+      """
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = """
+      '''
+      foo\#{K.'a'}bar
+      '''\
+      """
+
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = """
+      ~c"foo\#{K.'a'}bar"\
+      """
+
+      assert Spitfire.parse(code) == s2q(code)
+    end
+  end
+
   @regressions [
     "/Users/lukaszsamson/elixir/lib/eex/test/eex_test.exs",
     "/Users/lukaszsamson/elixir/lib/elixir/lib/access.ex",

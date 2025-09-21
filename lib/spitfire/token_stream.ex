@@ -20,7 +20,7 @@ defmodule Spitfire.TokenStream do
         # For Phase 1, use legacy to avoid changing parser semantics.
         %__MODULE__{
           backend: Toxic.TokenStream,
-          state: Toxic.TokenStream.new(code, line, column, opts)
+          state: Toxic.TokenStream.new(code, line, column, opts |> Keyword.put(:error_mode, :strict))
         }
 
       :legacy ->
