@@ -4715,6 +4715,8 @@ defmodule SpitfireToxicTest do
     end
   end
 
+  # TODO: unescape
+
   @regressions [
     "/Users/lukaszsamson/elixir/lib/eex/test/eex_test.exs",
     "/Users/lukaszsamson/elixir/lib/elixir/lib/access.ex",
