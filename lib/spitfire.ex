@@ -1050,14 +1050,18 @@ defmodule Spitfire do
 
           rhs = build_block_nr(exprs)
 
-          meta =
+          {lhs, meta} =
             case lhs do
-              {type, [{:parens, _parens} = paren_meta | _], _}
+              {:when, wmeta, [{:__block__, [{:parens, _} = paren_meta | _], []} | rest]} ->
+                # Empty paren args: move parens meta to the stab node and drop the empty block
+                {{:when, wmeta, rest}, [paren_meta | meta]}
+
+              {type, [{:parens, _} = paren_meta | _], _}
               when type in [:__block__, :comma] ->
-                [paren_meta | meta]
+                {lhs, [paren_meta | meta]}
 
               _ ->
-                meta
+                {lhs, meta}
             end
 
           lhs =
