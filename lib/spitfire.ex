@@ -3593,7 +3593,27 @@ defmodule Spitfire do
 
   defp current_meta(%{
          current_token: {:sigil, {line, col, _}, _token, _tokens, _mods, _, _delimiter}
+       })
+       when is_integer(line) and is_integer(col) do
+    [line: line, column: col]
+  end
+
+  defp current_meta(%{
+         current_token:
+           {:sigil, {{line, col}, {_end_line, _end_col}, _extra}, _token, _tokens, _mods, _,
+            _delimiter}
        }) do
+    [line: line, column: col]
+  end
+
+  defp current_meta(%{
+         current_token:
+           {:sigil_start, {{line, col}, {_end_line, _end_col}, _extra}, _sigil, _delimiter}
+       }) do
+    [line: line, column: col]
+  end
+
+  defp current_meta(%{current_token: {:sigil_start, {line, col, _}, _sigil, _delimiter}}) do
     [line: line, column: col]
   end
 
