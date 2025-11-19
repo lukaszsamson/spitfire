@@ -1576,12 +1576,14 @@ tokenize_keyword(Kind, Rest, Line, Column, Atom, Length, Scope, Tokens) ->
         [{identifier, {Line, Column, nil}, Atom} | Tokens];
 
       _ ->
+        Info = {Line, Column, previous_was_eol(Tokens)},
+
         case {Kind, Tokens} of
           {in_op, [{unary_op, NotInfo, 'not'} | T]} ->
-            add_token_with_eol({in_op, NotInfo, 'not in'}, T);
+            add_token_with_eol({in_op, NotInfo, 'not in', Info}, T);
 
           {_, _} ->
-            add_token_with_eol({Kind, {Line, Column, previous_was_eol(Tokens)}, Atom}, Tokens)
+            add_token_with_eol({Kind, Info, Atom}, Tokens)
         end
     end,
 
@@ -1862,4 +1864,3 @@ prune_tokens([_ | Tokens], Opener) ->
   prune_tokens(Tokens, Opener);
 prune_tokens([], _Opener) ->
   [].
-

@@ -1121,7 +1121,21 @@ defmodule Spitfire do
       ast =
         case token do
           :"not in" ->
-            {:not, meta, [{:in, meta, [lhs, rhs]}]}
+            in_meta =
+              case pre_parser do
+                # New 4-tuple shape with separate meta for the "in" keyword (Toxic or updated legacy)
+                %{current_token: {:in_op, _not_meta, :"not in", info_meta}} ->
+                  case info_meta do
+                    {{line, col}, _end_pos, _extra} -> [line: line, column: col]
+                    {line, col, _extra} -> [line: line, column: col]
+                    _ -> meta
+                  end
+
+                _ ->
+                  meta
+              end
+
+            {:not, meta, [{:in, in_meta, [lhs, rhs]}]}
 
           :when ->
             lhs =
@@ -3485,6 +3499,10 @@ defmodule Spitfire do
     type
   end
 
+  defp peek_token_type(%{peek_token: {type, _, _, _}}) do
+    type
+  end
+
   defp peek_token_type(%{peek_token: {type, _}}) do
     type
   end
@@ -3521,6 +3539,12 @@ defmodule Spitfire do
 
   defp current_token(%{current_token: {:list_heredoc, _meta, _indent, _tokens}}) do
     :list_heredoc
+  end
+
+  # Elixir 1.19+: "not in" is tokenized as {:in_op, not_meta, :"not in", in_meta}
+  # Normalize it so downstream parsing can key on the combined operator.
+  defp current_token(%{current_token: {:in_op, _meta, :"not in", _info}}) do
+    :"not in"
   end
 
   defp current_token(%{current_token: {token, _, _, _}}) do
@@ -3581,10 +3605,29 @@ defmodule Spitfire do
     [line: line, column: col]
   end
 
-  # Ranged meta from Toxic: {{line, col}, {end_line, end_col}, extra}
-  defp current_meta(%{current_token: current_token})
-       when is_tuple(current_token) and tuple_size(elem(elem(current_token, 1), 0)) == 2 do
-    {{line, col}, {_end_line, _end_col}, _extra} = elem(current_token, 1)
+  # Legacy 4-tuple operator tokens (e.g. {:in_op, {line, col, extra}, op, info})
+  defp current_meta(%{current_token: {:in_op, {line, col, _extra}, _op, _info}})
+       when is_integer(line) and is_integer(col) do
+    [line: line, column: col]
+  end
+
+  # Toxic 4-tuple operator tokens with ranged meta
+  defp current_meta(%{
+         current_token: {:in_op, {{line, col}, {_end_line, _end_col}, _extra}, _op, _info}
+       }) do
+    [line: line, column: col]
+  end
+
+  # Ranged meta from Toxic for 2- and 3-tuple tokens:
+  #   {token, {{line, col}, {end_line, end_col}, extra}}
+  #   {token, {{line, col}, {end_line, end_col}, extra}, value}
+  defp current_meta(%{current_token: {_token, {{line, col}, {_end_line, _end_col}, _extra}}}) do
+    [line: line, column: col]
+  end
+
+  defp current_meta(%{
+         current_token: {_token, {{line, col}, {_end_line, _end_col}, _extra}, _value}
+       }) do
     [line: line, column: col]
   end
 
