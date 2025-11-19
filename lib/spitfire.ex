@@ -1541,14 +1541,27 @@ defmodule Spitfire do
           newlines = get_newlines(parser)
 
           parser = parser |> next_token() |> eat_eol()
-          {multis, parser} = parse_comma_list(parser)
-          parser = parser |> next_token() |> eat_eol()
+          if current_token(parser) == :"}" do
+            closing = current_meta(parser)
+            eoe = peek_eoe(parser)
+            parser = parser |> next_token() |> eat_eol()
 
-          multis =
-            {{:., dot_meta, [lhs, :{}]},
-             newlines ++ [{:closing, current_meta(parser)} | dot_meta], multis}
+            multis =
+              {{:., dot_meta, [lhs, :{}]},
+               newlines ++ [{:closing, closing} | dot_meta], []}
+              |> push_eoe(eoe)
 
-          {multis, parser}
+            {multis, parser}
+          else
+            {multis, parser} = parse_comma_list(parser)
+            parser = parser |> next_token() |> eat_eol()
+
+            multis =
+              {{:., dot_meta, [lhs, :{}]},
+               newlines ++ [{:closing, current_meta(parser)} | dot_meta], multis}
+
+            {multis, parser}
+          end
 
         # if the next token is an alias, then we are in a dot chain of aliases, eg: __MODULE__.Foo
         :alias ->
@@ -2125,6 +2138,11 @@ defmodule Spitfire do
         case current_token_type(parser) do
           :identifier -> &parse_lone_identifier/1
           :paren_identifier -> &parse_paren_identifier/1
+          :atom -> &parse_atom/1
+          :atom_quoted -> &parse_atom/1
+          :atom_unsafe -> &parse_atom/1
+          :atom_safe_start -> &parse_linearized_atom(&1, :safe)
+          :atom_unsafe_start -> &parse_linearized_atom(&1, :unsafe)
           :alias -> &parse_alias/1
           :at_op -> &parse_lone_module_attr/1
           :unary_op -> &parse_prefix_lone_identifer/1
@@ -2193,42 +2211,53 @@ defmodule Spitfire do
       parser = next_token(parser)
 
       brace_meta = current_meta(parser)
-      parser = next_token(parser)
 
-      newlines =
-        case current_newlines(parser) do
-          nil -> []
-          nl -> [newlines: nl]
-        end
+      # Fast-path empty struct: %Type{}
+      if peek_token(parser) == :"}" do
+        parser = next_token(parser)
+        closing = current_meta(parser)
 
-      parser = eat_eol(parser)
+        ast = {:%, meta, [type, {:%{}, [{:closing, closing} | brace_meta], []}]}
+
+        {ast, parser}
+      else
+        parser = next_token(parser)
+
+        newlines =
+          case current_newlines(parser) do
+            nil -> []
+            nl -> [newlines: nl]
+          end
+
+        parser = eat_eol(parser)
 
       old_nesting = parser.nesting
       parser = Map.put(parser, :nesting, 0)
 
-      if current_token(parser) == :"}" do
-        closing = current_meta(parser)
-        ast = {:%, meta, [type, {:%{}, newlines ++ [{:closing, closing} | brace_meta], []}]}
-        parser = Map.put(parser, :nesting, old_nesting)
-        {ast, parser}
-      else
-        {pairs, parser} = parse_comma_list(parser, @list_comma, false, true)
+        if current_token(parser) == :"}" do
+          closing = current_meta(parser)
+          ast = {:%, meta, [type, {:%{}, newlines ++ [{:closing, closing} | brace_meta], []}]}
+          parser = Map.put(parser, :nesting, old_nesting)
+          {ast, parser}
+        else
+          {pairs, parser} = parse_comma_list(parser, @list_comma, false, true)
 
-        parser = eat_eol_at(parser, 1)
+          parser = eat_eol_at(parser, 1)
 
-        parser =
-          case peek_token(parser) do
-            :"}" ->
-              next_token(parser)
+          parser =
+            case peek_token(parser) do
+              :"}" ->
+                next_token(parser)
 
-            _ ->
-              put_error(parser, {current_meta(parser), "missing closing brace for struct"})
-          end
+              _ ->
+                put_error(parser, {current_meta(parser), "missing closing brace for struct"})
+            end
 
-        closing = current_meta(parser)
-        ast = {:%, meta, [type, {:%{}, newlines ++ [{:closing, closing} | brace_meta], pairs}]}
-        parser = Map.put(parser, :nesting, old_nesting)
-        {ast, parser}
+          closing = current_meta(parser)
+          ast = {:%, meta, [type, {:%{}, newlines ++ [{:closing, closing} | brace_meta], pairs}]}
+          parser = Map.put(parser, :nesting, old_nesting)
+          {ast, parser}
+        end
       end
     end
   end
@@ -2629,6 +2658,7 @@ defmodule Spitfire do
     trace "parse_call_expression", trace_meta(parser) do
       # this might be wrong, but its how Code.string_to_quoted works
       {_, meta, _} = lhs
+      meta = Keyword.delete(meta, :closing)
 
       newlines = get_newlines(parser)
 
@@ -3491,6 +3521,10 @@ defmodule Spitfire do
     :list_heredoc
   end
 
+  defp current_token_type(%{current_token: {type, _, _, _, _, _, _}}) do
+    type
+  end
+
   defp current_token_type(%{current_token: {type, _, _, _}}) do
     type
   end
@@ -3500,6 +3534,10 @@ defmodule Spitfire do
   end
 
   defp current_token_type(%{current_token: {type, _, _}}) do
+    type
+  end
+
+  defp peek_token_type(%{peek_token: {type, _, _, _, _, _, _}}) do
     type
   end
 
@@ -3974,6 +4012,19 @@ defmodule Spitfire do
   end
 
   defp valid_peek?(:alias, ptype) when ptype in [:"{"] do
+    true
+  end
+
+  defp valid_peek?(ctype, :"{" )
+       when ctype in [
+              :atom,
+              :atom_quoted,
+              :atom_unsafe,
+              :atom_safe_start,
+              :atom_unsafe_start,
+              :atom_safe_end,
+              :atom_unsafe_end
+            ] do
     true
   end
 
