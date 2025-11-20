@@ -986,8 +986,13 @@ defmodule Spitfire do
 
       rhs = build_block_nr(exprs)
 
+      meta =
+        meta
+        |> inject_newlines(newlines)
+        |> reorder_parens_newlines()
+
       ast =
-        {token, newlines ++ meta, [[], rhs]}
+        {token, meta, [[], rhs]}
 
       parser = Map.put(parser, :nesting, old_nesting)
 
@@ -1071,7 +1076,10 @@ defmodule Spitfire do
               lhs -> [lhs]
             end
 
-          meta = newlines ++ meta
+          meta =
+            meta
+            |> inject_newlines(newlines)
+            |> reorder_parens_newlines()
 
           ast =
             {token, meta, [lhs, rhs]}
@@ -4056,6 +4064,26 @@ defmodule Spitfire do
     case peek_newlines(parser) do
       nil -> []
       nl -> [newlines: nl]
+    end
+  end
+
+  defp inject_newlines(meta, []), do: meta
+
+  defp inject_newlines(meta, [newlines: nl]) do
+    meta = Enum.reject(meta, fn {k, _} -> k == :newlines end)
+    {parens, rest} = Enum.split_with(meta, fn {k, _} -> k == :parens end)
+    parens ++ [{:newlines, nl} | rest]
+  end
+
+  defp reorder_parens_newlines(meta) do
+    parens = Enum.filter(meta, &match?({:parens, _}, &1))
+    newlines = Enum.filter(meta, &match?({:newlines, _}, &1))
+
+    if parens == [] or newlines == [] do
+      meta
+    else
+      rest = Enum.reject(meta, fn {k, _} -> k in [:parens, :newlines] end)
+      parens ++ newlines ++ rest
     end
   end
 
