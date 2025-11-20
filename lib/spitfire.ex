@@ -1543,13 +1543,10 @@ defmodule Spitfire do
           parser = parser |> next_token() |> eat_eol()
           if current_token(parser) == :"}" do
             closing = current_meta(parser)
-            eoe = peek_eoe(parser)
-            parser = parser |> next_token() |> eat_eol()
 
             multis =
               {{:., dot_meta, [lhs, :{}]},
                newlines ++ [{:closing, closing} | dot_meta], []}
-              |> push_eoe(eoe)
 
             {multis, parser}
           else
