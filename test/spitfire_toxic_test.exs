@@ -4732,6 +4732,15 @@ defmodule SpitfireToxicTest do
     assert Spitfire.parse(code) == s2q(code)
   end
 
+  test "comment issue" do
+    code = """
+    # bar
+
+    """
+
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
   # TODO: unescape
 
   # @regressions [

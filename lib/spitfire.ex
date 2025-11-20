@@ -213,7 +213,7 @@ defmodule Spitfire do
           {ast, eat_eol(parser)}
         end
 
-      exprs = build_block_nr(exprs)
+      exprs = build_block_nr(exprs, parser)
 
       {exprs, parser}
     end
@@ -3373,6 +3373,8 @@ defmodule Spitfire do
   defp new(code, opts) do
     %{
       stream: Spitfire.TokenStream.new(code, opts[:line] || 1, opts[:column] || 1, opts),
+      start_line: opts[:line] || 1,
+      start_column: opts[:column] || 1,
       fuel: 150,
       current_token: nil,
       peek_token: nil,
@@ -4105,7 +4107,7 @@ defmodule Spitfire do
     end
   end
 
-  defp build_block_nr(exprs) do
+  defp build_block_nr(exprs, parser \\ nil) do
     case exprs do
       {:->, _, _} ->
         [exprs]
@@ -4118,6 +4120,16 @@ defmodule Spitfire do
 
       [expr] ->
         expr
+
+      [] ->
+        meta =
+          if parser do
+            [line: parser.start_line, column: parser.start_column]
+          else
+            []
+          end
+
+        {:__block__, meta, []}
 
       _ ->
         {:__block__, [], exprs}
