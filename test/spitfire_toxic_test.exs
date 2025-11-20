@@ -4715,6 +4715,23 @@ defmodule SpitfireToxicTest do
     end
   end
 
+  test "ecto transaction abort helper snippet" do
+    code = """
+    defp assert_tx_aborted do
+      try do
+        PoolRepo.query!("SELECT 1");
+      rescue
+        err in [Postgrex.Error] ->
+          assert %Postgrex.Error{postgres: %{code: :in_failed_sql_transaction}} = err
+      else
+        _ -> flunk "transaction should be aborted"
+      end
+    end
+    """
+
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
   # TODO: unescape
 
   # @regressions [

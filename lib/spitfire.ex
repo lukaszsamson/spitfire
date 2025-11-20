@@ -3471,6 +3471,14 @@ defmodule Spitfire do
     peek_token_eat_eol(next_token(parser))
   end
 
+  defp peek_token_eat_eol(%{peek_token: {:";", _token}} = parser) do
+    peek_token_eat_eol(next_token(parser))
+  end
+
+  defp peek_token_eat_eol(%{peek_token: {:";", _, _token}} = parser) do
+    peek_token_eat_eol(next_token(parser))
+  end
+
   defp peek_token_eat_eol(%{peek_token: {:stab_op, _, token}}) do
     token
   end
