@@ -390,7 +390,7 @@ defmodule SpitfireRangesTest do
   describe "Edge Cases" do
     test "malformed list with missing closer" do
       code = "[1, 2"
-      {:error, ast, _errors} = Spitfire.parse(code, tokenizer: :toxic)
+      {:error, ast, _errors} = Spitfire.parse(code, tokenizer: :toxic, literal_encoder: test_encoder())
 
       # Should still have a range even with error recovery
       range = get_range(ast)
@@ -402,7 +402,7 @@ defmodule SpitfireRangesTest do
 
     test "malformed tuple with missing closer" do
       code = "{1, 2"
-      {:error, ast, _errors} = Spitfire.parse(code, tokenizer: :toxic)
+      {:error, ast, _errors} = Spitfire.parse(code, tokenizer: :toxic, literal_encoder: test_encoder())
 
       range = get_range(ast)
       assert range != nil

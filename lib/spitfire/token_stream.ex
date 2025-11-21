@@ -12,7 +12,7 @@ defmodule Spitfire.TokenStream do
   @spec new(String.t(), non_neg_integer(), non_neg_integer(), Keyword.t()) :: t()
   def new(code, line, column, opts \\ []) do
     # Prefer Toxic if available, otherwise fall back to legacy
-    backend = Application.get_env(:spitfire, :tokenizer, :legacy)
+    backend = Keyword.get(opts, :tokenizer) || Application.get_env(:spitfire, :tokenizer, :legacy)
 
     case backend do
       :toxic ->
@@ -20,10 +20,10 @@ defmodule Spitfire.TokenStream do
         # For Phase 1, use legacy to avoid changing parser semantics.
         %__MODULE__{
           backend: Toxic,
-          state: Toxic.new(code, line, column, opts |> Keyword.put(:error_mode, :strict))
+          state: Toxic.new(code, line, column, opts |> Keyword.put(:error_mode, :tolerant))
         }
 
-      :legacy ->
+      legacy when legacy in [:legacy, :elixir] ->
         %__MODULE__{
           backend: Spitfire.LegacyTokenizer,
           state: Spitfire.LegacyTokenizer.new(code, line, column, opts)
