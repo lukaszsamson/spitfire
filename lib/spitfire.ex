@@ -139,10 +139,12 @@ defmodule Spitfire do
       end
 
     case parse_program(parser) do
-      {ast, %{errors: []}} ->
+      {ast, %{errors: []} = parser_after} ->
+        ast = attach_root_range(ast, parser_after)
         {:ok, ast}
 
-      {ast, %{errors: errors}} ->
+      {ast, %{errors: errors} = parser_after} ->
+        ast = attach_root_range(ast, parser_after)
         {:error, ast, Enum.reverse(errors)}
     end
   rescue
@@ -189,6 +191,27 @@ defmodule Spitfire do
 
     Spitfire.parse(code, opts)
   end
+
+  defp attach_root_range(ast, %{stream: %Spitfire.TokenStream{backend: Toxic}} = parser) do
+    root_start = {parser.start_line, parser.start_column}
+
+    root_end =
+      case parser.last_span do
+        {{_, _}, {el, ec}} -> {el, ec}
+        _ -> root_start
+      end
+
+    case ast do
+      {form, meta, args} ->
+        range = merge_ranges([ast_range(ast), {root_start, root_end}])
+        {form, put_meta_range(meta, range), args}
+
+      other ->
+        other
+    end
+  end
+
+  defp attach_root_range(ast, _parser), do: ast
 
   defp parse_program(parser) do
     trace "parse_program", trace_meta(parser) do
@@ -3384,7 +3407,8 @@ defmodule Spitfire do
       interpolation_depth: 0,
       # Stack to save/restore nesting during interpolations
       saved_nesting_stack: [],
-      errors: []
+      errors: [],
+      last_span: nil
     }
   end
 
@@ -3394,9 +3418,23 @@ defmodule Spitfire do
   end
 
   defp next_token(%{stream: stream} = parser) do
+    last_span =
+      case token_range(parser.current_token) do
+        {{_sl, _sc}, {_el, _ec}} = span -> span
+        _ -> parser.last_span
+      end
+
     current = parser.peek_token
     {tok, stream1} = Spitfire.TokenStream.next(stream)
-    %{parser | stream: stream1, current_token: current, peek_token: tok, fuel: 150}
+
+    %{
+      parser
+      | stream: stream1,
+        current_token: current,
+        peek_token: tok,
+        fuel: 150,
+        last_span: last_span
+    }
   end
 
   defp consume_fuel(parser) do
@@ -3724,6 +3762,52 @@ defmodule Spitfire do
   defp current_meta(_) do
     []
   end
+
+  # Extract full ranged metadata from Toxic tokens. Legacy tokens return nil so
+  # legacy mode remains unchanged.
+  defp token_range({_, {{sl, sc}, {el, ec}, _extra}}), do: {{sl, sc}, {el, ec}}
+  defp token_range({_, {{sl, sc}, {el, ec}, _extra}, _value}), do: {{sl, sc}, {el, ec}}
+  defp token_range({_, {{sl, sc}, {el, ec}, _extra}, _, _}), do: {{sl, sc}, {el, ec}}
+  defp token_range({_, {_, _, _}}), do: nil
+  defp token_range({_, {_, _, _}, _}), do: nil
+  defp token_range({_, {_, _, _}, _, _}), do: nil
+  defp token_range(_), do: nil
+
+  # Position helpers
+  defp pos_leq?({l1, c1}, {l2, c2}), do: l1 < l2 or (l1 == l2 and c1 <= c2)
+  defp pos_geq?({l1, c1}, {l2, c2}), do: l1 > l2 or (l1 == l2 and c1 >= c2)
+  defp pos_min(p1, p2), do: if(pos_leq?(p1, p2), do: p1, else: p2)
+  defp pos_max(p1, p2), do: if(pos_geq?(p1, p2), do: p1, else: p2)
+
+  defp meta_range(meta) do
+    case Keyword.get(meta, :range) do
+      {{_sl, _sc}, {_el, _ec}} = r -> r
+      _ -> nil
+    end
+  end
+
+  defp put_meta_range(meta, nil), do: meta
+  defp put_meta_range(meta, range), do: Keyword.put(meta, :range, range)
+
+  defp merge_ranges(ranges) do
+    ranges
+    |> Enum.filter(& &1)
+    |> case do
+      [] ->
+        nil
+
+      [single] ->
+        single
+
+      [first | rest] ->
+        Enum.reduce(rest, first, fn {{sl2, sc2}, {el2, ec2}}, {{sl1, sc1}, {el1, ec1}} ->
+          {pos_min({sl1, sc1}, {sl2, sc2}), pos_max({el1, ec1}, {el2, ec2})}
+        end)
+    end
+  end
+
+  defp ast_range({_, meta, _}) when is_list(meta), do: meta_range(meta)
+  defp ast_range(_), do: nil
 
   if @trace? do
     defp trace_meta(parser) do

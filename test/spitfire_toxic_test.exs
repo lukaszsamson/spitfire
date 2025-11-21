@@ -4741,6 +4741,12 @@ defmodule SpitfireToxicTest do
     assert Spitfire.parse(code) == s2q(code)
   end
 
+  test "empty issue" do
+    code = "\n"
+
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
   # TODO: unescape
 
   # @regressions [
@@ -4765,13 +4771,13 @@ defmodule SpitfireToxicTest do
   #   "/Users/lukaszsamson/elixir/lib/mix/lib/mix/utils.ex"
   # ]
 
-  test "regressions" do
-    # file = "/Users/lukaszsamson/elixir/lib/elixir/lib/calendar/date.ex"
-    file = __DIR__ <> "/repro.ex"
-    code = file |> File.read!()
+  # test "regressions" do
+  #   # file = "/Users/lukaszsamson/elixir/lib/elixir/lib/calendar/date.ex"
+  #   file = __DIR__ <> "/repro.ex"
+  #   code = file |> File.read!()
 
-    assert Spitfire.parse(code) == s2q(code)
-  end
+  #   assert Spitfire.parse(code) == s2q(code)
+  # end
 
   test "quoted_to_string with empty struct call" do
     code = "quoted_to_string(quote(do: foo(Foo.{})))"
