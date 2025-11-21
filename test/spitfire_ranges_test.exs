@@ -298,6 +298,71 @@ defmodule SpitfireRangesTest do
     end
   end
 
+  describe "Operator Ranges" do
+    test "binary operator" do
+      code = "1 + 23"
+
+      {:ok, {:+, meta, [lhs, rhs]}} =
+        Spitfire.parse(code, tokenizer: :toxic, literal_encoder: test_encoder())
+
+      assert meta[:range] == {{1, 1}, {1, 7}}
+      assert_range(lhs, {{1, 1}, {1, 2}})
+      assert_range(rhs, {{1, 5}, {1, 7}})
+    end
+
+    test "unary operator" do
+      code = "-1"
+
+      {:ok, {:-, meta, [operand]}} =
+        Spitfire.parse(code, tokenizer: :toxic, literal_encoder: test_encoder())
+
+      assert meta[:range] == {{1, 1}, {1, 3}}
+      assert_range(operand, {{1, 2}, {1, 3}})
+    end
+
+    test "range operator with step" do
+      code = "1..2//3"
+
+      {:ok, {:..//, meta, [lhs, mid, rhs]}} =
+        Spitfire.parse(code, tokenizer: :toxic, literal_encoder: test_encoder())
+
+      assert meta[:range] == {{1, 1}, {1, 8}}
+      assert_range(lhs, {{1, 1}, {1, 2}})
+      assert_range(mid, {{1, 4}, {1, 5}})
+      assert_range(rhs, {{1, 7}, {1, 8}})
+    end
+
+    test "pipe operator" do
+      code = "1 |> foo"
+
+      {:ok, {:|>, meta, [lhs, rhs_like]}} =
+        Spitfire.parse(code, tokenizer: :toxic, literal_encoder: test_encoder())
+
+      rhs =
+        case rhs_like do
+          [inner | _] -> inner
+          other -> other
+        end
+
+      assert meta[:range] == {{1, 1}, {1, 9}}
+      assert_range(lhs, {{1, 1}, {1, 2}})
+      assert_range(rhs, {{1, 6}, {1, 9}})
+    end
+
+    test "assoc operator metadata" do
+      code = "%{1 => 2}"
+
+      {:ok, {:%{}, _meta, [{key, value}]}} =
+        Spitfire.parse(code, tokenizer: :toxic, literal_encoder: test_encoder())
+
+      assert_range(key, {{1, 3}, {1, 4}})
+      assert_range(value, {{1, 8}, {1, 9}})
+
+      {:assoc, assoc_meta} = Enum.find(elem(key, 1), fn {k, _} -> k == :assoc end)
+      assert Keyword.get(assoc_meta, :range) == {{1, 3}, {1, 9}}
+    end
+  end
+
   describe "Range Invariants" do
     # Helper to walk AST and validate range invariants
     defp assert_range_invariants(ast, parent_range \\ nil) do

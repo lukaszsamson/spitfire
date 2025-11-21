@@ -711,9 +711,16 @@ defmodule Spitfire do
 
   defp parse_assoc_op(%{current_token: {:assoc_op, _, _token}} = parser, key) do
     trace "parse_assoc_op", trace_meta(parser) do
-      assoc_meta = current_meta(parser)
+      op_range = token_range(parser.current_token)
+      assoc_meta =
+        parser
+        |> current_meta()
+        |> put_meta_range(op_range)
+
       parser = parser |> next_token() |> eat_eol()
       {value, parser} = parse_expression(parser, @assoc_op, false, false, false)
+
+      {_, assoc_meta, _} = attach_op_range({:assoc, assoc_meta, [key, value]}, op_range)
 
       key =
         case key do
@@ -942,6 +949,7 @@ defmodule Spitfire do
     trace "parse_prefix_expression", trace_meta(parser) do
       token = current_token(parser)
       meta = current_meta(parser)
+      op_range = token_range(parser.current_token)
 
       precedence =
         if current_token_type(parser) == :dual_op do
@@ -954,7 +962,9 @@ defmodule Spitfire do
       parser = parser |> next_token() |> eat_eol()
       {rhs, parser} = parse_expression(parser, precedence, false, false, false)
 
-      ast = {token, meta, [rhs]}
+      ast =
+        {token, meta, [rhs]}
+        |> attach_op_range(op_range)
 
       {ast, parser}
     end
@@ -964,11 +974,14 @@ defmodule Spitfire do
     trace "parse_prefix_lone_identifer", trace_meta(parser) do
       token = current_token(parser)
       meta = current_meta(parser)
+      op_range = token_range(parser.current_token)
 
       parser = next_token(parser)
       {rhs, parser} = parse_lone_identifier(parser)
 
-      ast = {token, meta, [rhs]}
+      ast =
+        {token, meta, [rhs]}
+        |> attach_op_range(op_range)
 
       {ast, parser}
     end
@@ -978,12 +991,15 @@ defmodule Spitfire do
     trace "parse_capture_int", trace_meta(parser) do
       token = current_token(parser)
       meta = current_meta(parser)
+      op_range = token_range(parser.current_token)
       parser = next_token(parser)
       {encoder, parser} = Map.pop(parser, :literal_encoder)
       {rhs, parser} = parse_int(parser)
       parser = Map.put(parser, :literal_encoder, encoder)
 
-      ast = {token, meta, [rhs]}
+      ast =
+        {token, meta, [rhs]}
+        |> attach_op_range(op_range)
 
       {ast, parser}
     end
@@ -1002,6 +1018,7 @@ defmodule Spitfire do
     trace "parse_stab_expression", trace_meta(parser) do
       token = current_token(parser)
       meta = current_meta(parser)
+      op_range = token_range(parser.current_token)
       newlines = get_newlines(parser)
 
       parser = eat_at(parser, [:eol, :";"], 1)
@@ -1031,6 +1048,7 @@ defmodule Spitfire do
 
       ast =
         {token, meta, [[], rhs]}
+        |> attach_op_range(op_range)
 
       parser = Map.put(parser, :nesting, old_nesting)
 
@@ -1059,12 +1077,14 @@ defmodule Spitfire do
 
   defp parse_stab_expression(parser, lhs) do
     trace "parse_stab_expression (with lhs)", trace_meta(parser) do
-      case current_token(parser) do
+      token = current_token(parser)
+      op_range = token_range(parser.current_token)
+
+      case token do
         :<- ->
           parse_infix_expression(parser, lhs)
 
         :-> ->
-          token = current_token(parser)
           meta = current_meta(parser)
           newlines = get_newlines(parser)
 
@@ -1121,6 +1141,7 @@ defmodule Spitfire do
 
           ast =
             {token, meta, [lhs, rhs]}
+            |> attach_op_range(op_range)
 
           parser = Map.put(parser, :nesting, old_nesting)
 
@@ -1142,6 +1163,7 @@ defmodule Spitfire do
     trace "parse_infix_expression", trace_meta(parser) do
       token = current_token(parser)
       meta = current_meta(parser)
+      op_range = token_range(parser.current_token)
       precedence = current_precedence(parser)
       # we save this in case the next expression is an error
       pre_parser = parser
@@ -1185,7 +1207,9 @@ defmodule Spitfire do
                   meta
               end
 
-            {:not, meta, [{:in, in_meta, [lhs, rhs]}]}
+            in_ast = attach_op_range({:in, in_meta, [lhs, rhs]}, nil)
+
+            {:not, meta, [in_ast]}
 
           :when ->
             lhs =
@@ -1200,6 +1224,8 @@ defmodule Spitfire do
             {token, newlines ++ meta, [lhs, rhs]}
         end
 
+      ast = attach_op_range(ast, op_range)
+
       {ast, parser}
     end
   end
@@ -1208,6 +1234,7 @@ defmodule Spitfire do
     trace "parse_pipe_op", trace_meta(parser) do
       token = current_token(parser)
       meta = current_meta(parser)
+      op_range = token_range(parser.current_token)
 
       newlines =
         case current_newlines(parser) || peek_newlines(parser, :eol) do
@@ -1221,7 +1248,9 @@ defmodule Spitfire do
 
       {pairs, parser} = parse_comma_list(parser, @list_comma, false, true)
 
-      ast = {token, newlines ++ meta, [lhs, pairs]}
+      ast =
+        {token, newlines ++ meta, [lhs, pairs]}
+        |> attach_op_range(op_range)
 
       {ast, parser}
     end
@@ -1310,7 +1339,13 @@ defmodule Spitfire do
     trace "parse_range_expression", trace_meta(parser) do
       token = current_token(parser)
       meta = current_meta(parser)
-      {{token, meta, []}, parser}
+      op_range = token_range(parser.current_token)
+
+      ast =
+        {token, meta, []}
+        |> attach_op_range(op_range)
+
+      {ast, parser}
     end
   end
 
@@ -1318,18 +1353,26 @@ defmodule Spitfire do
     trace "parse_range_expression (with lhs)", trace_meta(parser) do
       token = current_token(parser)
       meta = current_meta(parser)
+      op_range = token_range(parser.current_token)
       precedence = current_precedence(parser)
       parser = next_token(parser)
       {rhs, parser} = parse_expression(parser, precedence, false, false, false)
 
-      if peek_token(parser) == :ternary_op do
-        parser = parser |> next_token() |> next_token()
-        {rrhs, parser} = parse_expression(parser, precedence, false, false, false)
+      {ast, parser} =
+        if peek_token(parser) == :ternary_op do
+          parser = parser |> next_token() |> next_token()
+          {rrhs, parser} = parse_expression(parser, precedence, false, false, false)
 
-        {{:..//, meta, [lhs, rhs, rrhs]}, eat_eol(parser)}
-      else
-        {{token, meta, [lhs, rhs]}, eat_eol(parser)}
-      end
+          {{:..//, meta, [lhs, rhs, rrhs]}, eat_eol(parser)}
+        else
+          {{token, meta, [lhs, rhs]}, eat_eol(parser)}
+        end
+
+      ast =
+        ast
+        |> attach_op_range(op_range)
+
+      {ast, parser}
     end
   end
 
@@ -3942,6 +3985,20 @@ defmodule Spitfire do
 
   defp ast_range({_, meta, _}) when is_list(meta), do: meta_range(meta)
   defp ast_range(_), do: nil
+
+  defp arg_range(list) when is_list(list), do: merge_ranges(Enum.map(list, &arg_range/1))
+  defp arg_range(ast), do: ast_range(ast)
+
+  defp attach_op_range({form, meta, args}, op_range) do
+    ranges =
+      args
+      |> Enum.map(&arg_range/1)
+      |> List.insert_at(0, op_range)
+
+    {form, put_meta_range(meta, merge_ranges(ranges)), args}
+  end
+
+  defp attach_op_range(ast, _op_range), do: ast
 
   defp attach_range({form, meta, args}, ranges) do
     {form, put_meta_range(meta, merge_ranges(List.wrap(ranges))), args}
