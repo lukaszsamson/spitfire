@@ -2,32 +2,37 @@ defmodule Spitfire.TestHelpers do
   @moduledoc false
   defmacro lhs == rhs do
     quote do
-      lhs =
-        Macro.prewalk(unquote(lhs), fn
-          {t, meta, a} ->
-            {t, [], a}
+      import Kernel
+      import unquote(__MODULE__), except: [==: 2]
 
-          ast ->
-            ast
-        end)
+      lhs = Spitfire.TestHelpers.drop_ranges(unquote(lhs))
+      rhs = Spitfire.TestHelpers.drop_ranges(unquote(rhs))
 
-      rhs =
-        Macro.prewalk(unquote(rhs), fn
-          {t, meta, a} ->
-            {t, [], a}
+      assert lhs == rhs
+    end
+  end
 
-          ast ->
-            ast
-        end)
+  def drop_ranges(ast) do
+    Macro.postwalk(ast, fn
+      {t, meta, args} when is_list(meta) ->
+        {t, Keyword.delete(meta, :range), args}
 
-      if true do
-        import Kernel
-        import unquote(__MODULE__), except: [==: 2]
+      list when is_list(list) ->
+        if Keyword.keyword?(list), do: Keyword.delete(list, :range), else: list
 
-        assert lhs == rhs
-      end
+      node ->
+        node
+    end)
+  end
+
+  def parity_encoder do
+    fn literal, meta ->
+      meta = Keyword.delete(meta, :range)
+      {:ok, {:__literal__, meta, [literal]}}
     end
   end
 end
+
+Application.put_env(:spitfire, :strip_ranges, true)
 
 ExUnit.start(exclude: [:skip, :skip_errors, :skip_comments, :skip_cursor])

@@ -2,6 +2,8 @@ defmodule SpitfireToxicTest do
   # TODO: revert to true
   use ExUnit.Case, async: false
 
+  import Spitfire.TestHelpers, except: [==: 2]
+
   setup do
     original = Application.get_env(:spitfire, :tokenizer, :legacy)
     Application.put_env(:spitfire, :tokenizer, :toxic)
@@ -2963,7 +2965,7 @@ defmodule SpitfireToxicTest do
         '''
       ]
 
-      encoder = fn l, m -> {:ok, {:__literal__, m, [l]}} end
+      encoder = parity_encoder()
 
       for code <- codes do
         assert Spitfire.parse(code, literal_encoder: encoder) ==

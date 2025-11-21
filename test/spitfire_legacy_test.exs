@@ -2,6 +2,8 @@ defmodule SpitfireLegacyTest do
   # TODO: revert to true
   use ExUnit.Case, async: false
 
+  import Spitfire.TestHelpers, except: [==: 2]
+
   doctest Spitfire
 
   describe "valid code" do
@@ -1762,10 +1764,10 @@ defmodule SpitfireLegacyTest do
         ~S'{one, two}',
         ~S'''
         Foo.run(f: &{:ok, {:__literal__, &2, [&1]}})
-        '''
+      '''
       ]
 
-      encoder = fn l, m -> {:ok, {:__literal__, m, [l]}} end
+      encoder = parity_encoder()
 
       for code <- codes do
         assert Spitfire.parse(code, literal_encoder: encoder) ==
