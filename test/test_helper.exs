@@ -30,4 +30,6 @@ defmodule Spitfire.TestHelpers do
   end
 end
 
+Application.put_env(:spitfire, :strip_ranges, true)
+
 ExUnit.start(exclude: [:skip, :skip_errors, :skip_comments, :skip_cursor])

@@ -138,13 +138,19 @@ defmodule Spitfire do
         next_token(parser)
       end
 
+    strip_ranges? =
+      Keyword.get(opts, :strip_ranges, true) ||
+        Application.get_env(:spitfire, :strip_ranges, true)
+
     case parse_program(parser) do
       {ast, %{errors: []} = parser_after} ->
         ast = attach_root_range(ast, parser_after)
+        ast = maybe_strip_ranges(ast, strip_ranges?)
         {:ok, ast}
 
       {ast, %{errors: errors} = parser_after} ->
         ast = attach_root_range(ast, parser_after)
+        ast = maybe_strip_ranges(ast, strip_ranges?)
         {:error, ast, Enum.reverse(errors)}
     end
   rescue
@@ -212,6 +218,20 @@ defmodule Spitfire do
   end
 
   defp attach_root_range(ast, _parser), do: ast
+
+  defp maybe_strip_ranges(ast, false), do: ast
+
+  defp maybe_strip_ranges(ast, true), do: strip_ranges(ast)
+
+  defp strip_ranges(ast) do
+    Macro.prewalk(ast, fn
+      {t, meta, args} when is_list(meta) and is_list(args) ->
+        {t, Keyword.delete(meta, :range), args}
+
+      other ->
+        other
+    end)
+  end
 
   defp parse_program(parser) do
     trace "parse_program", trace_meta(parser) do
@@ -581,16 +601,16 @@ defmodule Spitfire do
     end
   end
 
-  defp parse_nil_literal(%{current_token: {nil, meta}} = parser) do
+  defp parse_nil_literal(%{current_token: {nil, _meta}} = parser) do
     trace "parse_nil_literal", trace_meta(parser) do
-      ast = encode_literal(parser, nil, meta)
+      ast = encode_literal(parser, nil)
       {ast, parser}
     end
   end
 
-  defp parse_kw_identifier(%{current_token: {:kw_identifier, meta, token}} = parser) do
+  defp parse_kw_identifier(%{current_token: {:kw_identifier, _meta, token}} = parser) do
     trace "parse_kw_identifier", trace_meta(parser) do
-      token = encode_literal(parser, token, meta)
+      token = encode_literal(parser, token)
       parser = parser |> next_token() |> eat_eol()
 
       {expr, parser} = parse_expression(parser, @kw_identifier, false, false, false)
@@ -632,9 +652,9 @@ defmodule Spitfire do
     parse_linearized_string(parser, :charlist)
   end
 
-  defp parse_bracketless_kw_list(%{current_token: {:kw_identifier, meta, token}} = parser) do
+  defp parse_bracketless_kw_list(%{current_token: {:kw_identifier, _meta, token}} = parser) do
     trace "parse_bracketless_kw_list", trace_meta(parser) do
-      token = encode_literal(parser, token, meta)
+      token = encode_literal(parser, token)
       parser = parser |> next_token() |> eat_eol()
 
       {value, parser} = parse_expression(parser, @kw_identifier, false, false, false)
@@ -925,6 +945,7 @@ defmodule Spitfire do
 
   defp parse_prefix_expression(parser) do
     trace "parse_prefix_expression", trace_meta(parser) do
+      op_range = token_range(parser.current_token)
       token = current_token(parser)
       meta = current_meta(parser)
 
@@ -940,6 +961,16 @@ defmodule Spitfire do
       {rhs, parser} = parse_expression(parser, precedence, false, false, false)
 
       ast = {token, meta, [rhs]}
+
+      ast =
+        case ast do
+          {form, meta_ast, args} ->
+            range = merge_ranges([op_range | Enum.map(args, &ast_range/1)])
+            {form, put_meta_range(meta_ast, range), args}
+
+          other ->
+            other
+        end
 
       {ast, parser}
     end
@@ -1125,6 +1156,7 @@ defmodule Spitfire do
 
   defp parse_infix_expression(parser, lhs) do
     trace "parse_infix_expression", trace_meta(parser) do
+      op_range = token_range(parser.current_token)
       token = current_token(parser)
       meta = current_meta(parser)
       precedence = current_precedence(parser)
@@ -1185,12 +1217,23 @@ defmodule Spitfire do
             {token, newlines ++ meta, [lhs, rhs]}
         end
 
+      ast =
+        case ast do
+          {form, meta_ast, args} ->
+            range = merge_ranges([op_range | Enum.map(args, &ast_range/1)])
+            {form, put_meta_range(meta_ast, range), args}
+
+          other ->
+            other
+        end
+
       {ast, parser}
     end
   end
 
   defp parse_pipe_op(parser, lhs) do
     trace "parse_pipe_op", trace_meta(parser) do
+      op_range = token_range(parser.current_token)
       token = current_token(parser)
       meta = current_meta(parser)
 
@@ -1206,7 +1249,13 @@ defmodule Spitfire do
 
       {pairs, parser} = parse_comma_list(parser, @list_comma, false, true)
 
-      ast = {token, newlines ++ meta, [lhs, pairs]}
+      ast =
+        {token, newlines ++ meta, [lhs, pairs]}
+        |> then(fn
+          {form, meta_ast, args} ->
+            range = merge_ranges([op_range | Enum.map(args, &ast_range/1)])
+            {form, put_meta_range(meta_ast, range), args}
+        end)
 
       {ast, parser}
     end
@@ -1293,14 +1342,28 @@ defmodule Spitfire do
 
   defp parse_range_expression(parser) do
     trace "parse_range_expression", trace_meta(parser) do
+      op_range = token_range(parser.current_token)
       token = current_token(parser)
       meta = current_meta(parser)
-      {{token, meta, []}, parser}
+      ast = {token, meta, []}
+
+      ast =
+        case ast do
+          {form, meta_ast, args} ->
+            range = merge_ranges([op_range | Enum.map(args, &ast_range/1)])
+            {form, put_meta_range(meta_ast, range), args}
+
+          other ->
+            other
+        end
+
+      {ast, parser}
     end
   end
 
   defp parse_range_expression(parser, lhs) do
     trace "parse_range_expression (with lhs)", trace_meta(parser) do
+      op_range = token_range(parser.current_token)
       token = current_token(parser)
       meta = current_meta(parser)
       precedence = current_precedence(parser)
@@ -1313,7 +1376,9 @@ defmodule Spitfire do
 
         {{:..//, meta, [lhs, rhs, rrhs]}, eat_eol(parser)}
       else
-        {{token, meta, [lhs, rhs]}, eat_eol(parser)}
+        ast = {token, meta, [lhs, rhs]}
+        ast_range_val = merge_ranges([op_range | Enum.map([lhs, rhs], &ast_range/1)])
+        {{token, put_meta_range(meta, ast_range_val), [lhs, rhs]}, eat_eol(parser)}
       end
     end
   end
@@ -1352,10 +1417,10 @@ defmodule Spitfire do
   # - assert peek token is end
   # - various clean up and metadata
 
-  defp parse_do_block(%{current_token: {:do, meta}} = parser, lhs) do
+  defp parse_do_block(%{current_token: {:do, _meta}} = parser, lhs) do
     trace "parse_do_block", trace_meta(parser) do
       do_meta = current_meta(parser)
-      type = encode_literal(parser, :do, meta)
+      type = encode_literal(parser, :do)
 
       old_nesting = parser.nesting
       parser = Map.put(parser, :nesting, 0)
@@ -1384,8 +1449,8 @@ defmodule Spitfire do
           case peek_token_eat_eol(parser) do
             :block_identifier ->
               parser = parser |> next_token() |> eat_eol()
-              {:block_identifier, meta, token} = parser.current_token
-              {{type, exprs}, {encode_literal(parser, token, meta), parser}}
+              {:block_identifier, _meta, token} = parser.current_token
+              {{type, exprs}, {encode_literal(parser, token), parser}}
 
             _ ->
               {{type, exprs}, {type, parser}}
@@ -1394,8 +1459,8 @@ defmodule Spitfire do
 
       extra_exprs =
         if current_token_type(parser) == :block_identifier do
-          {:block_identifier, meta, token} = parser.current_token
-          [{encode_literal(parser, token, meta), []}]
+            {:block_identifier, _meta, token} = parser.current_token
+            [{encode_literal(parser, token), []}]
         else
           []
         end
@@ -1765,16 +1830,16 @@ defmodule Spitfire do
     end
   end
 
-  defp parse_atom(%{current_token: {:atom, meta, atom}} = parser) do
+  defp parse_atom(%{current_token: {:atom, _meta, atom}} = parser) do
     trace "parse_atom", trace_meta(parser) do
-      atom = encode_literal(parser, atom, meta)
+      atom = encode_literal(parser, atom)
       {atom, parser}
     end
   end
 
-  defp parse_atom(%{current_token: {:atom_quoted, meta, atom}} = parser) do
+  defp parse_atom(%{current_token: {:atom_quoted, _meta, atom}} = parser) do
     trace "parse_atom (quoted)", trace_meta(parser) do
-      atom = encode_literal(parser, atom, meta)
+      atom = encode_literal(parser, atom)
       {atom, parser}
     end
   end
@@ -1789,38 +1854,38 @@ defmodule Spitfire do
     end
   end
 
-  defp parse_boolean(%{current_token: {bool, meta}} = parser) do
+  defp parse_boolean(%{current_token: {bool, _meta}} = parser) do
     trace "parse_boolean", trace_meta(parser) do
-      bool = encode_literal(parser, bool, meta)
+      bool = encode_literal(parser, bool)
 
       {bool, parser}
     end
   end
 
-  defp parse_int(%{current_token: {:int, {_, _, int} = meta, _}} = parser) do
+  defp parse_int(%{current_token: {:int, {_, _, int} = _meta, _}} = parser) do
     trace "parse_int", trace_meta(parser) do
-      int = encode_literal(parser, int, meta)
+      int = encode_literal(parser, int)
       {int, parser}
     end
   end
 
-  defp parse_float(%{current_token: {:flt, {_, _, float} = meta, _}} = parser) do
+  defp parse_float(%{current_token: {:flt, {_, _, float} = _meta, _}} = parser) do
     trace "parse_float", trace_meta(parser) do
-      float = encode_literal(parser, float, meta)
+      float = encode_literal(parser, float)
       {float, parser}
     end
   end
 
-  defp parse_string(%{current_token: {:bin_heredoc, meta, _indent, [string]}} = parser) do
+  defp parse_string(%{current_token: {:bin_heredoc, _meta, _indent, [string]}} = parser) do
     trace "parse_string (bin_heredoc)", trace_meta(parser) do
-      string = encode_literal(parser, string, meta)
+      string = encode_literal(parser, string)
       {string, parser}
     end
   end
 
-  defp parse_string(%{current_token: {:list_heredoc, meta, _indent, [string]}} = parser) do
+  defp parse_string(%{current_token: {:list_heredoc, _meta, _indent, [string]}} = parser) do
     trace "parse_string (list_heredoc)", trace_meta(parser) do
-      string = encode_literal(parser, String.to_charlist(string), meta)
+      string = encode_literal(parser, String.to_charlist(string))
       {string, parser}
     end
   end
@@ -1869,7 +1934,8 @@ defmodule Spitfire do
                       errors: [],
                       literal_encoder: parser.literal_encoder,
                       interpolation_depth: 0,
-                      saved_nesting_stack: []
+                      saved_nesting_stack: [],
+                      last_span: nil
                     }
                     |> next_token()
                     |> next_token()
@@ -1897,10 +1963,10 @@ defmodule Spitfire do
     end
   end
 
-  defp parse_string(%{current_token: {:bin_string, meta, [string]}} = parser)
+  defp parse_string(%{current_token: {:bin_string, _meta, [string]}} = parser)
        when is_binary(string) do
     trace "parse_string (bin_string)", trace_meta(parser) do
-      string = encode_literal(parser, string, meta)
+      string = encode_literal(parser, string)
       {string, parser}
     end
   end
@@ -1915,9 +1981,9 @@ defmodule Spitfire do
     end
   end
 
-  defp parse_string(%{current_token: {:list_string, meta, [string]}} = parser) do
+  defp parse_string(%{current_token: {:list_string, _meta, [string]}} = parser) do
     trace "parse_string (list_string)", trace_meta(parser) do
-      string = encode_literal(parser, String.to_charlist(string), meta)
+      string = encode_literal(parser, String.to_charlist(string))
       {string, parser}
     end
   end
@@ -1949,7 +2015,8 @@ defmodule Spitfire do
                       errors: [],
                       literal_encoder: parser.literal_encoder,
                       interpolation_depth: 0,
-                      saved_nesting_stack: []
+                      saved_nesting_stack: [],
+                      last_span: nil
                     }
                     |> next_token()
                     |> next_token()
@@ -1969,9 +2036,9 @@ defmodule Spitfire do
     end
   end
 
-  defp parse_char(%{current_token: {:char, {_, _, _token} = meta, num}} = parser) do
+  defp parse_char(%{current_token: {:char, {_, _, _token} = _meta, num}} = parser) do
     trace "parse_char", trace_meta(parser) do
-      char = encode_literal(parser, num, meta)
+      char = encode_literal(parser, num)
       {char, parser}
     end
   end
@@ -2290,7 +2357,7 @@ defmodule Spitfire do
     end
   end
 
-  defp parse_tuple_literal(%{current_token: {:"{", orig_meta}} = parser) do
+  defp parse_tuple_literal(%{current_token: {:"{", _orig_meta}} = parser) do
     trace "parse_tuple_literal", trace_meta(parser) do
       meta = current_meta(parser)
       orig_parser = parser
@@ -2379,7 +2446,7 @@ defmodule Spitfire do
             end
 
           if length(pairs) == 2 do
-            tuple = encode_literal(parser, pairs |> List.wrap() |> List.to_tuple(), orig_meta)
+            tuple = encode_literal(parser, pairs |> List.wrap() |> List.to_tuple())
             parser = Map.put(parser, :nesting, old_nesting)
             {tuple, parser}
           else
@@ -2399,7 +2466,7 @@ defmodule Spitfire do
     end
   end
 
-  defp parse_list_literal(%{current_token: {:"[", orig_meta}} = parser) do
+  defp parse_list_literal(%{current_token: {:"[", _orig_meta}} = parser) do
     trace "parse_list_literal", trace_meta(parser) do
       meta = current_meta(parser)
       orig_parser = parser
@@ -2410,7 +2477,7 @@ defmodule Spitfire do
       cond do
         current_token(parser) == :"]" ->
           parser = Map.put(parser, :nesting, old_nesting)
-          {encode_literal(parser, [], orig_meta), parser}
+          {encode_literal(parser, []), parser}
 
         current_token(parser) in [:end, :"}", :")", :">>"] ->
           # if the current token is the wrong kind of ending delimiter, we revert to the previous parser
@@ -2426,7 +2493,7 @@ defmodule Spitfire do
             |> update_in([:stream], &Spitfire.TokenStream.push_back(&1, [parser.peek_token]))
 
           parser = Map.put(parser, :nesting, old_nesting)
-          {encode_literal(parser, [], orig_meta), parser}
+          {encode_literal(parser, []), parser}
 
         true ->
           old_comma_list_parsers = Process.get(:comma_list_parsers)
@@ -2438,7 +2505,7 @@ defmodule Spitfire do
             :"]" ->
               parser = eat_eol_at(parser, 1)
               parser = Map.put(parser, :nesting, old_nesting)
-              {encode_literal(parser, pairs, orig_meta), next_token(parser)}
+              {encode_literal(parser, pairs), next_token(parser)}
 
             _ ->
               all_pairs = pairs |> Enum.reverse() |> Enum.zip(Process.get(:comma_list_parsers))
@@ -2477,7 +2544,7 @@ defmodule Spitfire do
 
               pairs = Enum.reverse(pairs)
               parser = Map.put(parser, :nesting, old_nesting)
-              {encode_literal(parser, pairs, orig_meta), parser}
+              {encode_literal(parser, pairs), parser}
           end
       end
     end
@@ -2725,6 +2792,7 @@ defmodule Spitfire do
         parser
         |> current_meta()
         |> push_delimiter(token_meta)
+        |> put_meta_range(token_range(parser.current_token))
 
       {{token, meta, nil}, parser}
     end
@@ -2732,7 +2800,11 @@ defmodule Spitfire do
 
   defp parse_lone_module_attr(%{current_token: {:at_op, _, token}} = parser) do
     trace "parse_lone_module_attr", trace_meta(parser) do
-      meta = current_meta(parser)
+      meta =
+        parser
+        |> current_meta()
+        |> put_meta_range(token_range(parser.current_token))
+
       parser = next_token(parser)
       {ident, parser} = parse_lone_identifier(parser)
       {{token, meta, [ident]}, parser}
@@ -2765,7 +2837,8 @@ defmodule Spitfire do
                       fuel: 150,
                       literal_encoder: parser.literal_encoder,
                       interpolation_depth: 0,
-                      saved_nesting_stack: []
+                      saved_nesting_stack: [],
+                      last_span: nil
                     }
                     |> next_token()
                     |> next_token()
@@ -3165,7 +3238,7 @@ defmodule Spitfire do
             if has_only_fragments do
               merged = parts |> Enum.map(fn {:fragment, _m, c} -> c end) |> IO.iodata_to_binary()
               atom_value = String.to_atom(merged)
-              encode_literal(parser, atom_value, start_meta)
+              encode_literal(parser, atom_value)
             else
               args = build_string_parts(parts, :atom)
               binary_ast = {:<<>>, start_meta, args}
@@ -3188,7 +3261,7 @@ defmodule Spitfire do
         parts == [] ->
           # Empty string
           literal = if kind == :binary, do: "", else: []
-          {encode_literal(parser, literal, start_meta), parser}
+          {encode_literal(parser, literal), parser}
 
         Enum.all?(parts, fn
           {:fragment, _m, _c} -> true
@@ -3201,7 +3274,7 @@ defmodule Spitfire do
             |> IO.iodata_to_binary()
 
           literal = if kind == :binary, do: merged, else: String.to_charlist(merged)
-          {encode_literal(parser, literal, start_meta), parser}
+          {encode_literal(parser, literal), parser}
 
         true ->
           # Interpolated or multi-part: build AST
@@ -3262,7 +3335,7 @@ defmodule Spitfire do
           |> IO.iodata_to_binary()
 
         literal = if kind == :binary, do: merged, else: String.to_charlist(merged)
-        {encode_literal(parser, literal, start_meta), parser}
+        {encode_literal(parser, literal), parser}
       else
         # Build AST from parts
         args = build_string_parts(unescaped_parts, kind)
@@ -3363,7 +3436,7 @@ defmodule Spitfire do
       cond do
         parts == [] ->
           # Empty quoted atom (edge case)
-          {encode_literal(parser, :"", start_meta), parser}
+          {encode_literal(parser, :""), parser}
 
         Enum.all?(parts, fn
           {:fragment, _m, _c} -> true
@@ -3376,7 +3449,7 @@ defmodule Spitfire do
             |> IO.iodata_to_binary()
 
           atom_value = String.to_atom(merged)
-          {encode_literal(parser, atom_value, start_meta), parser}
+          {encode_literal(parser, atom_value), parser}
 
         true ->
           # Interpolated atom – build binary_to_atom({:<<>>,...}, :utf8)
@@ -3928,59 +4001,20 @@ defmodule Spitfire do
   end
 
   # Normalize ranged meta: {{line, col}, {end_line, end_col}, extra}
-  defp encode_literal(
-         %{literal_encoder: encoder} = parser,
-         literal,
-         {{line, col}, _end_pos, _extra}
-       )
-       when is_function(encoder) do
-    meta = additional_meta(literal, parser) ++ [line: line, column: col]
+  # Backward-compatible clauses for callers that still pass explicit meta.
+  defp encode_literal(%{literal_encoder: encoder} = parser, literal) when is_function(encoder) do
+    base_meta =
+      additional_meta(literal, parser)
+      |> Kernel.++(current_meta(parser))
+      |> maybe_add_range(parser)
 
-    case parser.literal_encoder.(literal, meta) do
-      {:ok, ast} ->
-        ast
-
-      {:error, reason} ->
-        Logger.error(reason)
-        literal
+    case encoder.(literal, base_meta) do
+      {:ok, ast} -> ast
+      {:error, reason} -> Logger.error(reason); literal
     end
   end
 
-  # Legacy meta shape: {line, col, extra}
-  defp encode_literal(%{literal_encoder: encoder} = parser, literal, {line, col, _})
-       when is_function(encoder) do
-    meta = additional_meta(literal, parser) ++ [line: line, column: col]
-
-    case parser.literal_encoder.(literal, meta) do
-      {:ok, ast} ->
-        ast
-
-      {:error, reason} ->
-        Logger.error(reason)
-        literal
-    end
-  end
-
-  # Keyword meta (e.g., from linearized starts) with :line/:column
-  defp encode_literal(%{literal_encoder: encoder} = parser, literal, meta_kw)
-       when is_function(encoder) and is_list(meta_kw) do
-    line = Keyword.get(meta_kw, :line)
-    col = Keyword.get(meta_kw, :column)
-    meta = additional_meta(literal, parser) ++ [line: line, column: col]
-
-    case parser.literal_encoder.(literal, meta) do
-      {:ok, ast} ->
-        ast
-
-      {:error, reason} ->
-        Logger.error(reason)
-        literal
-    end
-  end
-
-  defp encode_literal(_parser, literal, _) do
-    literal
-  end
+  defp encode_literal(_parser, literal), do: literal
 
   defp additional_meta(_literal, %{current_token: {:list_string, _, _}}) do
     [delimiter: "'"]
@@ -4062,6 +4096,15 @@ defmodule Spitfire do
   defp put_error(parser, error) do
     update_in(parser.errors, &[error | &1])
   end
+
+  defp maybe_add_range(meta, %{current_token: tok}) do
+    case token_range(tok) do
+      nil -> meta
+      range -> put_meta_range(meta, range)
+    end
+  end
+
+  defp maybe_add_range(meta, _parser), do: meta
 
   @braces MapSet.new([:")", :"]", :"}", :">>"])
   defp validate_peek(parser, current_type) do
