@@ -3192,6 +3192,7 @@ defmodule Spitfire do
 
         # 3. Consume :begin_interpolation token
         open_meta = current_meta(parser)
+        open_range = token_range(parser.current_token)
         parser = next_token(parser)
         # Eat any immediate EOLs after opening interpolation
         parser = eat_eol(parser)
@@ -3211,21 +3212,22 @@ defmodule Spitfire do
         # 5. Skip any trailing EOLs (for non-empty), then expect and consume :end_interpolation
         parser = if empty_interp?, do: parser, else: eat_eol_at(parser, 1)
 
-        {end_meta, parser} =
+        {end_meta, end_range, parser} =
           cond do
             current_token_type(parser) == :end_interpolation ->
               # Current is the closing marker (empty interpolation)
-              {current_meta(parser), next_token(parser)}
+              {current_meta(parser), token_range(parser.current_token), next_token(parser)}
 
             peek_token_type(parser) == :end_interpolation ->
               # Closing marker is at peek; advance to it and then past it
               parser = next_token(parser)
-              {current_meta(parser), next_token(parser)}
+              {current_meta(parser), token_range(parser.current_token), next_token(parser)}
 
             true ->
               # Error: expected :end_interpolation
               parser = put_error(parser, {current_meta(parser), "expected end of interpolation"})
-              {nil, parser}
+              # Synthesize a closing meta/range from current position for recovery
+              {current_meta(parser), token_range(parser.current_token), parser}
           end
 
         # 6. Restore nesting and pop depth
@@ -3239,7 +3241,7 @@ defmodule Spitfire do
         }
 
         # 7. Build interpolation AST based on kind
-        interp_ast = build_interpolation_ast(expr, open_meta, end_meta || open_meta, kind)
+        interp_ast = build_interpolation_ast(expr, open_meta, end_meta || open_meta, open_range, end_range, kind)
 
         scan_loop(
           parser,
@@ -3281,7 +3283,9 @@ defmodule Spitfire do
   end
 
   # Helper function to build interpolation AST based on construct type
-  defp build_interpolation_ast(expr, open_meta, end_meta, kind) do
+  defp build_interpolation_ast(expr, open_meta, end_meta, open_range, end_range, kind) do
+    interp_range = merge_ranges([open_range, end_range, ast_range(expr)])
+
     case kind do
       :binary ->
         call_meta = [from_interpolation: true, closing: end_meta] ++ open_meta
@@ -3291,10 +3295,12 @@ defmodule Spitfire do
            {{:., open_meta, [Kernel, :to_string]}, call_meta, [expr]},
            {:binary, open_meta, nil}
          ]}
+        |> attach_range([interp_range])
 
       :charlist ->
         call_meta = [from_interpolation: true, closing: end_meta] ++ open_meta
         {{:., open_meta, [Kernel, :to_string]}, call_meta, [expr]}
+        |> attach_range([interp_range])
 
       :atom ->
         call_meta = [from_interpolation: true, closing: end_meta] ++ open_meta
@@ -3304,6 +3310,7 @@ defmodule Spitfire do
            {{:., open_meta, [Kernel, :to_string]}, call_meta, [expr]},
            {:binary, open_meta, nil}
          ]}
+        |> attach_range([interp_range])
 
       :sigil ->
         call_meta = [from_interpolation: true, closing: end_meta] ++ open_meta
@@ -3313,6 +3320,7 @@ defmodule Spitfire do
            {{:., open_meta, [Kernel, :to_string]}, call_meta, [expr]},
            {:binary, open_meta, nil}
          ]}
+        |> attach_range([interp_range])
 
       _ ->
         expr
@@ -3430,14 +3438,16 @@ defmodule Spitfire do
       :begin_interpolation ->
         # Handle interpolation (simplified for identifiers)
         open_meta = current_meta(parser)
+        open_range = token_range(parser.current_token)
         parser = next_token(parser)
         {expr, parser} = parse_expression(parser)
 
         if peek_token_type(parser) == :end_interpolation do
           parser = next_token(parser)
           end_meta = current_meta(parser)
+          end_range = token_range(parser.current_token)
           parser = next_token(parser)
-          interp_ast = build_interpolation_ast(expr, open_meta, end_meta, :identifier)
+          interp_ast = build_interpolation_ast(expr, open_meta, end_meta, open_range, end_range, :identifier)
           scan_identifier_loop(parser, [{:interpolation, end_meta, interp_ast} | accumulator])
         else
           parser =

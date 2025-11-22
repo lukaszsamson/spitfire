@@ -97,4 +97,36 @@ Because behaviour is encoded in Elixir functions rather than tables, *grammar ev
 * Elixir `Code.string_to_quoted/2` – inspiration for many edge-cases.
 
 ---
-*Generated automatically from source `lib/spitfire.ex`.* 
+*Generated automatically from source `lib/spitfire.ex`.*
+
+## 13. Range Metadata (Toxic Mode)
+
+When using the Toxic tokenizer, Spitfire attaches a `:range` key to AST node
+metadata:
+
+- **Format**: `{:range, {{start_line, start_col}, {end_line, end_col}}}`
+- **Coordinates**: 1-based (`line`, `column`), representing a half-open
+  interval `[start, end)`.
+- **Invariants** (guaranteed for all inputs):
+  - Parent ranges contain the ranges of all children.
+  - Sibling ranges do not overlap (they may touch).
+  - The root node’s range spans the entire document (from parser start to
+    logical EOF).
+
+Range data is derived from Toxic’s ranged token metadata. Even in
+error-tolerant mode, Toxic emits structural tokens for missing delimiters
+(`)`, `]`, `}`, `end`, etc.), sometimes with zero-width ranges; Spitfire uses
+these tokens to keep ranges consistent.
+
+Example:
+
+```elixir
+{:ok, {:+, meta, [lhs, rhs]}} =
+  Spitfire.parse("1 + 2", tokenizer: :toxic)
+
+meta[:range]
+# => {{1, 1}, {1, 6}}
+```
+
+Legacy (non-Toxic) mode does not attach `:range`, preserving the original AST
+shape and metadata. 

@@ -480,6 +480,22 @@ defmodule SpitfireRangesTest do
       assert_range_invariants(ast)
     end
 
+    test "full module structure respects invariants" do
+      code = """
+      defmodule Foo do
+        def bar(a, b) do
+          if a + b > 10 do
+            "result: \#{a + b}"
+          else
+            :error
+          end
+        end
+      end
+      """
+      {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic)
+      assert_range_invariants(ast)
+    end
+
     test "root node spans entire document" do
       code = "1 + 2\n"
       {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic)
