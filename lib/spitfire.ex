@@ -430,12 +430,19 @@ defmodule Spitfire do
 
   defp parse_grouped_expression(parser) do
     trace "parse_grouped_expression", trace_meta(parser) do
+      open_range = token_range(parser.current_token)
       opening_paren_meta = current_meta(parser)
 
       if peek_token(parser) == :")" do
         parser = parser |> next_token() |> eat_eol()
         closing_paren_meta = current_meta(parser)
-        {{:__block__, [parens: opening_paren_meta ++ [closing: closing_paren_meta]], []}, parser}
+        close_range = token_range(parser.current_token)
+
+        ast =
+          {:__block__, [parens: opening_paren_meta ++ [closing: closing_paren_meta]], []}
+          |> attach_range([open_range, close_range])
+
+        {ast, parser}
       else
         orig_meta = current_meta(parser)
         parser = parser |> next_token() |> eat_eol()
@@ -458,6 +465,7 @@ defmodule Spitfire do
               |> eat_eol()
 
             closing_paren_meta = current_meta(parser)
+            close_range = token_range(parser.current_token)
 
             ast =
               case expression do
@@ -477,6 +485,16 @@ defmodule Spitfire do
 
                 expression ->
                   expression
+              end
+
+            ast =
+              case ast do
+                {f, meta, args} ->
+                  child_ranges = if is_list(args), do: Enum.map(args, &arg_range/1), else: []
+                  {f, put_meta_range(meta, merge_ranges([open_range, close_range | child_ranges])), args}
+
+                _ ->
+                  ast
               end
 
             {ast, parser}
@@ -555,6 +573,18 @@ defmodule Spitfire do
 
                   _ ->
                     {:__block__, [{:closing, current_meta(parser)} | orig_meta], exprs}
+                end
+
+              close_range = token_range(parser.current_token)
+
+              ast =
+                case ast do
+                  {f, meta, args} ->
+                    child_ranges = if is_list(args), do: Enum.map(args, &arg_range/1), else: []
+                    {f, put_meta_range(meta, merge_ranges([open_range, close_range | child_ranges])), args}
+
+                  _ ->
+                    ast
                 end
 
               {ast, parser}
@@ -1431,6 +1461,7 @@ defmodule Spitfire do
   defp parse_do_block(%{current_token: {:do, _meta}} = parser, lhs) do
     trace "parse_do_block", trace_meta(parser) do
       do_meta = current_meta(parser)
+      do_range = token_range(parser.current_token)
       type = encode_literal(parser, :do)
 
       old_nesting = parser.nesting
@@ -1484,6 +1515,12 @@ defmodule Spitfire do
           {put_error(parser, {do_meta, "missing `end` for do block"}), do_meta}
         end
 
+      end_range =
+        case parser.current_token do
+          {:end, _} -> token_range(parser.current_token)
+          _ -> nil
+        end
+
       exprs =
         case exprs ++ extra_exprs do
           [] -> [{type, []}]
@@ -1502,6 +1539,18 @@ defmodule Spitfire do
 
           {token, meta, args} when is_list(args) ->
             {token, [do: do_meta, end: end_meta] ++ meta, args ++ [exprs]}
+        end
+
+      ast =
+        case ast do
+          {form, meta, args} ->
+            callee_range = ast_range(lhs)
+            child_ranges = Enum.map(args, &arg_range/1)
+            range = merge_ranges([callee_range, do_range, end_range | child_ranges])
+            {form, put_meta_range(meta, range), args}
+
+          _ ->
+            ast
         end
 
       parser = Map.put(parser, :nesting, old_nesting)
@@ -1826,6 +1875,7 @@ defmodule Spitfire do
   defp parse_anon_function(%{current_token: {:fn, _}} = parser) do
     trace "parse_anon_function", trace_meta(parser) do
       meta = current_meta(parser)
+      fn_range = token_range(parser.current_token)
 
       newlines = get_newlines(parser)
       parser = parser |> next_token() |> eat_eol()
@@ -1887,7 +1937,17 @@ defmodule Spitfire do
             {put_error(parser, {meta, "missing closing end for anonymous function"}), meta}
         end
 
-      {{:fn, newlines ++ meta, exprs}, parser}
+      end_range =
+        case parser.current_token do
+          {:end, _} -> token_range(parser.current_token)
+          _ -> nil
+        end
+
+      ast =
+        {:fn, newlines ++ meta, exprs}
+        |> attach_range([fn_range, end_range | Enum.map(exprs, &arg_range/1)])
+
+      {ast, parser}
     end
   end
 
@@ -4574,6 +4634,7 @@ defmodule Spitfire do
 
       [{:unquote_splicing, _, [_]}] ->
         {:__block__, [], exprs}
+        |> attach_range([arg_range(exprs)])
 
       [expr] ->
         expr
@@ -4590,6 +4651,7 @@ defmodule Spitfire do
 
       _ ->
         {:__block__, [], exprs}
+        |> attach_range([arg_range(exprs)])
     end
   end
 
