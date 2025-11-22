@@ -509,6 +509,22 @@ defmodule SpitfireRangesTest do
       # Root should start at {1,1} and end at EOF
       assert_range(ast, {{1, 1}, {2, 1}})
     end
+
+    test "empty source still has start range" do
+      {:ok, ast} = Spitfire.parse("", tokenizer: :toxic)
+
+      assert_range(ast, {{1, 1}, {1, 1}})
+      assert_range_invariants(ast)
+    end
+
+    test "comment-only source still has start range" do
+      code = "# comment"
+      {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic)
+
+      # TODO: should it span a full document?
+      assert_range(ast, {{1, 1}, {1, 1}})
+      assert_range_invariants(ast)
+    end
   end
 
   describe "Edge Cases" do
