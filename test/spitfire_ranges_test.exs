@@ -533,6 +533,258 @@ defmodule SpitfireRangesTest do
     end
   end
 
+  describe "Operator Edge Cases" do
+    test "nested binary operators with precedence" do
+      code = "1 + 2 * 3"
+      {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic)
+
+      # Root should be + operator
+      assert {:+, _meta, [lhs, rhs]} = ast
+      assert_range(ast, {{1, 1}, {1, 10}})
+
+      # lhs is literal 1
+      assert lhs == 1
+
+      # rhs is * operator
+      assert {:*, _mul_meta, [_mul_lhs, _mul_rhs]} = rhs
+      # The * operator range should exist
+      assert get_range(rhs) != nil
+
+      # Verify invariants hold
+      assert_range_invariants(ast)
+    end
+
+    test "grouped expression with operators" do
+      code = "(1 + 2) * 3"
+      {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic)
+
+      # Root should be * operator
+      assert {:*, _meta, [lhs, _rhs]} = ast
+      assert_range(ast, {{1, 1}, {1, 12}})
+
+      # lhs is grouped + expression
+      assert {:+, _plus_meta, _} = lhs
+      assert get_range(lhs) != nil
+
+      # Verify invariants hold
+      assert_range_invariants(ast)
+    end
+
+    test "chained operators of same precedence" do
+      code = "1 + 2 + 3 + 4"
+      {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic)
+
+      # Should be nested + operators
+      assert {:+, _meta, _args} = ast
+      assert_range(ast, {{1, 1}, {1, 14}})
+
+      # Verify invariants hold
+      assert_range_invariants(ast)
+    end
+
+    test "chained pipe operators" do
+      code = "a |> b |> c"
+      {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic)
+
+      # Should be nested |> operators
+      assert {:|>, _meta, _args} = ast
+      assert_range(ast, {{1, 1}, {1, 12}})
+
+      # Verify invariants hold
+      assert_range_invariants(ast)
+    end
+
+    test "chained pipes with function calls" do
+      code = "1 |> foo() |> bar()"
+      {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic)
+
+      # Root should be pipe
+      assert {:|>, _meta, _args} = ast
+      assert_range(ast, {{1, 1}, {1, 20}})
+
+      # Note: Function call ranges will be added in Phase 4
+      # For now, just verify the pipe operators have ranges
+      assert get_range(ast) != nil
+    end
+
+    test "range expression with identifiers" do
+      code = "a..b"
+      {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic)
+
+      # Should be range operator
+      assert {:.., _meta, [_lhs, _rhs]} = ast
+      assert_range(ast, {{1, 1}, {1, 5}})
+
+      # Verify invariants hold
+      assert_range_invariants(ast)
+    end
+
+    test "incomplete binary operation" do
+      code = "1 + "
+      {:error, ast, _errors} = Spitfire.parse(code, tokenizer: :toxic)
+
+      # Should still have range even with error
+      # Note: Error blocks may not have ranges until Phase 5 is implemented
+      _range = get_range(ast)
+
+      # The operator node itself should have a range
+      assert {:+, meta, _} = ast
+      assert meta[:range] != nil
+    end
+
+    test "incomplete unary operation" do
+      code = "- "
+      {:error, ast, _errors} = Spitfire.parse(code, tokenizer: :toxic)
+
+      # The operator node should have a range
+      # Note: Error blocks may not have ranges until Phase 5 is implemented
+      assert {:-, meta, _} = ast
+      assert meta[:range] != nil
+    end
+
+    test "incomplete pipe operation" do
+      code = "1 |> "
+      {:error, ast, _errors} = Spitfire.parse(code, tokenizer: :toxic)
+
+      # The pipe operator should have a range
+      # Note: Error blocks may not have ranges until Phase 5 is implemented
+      assert {:|>, meta, _} = ast
+      assert meta[:range] != nil
+    end
+
+    test "unary and binary operators combined" do
+      code = "-1 + 2"
+      {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic)
+
+      # Root is + operator
+      assert {:+, _meta, [lhs, _rhs]} = ast
+      assert_range(ast, {{1, 1}, {1, 7}})
+
+      # lhs is unary - operator
+      assert {:-, _neg_meta, [_operand]} = lhs
+      assert get_range(lhs) != nil
+
+      # Verify invariants
+      assert_range_invariants(ast)
+    end
+
+    test "module attribute with binary operator" do
+      code = "@foo + 1"
+      {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic)
+
+      # Root is + operator
+      assert {:+, _meta, [lhs, _rhs]} = ast
+      assert_range(ast, {{1, 1}, {1, 9}})
+
+      # lhs is @ operator
+      assert {:@, _attr_meta, _} = lhs
+      assert get_range(lhs) != nil
+
+      # Verify invariants
+      assert_range_invariants(ast)
+    end
+
+    test "capture operators with binary operator" do
+      code = "&1 + &2"
+      {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic)
+
+      # Root is + operator
+      assert {:+, _meta, [lhs, rhs]} = ast
+      assert_range(ast, {{1, 1}, {1, 8}})
+
+      # Both operands are captures
+      assert {:&, _, _} = lhs
+      assert {:&, _, _} = rhs
+      assert get_range(lhs) != nil
+      assert get_range(rhs) != nil
+
+      # Verify invariants
+      assert_range_invariants(ast)
+    end
+
+    test "match operator with arithmetic" do
+      code = "a = b + c"
+      {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic)
+
+      # Root is = operator
+      assert {:=, _meta, [_lhs, rhs]} = ast
+      assert_range(ast, {{1, 1}, {1, 10}})
+
+      # rhs is + operator
+      assert {:+, _plus_meta, _} = rhs
+      assert get_range(rhs) != nil
+
+      # Verify invariants
+      assert_range_invariants(ast)
+    end
+
+    test "boolean operator precedence" do
+      code = "a or b and c"
+      {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic)
+
+      # Should respect precedence (and binds tighter than or)
+      assert {:or, _meta, [_lhs, rhs]} = ast
+      assert_range(ast, {{1, 1}, {1, 13}})
+
+      # rhs should be 'and' expression
+      assert {:and, _and_meta, _} = rhs
+      assert get_range(rhs) != nil
+
+      # Verify invariants
+      assert_range_invariants(ast)
+    end
+
+    test "comparison with boolean operators" do
+      code = "1 < 2 and 3 > 4"
+      {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic)
+
+      # Root is 'and' operator
+      assert {:and, _meta, [lhs, rhs]} = ast
+      assert_range(ast, {{1, 1}, {1, 16}})
+
+      # Both operands are comparison operators
+      assert {:<, _lt_meta, _} = lhs
+      assert {:>, _gt_meta, _} = rhs
+      assert get_range(lhs) != nil
+      assert get_range(rhs) != nil
+
+      # Verify invariants
+      assert_range_invariants(ast)
+    end
+
+    test "operator split across lines" do
+      code = "1 +\n  2"
+      {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic)
+
+      # Should be + operator
+      assert {:+, _meta, [_lhs, _rhs]} = ast
+
+      # Range should span both lines
+      {{start_line, _}, {end_line, _}} = get_range(ast)
+      assert start_line == 1
+      assert end_line == 2
+
+      # Verify invariants
+      assert_range_invariants(ast)
+    end
+
+    test "pipe split across lines" do
+      code = "a\n|> b"
+      {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic)
+
+      # Should be pipe operator
+      assert {:|>, _meta, _args} = ast
+
+      # Range should span both lines
+      {{start_line, _}, {end_line, _}} = get_range(ast)
+      assert start_line == 1
+      assert end_line == 2
+
+      # Verify invariants
+      assert_range_invariants(ast)
+    end
+  end
+
   describe "Legacy Mode Compatibility" do
     test "no range metadata in legacy mode" do
       code = "[1, 2]"
