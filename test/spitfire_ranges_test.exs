@@ -1463,6 +1463,23 @@ defmodule SpitfireRangesTest do
       assert interp_meta[:range] == {{1, 3}, {1, 7}}
     end
 
+    test "kernel interpolation call has range" do
+      code = "\"a\#{1}b\""
+      {:ok, {:<<>>, _meta, args}} = Spitfire.parse(code, tokenizer: :toxic)
+
+      interp =
+        Enum.find(args, fn
+          {:"::", _, _} -> true
+          _ -> false
+        end)
+
+      {:"::", interp_meta, [call_ast, binary_ast]} = interp
+      {{:., call_meta, [Kernel, :to_string]}, _, [_expr]} = call_ast
+
+      assert call_meta[:range] == interp_meta[:range]
+      assert get_range(binary_ast) == interp_meta[:range]
+    end
+
     test "heredoc interpolation range" do
       code = "\"\"\"\n\#{1}\n\"\"\""
       {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic)

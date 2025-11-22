@@ -2079,7 +2079,7 @@ defmodule Spitfire do
               token
 
             {{line, col, _}, {cline, ccol, _}, tokens} ->
-              meta = [line: line, column: col]
+              meta = put_meta_range([line: line, column: col], {{line, col}, {cline, ccol}})
               # construct a new parser
               ast =
                 if tokens == [] do
@@ -2162,7 +2162,7 @@ defmodule Spitfire do
               token
 
             {{line, col, _}, {cline, ccol, _}, tokens} ->
-              meta = [line: line, column: col]
+              meta = put_meta_range([line: line, column: col], {{line, col}, {cline, ccol}})
               # construct a new parser
               ast =
                 if tokens == [] do
@@ -3096,7 +3096,7 @@ defmodule Spitfire do
               token
 
             {{line, col, _}, {cline, ccol, _}, tokens} ->
-              meta = [line: line, column: col]
+              meta = put_meta_range([line: line, column: col], {{line, col}, {cline, ccol}})
 
               # construct a new parser
               ast =
@@ -3274,40 +3274,35 @@ defmodule Spitfire do
   # Helper function to build interpolation AST based on construct type
   defp build_interpolation_ast(expr, open_meta, end_meta, open_range, end_range, kind) do
     interp_range = merge_ranges([open_range, end_range, ast_range(expr)])
+    range_meta = put_meta_range(open_meta, interp_range)
+    call_meta = [from_interpolation: true, closing: end_meta] ++ range_meta
 
     case kind do
       :binary ->
-        call_meta = [from_interpolation: true, closing: end_meta] ++ open_meta
-
-        {:"::", open_meta,
+        {:"::", range_meta,
          [
-           {{:., open_meta, [Kernel, :to_string]}, call_meta, [expr]},
-           {:binary, open_meta, nil}
+           {{:., range_meta, [Kernel, :to_string]}, call_meta, [expr]},
+           {:binary, range_meta, nil}
          ]}
         |> attach_range([interp_range])
 
       :charlist ->
-        call_meta = [from_interpolation: true, closing: end_meta] ++ open_meta
-        {{:., open_meta, [Kernel, :to_string]}, call_meta, [expr]}
+        {{:., range_meta, [Kernel, :to_string]}, call_meta, [expr]}
         |> attach_range([interp_range])
 
       :atom ->
-        call_meta = [from_interpolation: true, closing: end_meta] ++ open_meta
-
-        {:"::", open_meta,
+        {:"::", range_meta,
          [
-           {{:., open_meta, [Kernel, :to_string]}, call_meta, [expr]},
-           {:binary, open_meta, nil}
+           {{:., range_meta, [Kernel, :to_string]}, call_meta, [expr]},
+           {:binary, range_meta, nil}
          ]}
         |> attach_range([interp_range])
 
       :sigil ->
-        call_meta = [from_interpolation: true, closing: end_meta] ++ open_meta
-
-        {:"::", open_meta,
+        {:"::", range_meta,
          [
-           {{:., open_meta, [Kernel, :to_string]}, call_meta, [expr]},
-           {:binary, open_meta, nil}
+           {{:., range_meta, [Kernel, :to_string]}, call_meta, [expr]},
+           {:binary, range_meta, nil}
          ]}
         |> attach_range([interp_range])
 
