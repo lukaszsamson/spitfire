@@ -972,7 +972,7 @@ defmodule SpitfireRangesTest do
       {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic)
 
       # Should span from 'if' to 'end'
-      {{start_line, start_col}, {end_line, end_col}} = get_range(ast)
+      {{start_line, start_col}, {end_line, _end_col}} = get_range(ast)
       assert start_line == 1
       assert start_col == 1
       assert end_line == 3
@@ -1058,6 +1058,44 @@ defmodule SpitfireRangesTest do
 
       assert_range(ast, {{1, 1}, {1, 25}})
       assert_range_invariants(ast)
+    end
+  end
+
+  describe "Calls and Blocks Ranges" do
+    test "paren call range" do
+      code = "foo(1, 2)"
+      {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic)
+      assert get_range(ast) != nil
+    end
+
+    test "no-paren call range" do
+      code = "foo 1, 2"
+      {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic)
+      assert get_range(ast) != nil
+    end
+
+    test "dot call range" do
+      code = "Mod.fun(1)"
+      {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic)
+      assert get_range(ast) != nil
+    end
+
+    test "do block range" do
+      code = "if true do :ok end"
+      {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic)
+      assert get_range(ast) != nil
+    end
+
+    test "anon function range" do
+      code = "fn -> :ok end"
+      {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic)
+      assert get_range(ast) != nil
+    end
+
+    test "grouped expression range" do
+      code = "(1 + 2)"
+      {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic)
+      assert get_range(ast) != nil
     end
   end
 
