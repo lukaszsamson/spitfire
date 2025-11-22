@@ -878,6 +878,189 @@ defmodule SpitfireRangesTest do
     end
   end
 
+  describe "Call and Container Edge Cases" do
+    test "nested calls" do
+      code = "foo(bar(baz()))"
+      {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic)
+
+      # Outer call
+      assert_range(ast, {{1, 1}, {1, 16}})
+
+      # Should have nested structure
+      assert_range_invariants(ast)
+    end
+
+    test "calls with keyword arguments" do
+      code = "foo(a: 1, b: 2)"
+      {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic)
+
+      # Call should span entire expression
+      assert_range(ast, {{1, 1}, {1, 16}})
+      assert_range_invariants(ast)
+    end
+
+    test "remote call with multiple arguments" do
+      code = "Foo.bar(1, 2, 3)"
+      {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic)
+
+      # Should span from Foo to closing paren
+      assert_range(ast, {{1, 1}, {1, 17}})
+      assert_range_invariants(ast)
+    end
+
+    test "chained dot access" do
+      code = "a.b.c.d()"
+      {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic)
+
+      # Should span entire chain
+      assert_range(ast, {{1, 1}, {1, 10}})
+      assert_range_invariants(ast)
+    end
+
+    test "access with multiple keys" do
+      code = "foo[a][b][c]"
+      {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic)
+
+      # Should span entire access chain
+      assert_range(ast, {{1, 1}, {1, 13}})
+      assert_range_invariants(ast)
+    end
+
+    test "nested containers" do
+      code = "[%{a: {1, 2}}]"
+      {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic, literal_encoder: test_encoder())
+
+      # Outer list
+      assert_received {:lit_meta, [_], list_meta}
+      assert list_meta[:range] == {{1, 1}, {1, 15}}
+
+      # Should have proper nesting
+      assert_range_invariants(ast)
+    end
+
+    test "containers in call arguments" do
+      code = "foo([1, 2], %{a: 3})"
+      {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic, literal_encoder: test_encoder())
+
+      # Call should span everything
+      assert_range(ast, {{1, 1}, {1, 21}})
+
+      # Verify nested containers have ranges
+      assert_range_invariants(ast)
+    end
+
+    test "multi-line container" do
+      code = """
+      [
+        1,
+        2,
+        3
+      ]
+      """
+      {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic, literal_encoder: test_encoder())
+
+      # Should span from line 1 to line 6 (heredoc adds trailing newline)
+      {{start_line, _}, {end_line, _}} = get_range(ast)
+      assert start_line == 1
+      assert end_line == 6
+
+      assert_range_invariants(ast)
+    end
+
+    test "call with trailing do-block (no parens)" do
+      code = "if true do\n  1\nend"
+      {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic)
+
+      # Should span from 'if' to 'end'
+      {{start_line, start_col}, {end_line, end_col}} = get_range(ast)
+      assert start_line == 1
+      assert start_col == 1
+      assert end_line == 3
+
+      assert_range_invariants(ast)
+    end
+
+    test "incomplete call" do
+      code = "foo("
+      {:error, ast, _errors} = Spitfire.parse(code, tokenizer: :toxic)
+
+      # Should still have range
+      assert get_range(ast) != nil
+    end
+
+    test "missing dot rhs" do
+      code = "foo."
+      {:error, ast, _errors} = Spitfire.parse(code, tokenizer: :toxic)
+
+      # Should still have range
+      assert get_range(ast) != nil
+    end
+
+    test "unclosed access bracket" do
+      code = "foo["
+      {:error, ast, _errors} = Spitfire.parse(code, tokenizer: :toxic)
+
+      # Should still have range
+      assert get_range(ast) != nil
+    end
+
+    test "remote call with no args" do
+      code = "Foo.bar()"
+      {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic)
+
+      assert_range(ast, {{1, 1}, {1, 10}})
+      assert_range_invariants(ast)
+    end
+
+    test "local call with no args" do
+      code = "foo()"
+      {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic)
+
+      assert_range(ast, {{1, 1}, {1, 6}})
+      assert_range_invariants(ast)
+    end
+
+    test "no-parens call with single arg" do
+      code = "foo 1"
+      {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic)
+
+      assert_range(ast, {{1, 1}, {1, 6}})
+      assert_range_invariants(ast)
+    end
+
+    test "no-parens call with multiple args" do
+      code = "foo 1, 2, 3"
+      {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic)
+
+      assert_range(ast, {{1, 1}, {1, 12}})
+      assert_range_invariants(ast)
+    end
+
+    test "access with keyword list" do
+      code = "foo[bar: 1, baz: 2]"
+      {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic)
+
+      assert_range(ast, {{1, 1}, {1, 20}})
+      assert_range_invariants(ast)
+    end
+
+    test "deeply nested containers" do
+      code = "[[[1]]]"
+      {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic, literal_encoder: test_encoder())
+
+      assert_range(ast, {{1, 1}, {1, 8}})
+      assert_range_invariants(ast)
+    end
+
+    test "mixed container types" do
+      code = "{[1, 2], %{a: 3}, <<4>>}"
+      {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic, literal_encoder: test_encoder())
+
+      assert_range(ast, {{1, 1}, {1, 25}})
+      assert_range_invariants(ast)
+    end
+  end
+
   describe "Legacy Mode Compatibility" do
     test "no range metadata in legacy mode" do
       code = "[1, 2]"
