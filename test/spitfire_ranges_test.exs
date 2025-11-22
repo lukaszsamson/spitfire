@@ -1518,7 +1518,7 @@ defmodule SpitfireRangesTest do
         end)
 
       {:"::", interp_meta, [call_ast, binary_ast]} = interp
-      {{:., call_meta, [Kernel, :to_string]}, _, [_expr]} = call_ast
+      {{:., _dot_meta, [Kernel, :to_string]}, call_meta, [_expr]} = call_ast
 
       assert call_meta[:range] == interp_meta[:range]
       assert get_range(binary_ast) == interp_meta[:range]
@@ -1662,6 +1662,35 @@ defmodule SpitfireRangesTest do
 
       # Invariants should still hold due to Toxic's structural token synthesis
       assert_range_invariants(ast)
+    end
+
+    test "missing interpolation closer still uses synthesized end range" do
+      code = "\"\#{1\""
+      {:error, ast, _errors} =
+        Spitfire.parse(code, tokenizer: :toxic, literal_encoder: test_encoder())
+
+      string_ast =
+        case ast do
+          {:__block__, _block_meta, [first | _]} -> first
+          other -> other
+        end
+
+      assert {:<<>>, _meta, args} = string_ast
+      assert get_range(ast) != nil
+
+      interp =
+        Enum.find(args, fn
+          {:"::", _, _} -> true
+          _ -> false
+        end)
+
+      assert {:"::", interp_meta, [call_ast, binary_ast]} = interp
+      assert interp_meta[:range] == {{1, 2}, {1, 6}}
+
+      {{:., _dot_meta, [Kernel, :to_string]}, call_meta, [_expr]} = call_ast
+      assert call_meta[:range] == interp_meta[:range]
+      assert call_meta[:closing] == [line: 1, column: 5]
+      assert get_range(binary_ast) == interp_meta[:range]
     end
 
     test "interpolation with nested structure" do
