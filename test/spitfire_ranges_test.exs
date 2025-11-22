@@ -361,6 +361,43 @@ defmodule SpitfireRangesTest do
       {:assoc, assoc_meta} = Enum.find(elem(key, 1), fn {k, _} -> k == :assoc end)
       assert Keyword.get(assoc_meta, :range) == {{1, 3}, {1, 9}}
     end
+
+    test "nested binary operator range" do
+      code = "1 + 2 + 3"
+      {:ok, {:+, meta, [lhs, rhs]}} = Spitfire.parse(code, tokenizer: :toxic, literal_encoder: test_encoder())
+
+      # Outer +: (1 + 2) + 3
+      assert meta[:range] == {{1, 1}, {1, 10}}
+      assert get_range(rhs) == {{1, 9}, {1, 10}} # 3
+
+      # Inner +: 1 + 2
+      {:+, inner_meta, [inner_lhs, inner_rhs]} = lhs
+      assert inner_meta[:range] == {{1, 1}, {1, 6}}
+      assert get_range(inner_lhs) == {{1, 1}, {1, 2}} # 1
+      assert get_range(inner_rhs) == {{1, 5}, {1, 6}} # 2
+    end
+
+    test "range operator range" do
+      code = "1..2"
+      {:ok, {:.., meta, [lhs, rhs]}} = Spitfire.parse(code, tokenizer: :toxic, literal_encoder: test_encoder())
+
+      assert meta[:range] == {{1, 1}, {1, 5}}
+      assert get_range(lhs) == {{1, 1}, {1, 2}}
+      assert get_range(rhs) == {{1, 4}, {1, 5}}
+    end
+
+    test "not in operator range" do
+      code = "1 not in [2]"
+      {:ok, {:not, not_meta, [{:in, in_meta, [lhs, rhs]}]}} = Spitfire.parse(code, tokenizer: :toxic, literal_encoder: test_encoder())
+
+      assert not_meta[:range] == {{1, 1}, {1, 13}}
+      # The inner :in node covers the full expression "1 ... [2]" because it has lhs and rhs as children
+      assert in_meta[:range] == {{1, 1}, {1, 13}}
+      assert in_meta[:line] == 1
+      assert in_meta[:column] == 7 # Points to "in"
+      assert get_range(lhs) == {{1, 1}, {1, 2}}
+      assert get_range(rhs) == {{1, 10}, {1, 13}}
+    end
   end
 
   describe "Range Invariants" do

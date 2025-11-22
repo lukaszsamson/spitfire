@@ -1152,10 +1152,15 @@ defmodule Spitfire do
 
   defp parse_comma(parser, lhs) do
     trace "parse_comma", trace_meta(parser) do
+      op_range = token_range(parser.current_token)
       parser = parser |> next_token() |> eat_eol()
       {exprs, parser} = parse_comma_list(parser, @comma)
 
-      {{:comma, [], [lhs | exprs]}, eat_eol(parser)}
+      ast =
+        {:comma, [], [lhs | exprs]}
+        |> attach_op_range(op_range)
+
+      {ast, eat_eol(parser)}
     end
   end
 
@@ -1193,21 +1198,26 @@ defmodule Spitfire do
       ast =
         case token do
           :"not in" ->
-            in_meta =
+            {in_meta, in_range} =
               case pre_parser do
                 # New 4-tuple shape with separate meta for the "in" keyword (Toxic or updated legacy)
                 %{current_token: {:in_op, _not_meta, :"not in", info_meta}} ->
                   case info_meta do
-                    {{line, col}, _end_pos, _extra} -> [line: line, column: col]
-                    {line, col, _extra} -> [line: line, column: col]
-                    _ -> meta
+                    {{line, col}, {el, ec}, _extra} ->
+                      {[line: line, column: col], {{line, col}, {el, ec}}}
+
+                    {line, col, _extra} ->
+                      {[line: line, column: col], nil}
+
+                    _ ->
+                      {meta, nil}
                   end
 
                 _ ->
-                  meta
+                  {meta, nil}
               end
 
-            in_ast = attach_op_range({:in, in_meta, [lhs, rhs]}, nil)
+            in_ast = attach_op_range({:in, in_meta, [lhs, rhs]}, in_range)
 
             {:not, meta, [in_ast]}
 
@@ -1364,8 +1374,10 @@ defmodule Spitfire do
           {rrhs, parser} = parse_expression(parser, precedence, false, false, false)
 
           {{:..//, meta, [lhs, rhs, rrhs]}, eat_eol(parser)}
+          |> then(fn {ast, p} -> {attach_op_range(ast, op_range), p} end)
         else
           {{token, meta, [lhs, rhs]}, eat_eol(parser)}
+          |> then(fn {ast, p} -> {attach_op_range(ast, op_range), p} end)
         end
 
       ast =
