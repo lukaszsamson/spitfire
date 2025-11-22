@@ -571,6 +571,41 @@ defmodule SpitfireRangesTest do
   end
 
   describe "Operator Edge Cases" do
+    test "grouped expression range includes parentheses" do
+      code = "(1 + 2)"
+      {:ok, {:+, meta, [lhs, rhs]}} = Spitfire.parse(code, tokenizer: :toxic, literal_encoder: test_encoder())
+
+      assert_range({:+, meta, [lhs, rhs]}, {{1, 1}, {1, 8}})
+      assert_range(lhs, {{1, 2}, {1, 3}})
+      assert_range(rhs, {{1, 6}, {1, 7}})
+    end
+
+    test "do block range spans do...end" do
+      code = "foo do :ok end"
+      {:ok, {:foo, meta, [_clauses]} = ast} = Spitfire.parse(code, tokenizer: :toxic, literal_encoder: test_encoder())
+
+      assert_range(ast, {{1, 1}, {1, 15}})
+      assert get_range({:foo, meta, []}) == {{1, 1}, {1, 15}}
+    end
+
+    test "anonymous function range spans fn...end" do
+      code = "fn x -> x end"
+      {:ok, {:fn, meta, _clauses} = ast} = Spitfire.parse(code, tokenizer: :toxic, literal_encoder: test_encoder())
+
+      assert_range(ast, {{1, 1}, {1, 14}})
+      assert meta[:range] == {{1, 1}, {1, 14}}
+    end
+
+    test "__block__ range derives from children" do
+      code = "1\n2"
+      {:ok, {:__block__, meta, [one, two]} = ast} = Spitfire.parse(code, tokenizer: :toxic, literal_encoder: test_encoder())
+
+      assert_range(ast, {{1, 1}, {2, 2}})
+      assert_range(one, {{1, 1}, {1, 2}})
+      assert_range(two, {{2, 1}, {2, 2}})
+      assert meta[:range] == {{1, 1}, {2, 2}}
+    end
+
     test "paren call range includes callee, args, and parens" do
       code = "foo(1,23)"
 
@@ -1096,6 +1131,251 @@ defmodule SpitfireRangesTest do
       code = "(1 + 2)"
       {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic)
       assert get_range(ast) != nil
+    end
+  end
+
+  describe "Block and Special Form Edge Cases" do
+    test "multi-line __block__ derives range from children" do
+      code = "1\n2\n3"
+      {:ok, {:__block__, _meta, [one, two, three]} = ast} = Spitfire.parse(code, tokenizer: :toxic, literal_encoder: test_encoder())
+
+      # Block should span all three lines
+      {{start_line, _}, {end_line, _}} = get_range(ast)
+      assert start_line == 1
+      assert end_line == 3
+
+      # Children should have correct ranges
+      assert_range(one, {{1, 1}, {1, 2}})
+      assert_range(two, {{2, 1}, {2, 2}})
+      assert_range(three, {{3, 1}, {3, 2}})
+
+      assert_range_invariants(ast)
+    end
+
+    test "nested parentheses" do
+      code = "((1 + 2))"
+      {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic)
+
+      # Outer parens should span entire expression
+      assert_range(ast, {{1, 1}, {1, 10}})
+      assert_range_invariants(ast)
+    end
+
+    test "empty parentheses" do
+      code = "()"
+      {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic)
+
+      # Should have range even though empty
+      assert get_range(ast) != nil
+      assert_range_invariants(ast)
+    end
+
+    test "multi-line grouped expression" do
+      code = "(\n  1 + 2\n)"
+      {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic)
+
+      # Should span all three lines
+      {{start_line, _}, {end_line, _}} = get_range(ast)
+      assert start_line == 1
+      assert end_line == 3
+
+      assert_range_invariants(ast)
+    end
+
+    test "case with multiple clauses" do
+      code = "case x do\n  1 -> :a\n  2 -> :b\nend"
+      {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic)
+
+      # Should span from 'case' to 'end'
+      {{start_line, start_col}, {end_line, _}} = get_range(ast)
+      assert start_line == 1
+      assert start_col == 1
+      assert end_line == 4
+
+      assert_range_invariants(ast)
+    end
+
+    test "nested do-blocks" do
+      code = "if a do\n  if b do\n    c\n  end\nend"
+      {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic)
+
+      # Outer if should span all lines
+      {{start_line, _}, {end_line, _}} = get_range(ast)
+      assert start_line == 1
+      assert end_line == 5
+
+      assert_range_invariants(ast)
+    end
+
+    test "do-block with else clause" do
+      code = "if true do\n  :ok\nelse\n  :error\nend"
+      {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic)
+
+      # Should span entire construct
+      {{start_line, _}, {end_line, _}} = get_range(ast)
+      assert start_line == 1
+      assert end_line == 5
+
+      assert_range_invariants(ast)
+    end
+
+    test "anonymous function with multiple clauses" do
+      code = "fn\n  1 -> :a\n  2 -> :b\nend"
+      {:ok, {:fn, _meta, _clauses} = ast} = Spitfire.parse(code, tokenizer: :toxic)
+
+      # Should span from 'fn' to 'end'
+      {{start_line, _}, {end_line, _}} = get_range(ast)
+      assert start_line == 1
+      assert end_line == 4
+
+      assert_range_invariants(ast)
+    end
+
+    test "anonymous function with pattern matching" do
+      code = "fn {a, b} -> a + b end"
+      {:ok, {:fn, _meta, _clauses} = ast} = Spitfire.parse(code, tokenizer: :toxic)
+
+      assert_range(ast, {{1, 1}, {1, 23}})
+      assert_range_invariants(ast)
+    end
+
+    test "nested anonymous functions" do
+      code = "fn -> fn -> :ok end end"
+      {:ok, {:fn, _meta, _clauses} = ast} = Spitfire.parse(code, tokenizer: :toxic)
+
+      assert_range(ast, {{1, 1}, {1, 24}})
+      assert_range_invariants(ast)
+    end
+
+    test "multi-line anonymous function" do
+      code = "fn x ->\n  x + 1\nend"
+      {:ok, {:fn, _meta, _clauses} = ast} = Spitfire.parse(code, tokenizer: :toxic)
+
+      {{start_line, _}, {end_line, _}} = get_range(ast)
+      assert start_line == 1
+      assert end_line == 3
+
+      assert_range_invariants(ast)
+    end
+
+    test "do-block with multiple expression types" do
+      code = "if true do\n  a = 1\n  b = 2\n  a + b\nend"
+      {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic)
+
+      {{start_line, _}, {end_line, _}} = get_range(ast)
+      assert start_line == 1
+      assert end_line == 5
+
+      assert_range_invariants(ast)
+    end
+
+    test "try-rescue block" do
+      code = "try do\n  :ok\nrescue\n  _ -> :error\nend"
+      {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic)
+
+      {{start_line, _}, {end_line, _}} = get_range(ast)
+      assert start_line == 1
+      assert end_line == 5
+
+      assert_range_invariants(ast)
+    end
+
+    test "cond with multiple clauses" do
+      code = "cond do\n  true -> :a\n  false -> :b\nend"
+      {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic)
+
+      {{start_line, _}, {end_line, _}} = get_range(ast)
+      assert start_line == 1
+      assert end_line == 4
+
+      assert_range_invariants(ast)
+    end
+
+    test "missing end keyword" do
+      code = "fn -> :ok"
+      {:error, ast, _errors} = Spitfire.parse(code, tokenizer: :toxic)
+
+      # Should still have range
+      assert get_range(ast) != nil
+    end
+
+    test "missing closing paren" do
+      code = "(1 + 2"
+      {:error, ast, _errors} = Spitfire.parse(code, tokenizer: :toxic)
+
+      # Should still have range
+      assert get_range(ast) != nil
+    end
+
+    test "incomplete do-block" do
+      code = "if true do\n  :ok"
+      {:error, ast, _errors} = Spitfire.parse(code, tokenizer: :toxic)
+
+      # Should still have range
+      assert get_range(ast) != nil
+    end
+
+    test "single-line do-block" do
+      code = "if true, do: :ok, else: :error"
+      {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic)
+
+      assert_range(ast, {{1, 1}, {1, 31}})
+      assert_range_invariants(ast)
+    end
+
+    test "for comprehension with do-block" do
+      code = "for x <- [1, 2, 3] do\n  x * 2\nend"
+      {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic, literal_encoder: test_encoder())
+
+      {{start_line, _}, {end_line, _}} = get_range(ast)
+      assert start_line == 1
+      assert end_line == 3
+
+      assert_range_invariants(ast)
+    end
+
+    test "with statement" do
+      code = "with {:ok, x} <- foo() do\n  x\nend"
+      {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic)
+
+      {{start_line, _}, {end_line, _}} = get_range(ast)
+      assert start_line == 1
+      assert end_line == 3
+
+      assert_range_invariants(ast)
+    end
+  end
+
+  describe "Interpolation Ranges" do
+    test "string interpolation range" do
+      code = "\"a\#{1}b\""
+      {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic, literal_encoder: test_encoder())
+
+      assert {:<<>>, meta, args} = ast
+      assert meta[:range] == {{1, 1}, {1, 9}}
+
+      assert [frag1, interp, frag2] = args
+      assert frag1 == "a"
+      assert frag2 == "b"
+
+      assert {:"::", interp_meta, _} = interp
+      assert interp_meta[:range] == {{1, 3}, {1, 7}}
+    end
+
+    test "heredoc interpolation range" do
+      code = "\"\"\"\n\#{1}\n\"\"\""
+      {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic)
+
+      assert {:<<>>, meta, args} = ast
+      assert meta[:range] == {{1, 1}, {3, 4}}
+
+      interp = Enum.find(args, fn
+        {:"::", _, _} -> true
+        _ -> false
+      end)
+
+      assert {:"::", interp_meta, _} = interp
+      assert interp_meta[:range] == {{2, 1}, {2, 5}}
     end
   end
 
