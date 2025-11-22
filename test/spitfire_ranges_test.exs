@@ -571,6 +571,62 @@ defmodule SpitfireRangesTest do
   end
 
   describe "Operator Edge Cases" do
+    test "paren call range includes callee, args, and parens" do
+      code = "foo(1,23)"
+
+      {:ok, {:foo, meta, [arg1, arg2]}} =
+        Spitfire.parse(code, tokenizer: :toxic, literal_encoder: test_encoder())
+
+      assert_range({:foo, meta, [arg1, arg2]}, {{1, 1}, {1, 10}})
+      assert_range(arg1, {{1, 5}, {1, 6}})
+      assert_range(arg2, {{1, 7}, {1, 9}})
+    end
+
+    test "no-parens call range spans callee and trailing args" do
+      code = "foo 1, 23"
+
+      {:ok, {:foo, meta, [arg1, arg2]}} =
+        Spitfire.parse(code, tokenizer: :toxic, literal_encoder: test_encoder())
+
+      assert_range({:foo, meta, [arg1, arg2]}, {{1, 1}, {1, 10}})
+      assert_range(arg1, {{1, 5}, {1, 6}})
+      assert_range(arg2, {{1, 8}, {1, 10}})
+    end
+
+    test "remote paren call range" do
+      code = "Foo.bar(1)"
+
+      {:ok, {{:., _dot_meta, [alias_ast, :bar]} = callee, call_meta, [arg]}} =
+        Spitfire.parse(code, tokenizer: :toxic, literal_encoder: test_encoder())
+
+      assert_range(callee, {{1, 1}, {1, 11}})
+      assert_range({callee, call_meta, [arg]}, {{1, 1}, {1, 11}})
+      assert_range(alias_ast, {{1, 1}, {1, 4}})
+      assert_range(arg, {{1, 9}, {1, 10}})
+    end
+
+    test "dot call operator range" do
+      code = "foo.(1)"
+
+      {:ok, {{:., dot_meta, [_lhs]}, call_meta, [arg]}} =
+        Spitfire.parse(code, tokenizer: :toxic, literal_encoder: test_encoder())
+
+      assert_range({:., dot_meta, []}, {{1, 1}, {1, 8}})
+      assert_range({{:., dot_meta, []}, call_meta, [arg]}, {{1, 1}, {1, 8}})
+      assert_range(arg, {{1, 6}, {1, 7}})
+    end
+
+    test "access expression range" do
+      code = "foo[:bar]"
+
+      {:ok, {{:., meta, [Access, :get]} = callee, _meta2, [lhs, rhs]}} =
+        Spitfire.parse(code, tokenizer: :toxic, literal_encoder: test_encoder())
+
+      assert_range({callee, meta, [lhs, rhs]}, {{1, 1}, {1, 10}})
+      assert_range(lhs, {{1, 1}, {1, 4}})
+      assert_range(rhs, {{1, 5}, {1, 9}})
+    end
+
     test "nested binary operators with precedence" do
       code = "1 + 2 * 3"
       {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic)
