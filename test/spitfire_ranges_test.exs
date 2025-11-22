@@ -545,6 +545,31 @@ defmodule SpitfireRangesTest do
     end
   end
 
+  describe "Clause ranges" do
+    test "case clause arrow range" do
+      code = """
+      case foo do
+        :bar -> :ok
+      end
+      """
+      {:ok, {:case, _case_meta, [_, [do: [clause]]]}} =
+        Spitfire.parse(code, tokenizer: :toxic)
+
+      assert {:"->", clause_meta, _} = clause
+      assert clause_meta[:range] == {{2, 8}, {2, 10}}
+      assert_range(clause, {{2, 8}, {2, 10}})
+    end
+
+    test "fn clause arrow range" do
+      code = "fn x -> x end"
+      {:ok, {:fn, _meta, [clause]}} = Spitfire.parse(code, tokenizer: :toxic)
+
+      assert {:->, clause_meta, _} = clause
+      assert clause_meta[:range] == {{1, 4}, {1, 10}}
+      assert_range(clause, {{1, 4}, {1, 10}})
+    end
+  end
+
   describe "Edge Cases" do
     test "malformed list with missing closer" do
       code = "[1, 2"
