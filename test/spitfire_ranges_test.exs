@@ -763,6 +763,25 @@ defmodule SpitfireRangesTest do
       assert_range(rhs, {{1, 5}, {1, 9}})
     end
 
+    test "access callee and call share range" do
+      code = "foo[:bar]"
+
+      {:ok,
+       {
+         {:., callee_meta, [Access, :get]} = callee,
+         call_meta,
+         [lhs, rhs]
+       }} = Spitfire.parse(code, tokenizer: :toxic, literal_encoder: test_encoder())
+
+      expected_range = {{1, 1}, {1, 10}}
+      assert get_range({callee, callee_meta, [lhs, rhs]}) == expected_range
+      assert call_meta[:range] == expected_range
+      assert callee_meta[:range] == expected_range
+
+      assert_range(lhs, {{1, 1}, {1, 4}})
+      assert_range(rhs, {{1, 5}, {1, 9}})
+    end
+
     test "nested binary operators with precedence" do
       code = "1 + 2 * 3"
       {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic)
