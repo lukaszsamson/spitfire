@@ -1483,6 +1483,21 @@ defmodule SpitfireRangesTest do
       assert_range_invariants(ast)
     end
 
+    test "unsafe atom interpolation nodes include ranges" do
+      code = ~S|foo(:"a#{1}b")|
+      {:ok, {:foo, _meta, [atom_expr]}} = Spitfire.parse(code, tokenizer: :toxic)
+
+      {{:., _dot_meta, [:erlang, :binary_to_atom]}, atom_meta, [binary_ast, :utf8]} =
+        atom_expr
+
+      expected_range = {{1, 5}, {1, 14}}
+      assert atom_meta[:range] == expected_range
+      assert get_range(binary_ast) == expected_range
+
+      # The binary and call nodes both respect the invariants
+      assert_range_invariants(binary_ast)
+    end
+
     test "sigil interpolation range" do
       code = "~s(a\#{1}b)"
       {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic)

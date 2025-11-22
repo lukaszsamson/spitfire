@@ -2018,7 +2018,8 @@ defmodule Spitfire do
 
   defp parse_atom(%{current_token: {:atom_unsafe, _, tokens}} = parser) do
     trace "parse_atom (unsafe)", trace_meta(parser) do
-      meta = current_meta(parser)
+      range = token_range(parser.current_token)
+      meta = parser |> current_meta() |> put_meta_range(range)
       {args, parser} = parse_interpolation(parser, tokens)
 
       {{{:., meta, [:erlang, :binary_to_atom]}, [{:delimiter, ~S'"'} | meta],
@@ -3773,12 +3774,12 @@ defmodule Spitfire do
         true ->
           # Interpolated atom – build binary_to_atom({:<<>>,...}, :utf8)
           args = build_string_parts(parts, :atom)
-          binary_ast = {:<<>>, start_meta, args}
-          meta_with_delimiter = [{:delimiter, delim_str} | start_meta]
+          range_meta = put_meta_range(start_meta, container_range)
+          binary_ast = {:<<>>, range_meta, args}
+          delimiter_meta = put_meta_range([{:delimiter, delim_str} | start_meta], container_range)
 
           atom_ast =
-            {{:., start_meta, [:erlang, :binary_to_atom]}, meta_with_delimiter,
-             [binary_ast, :utf8]}
+            {{:., range_meta, [:erlang, :binary_to_atom]}, delimiter_meta, [binary_ast, :utf8]}
 
           {atom_ast, parser}
       end
