@@ -1393,20 +1393,17 @@ defmodule Spitfire do
       {rhs, parser} = parse_expression(parser, precedence, false, false, false)
 
       {ast, parser} =
-        if peek_token(parser) == :ternary_op do
-          parser = parser |> next_token() |> next_token()
-          {rrhs, parser} = parse_expression(parser, precedence, false, false, false)
+        case peek_token(parser) do
+          :ternary_op ->
+            parser = parser |> next_token() |> next_token()
+            {rrhs, parser} = parse_expression(parser, precedence, false, false, false)
+            {{:..//, meta, [lhs, rhs, rrhs]}, eat_eol(parser)}
 
-          {{:..//, meta, [lhs, rhs, rrhs]}, eat_eol(parser)}
-          |> then(fn {ast, p} -> {attach_op_range(ast, op_range), p} end)
-        else
-          {{token, meta, [lhs, rhs]}, eat_eol(parser)}
-          |> then(fn {ast, p} -> {attach_op_range(ast, op_range), p} end)
+          _ ->
+            {{token, meta, [lhs, rhs]}, eat_eol(parser)}
         end
 
-      ast =
-        ast
-        |> attach_op_range(op_range)
+      ast = attach_op_range(ast, op_range)
 
       {ast, parser}
     end
