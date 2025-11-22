@@ -130,3 +130,20 @@ meta[:range]
 
 Legacy (non-Toxic) mode does not attach `:range`, preserving the original AST
 shape and metadata. 
+
+### `:strip_ranges` configuration
+
+Range metadata is enabled by default when the Toxic tokenizer is selected, but
+Spitfire also exposes a `:strip_ranges` flag for compatibility with legacy
+parsers.  Set `config :spitfire, strip_ranges: true` to prevent range metadata
+from being attached at all (this is what `test_helper.exs` does so the old
+parity tests do not observe `:range`).  `put_meta_range/2` honours that config
+by behaving as a no-op, so ASTs built with the config enabled look the same as
+non-Toxic output.
+
+For callers that leave the config at `false` but still need a `:range`-free
+AST, `Spitfire.parse/2` accepts `strip_ranges: true`; this triggers
+`strip_ranges_if_needed/2` after parsing and removes any metadata that slipped
+in.  Passing `strip_ranges: false` has no effect when the config is already
+stripping ranges globally, but it allows tests to temporarily opt back in when
+the config is reset to `false` (see `SpitfireRangesTest`).

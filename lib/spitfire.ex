@@ -4260,8 +4260,7 @@ defmodule Spitfire do
   end
 
   defp strip_ranges_if_needed(ast, opts) do
-    should_strip = Keyword.get(opts, :strip_ranges) || Application.get_env(:spitfire, :strip_ranges, false)
-    if should_strip do
+    if Keyword.get(opts, :strip_ranges, false) do
       strip_ranges(ast)
     else
       ast
