@@ -316,7 +316,7 @@ defmodule SpitfireRangesTest do
     end
   end
 
-  describe "Operator Ranges" do
+    describe "Operator Ranges" do
     test "binary operator" do
       code = "1 + 23"
 
@@ -415,6 +415,17 @@ defmodule SpitfireRangesTest do
       assert in_meta[:column] == 7 # Points to "in"
       assert get_range(lhs) == {{1, 1}, {1, 2}}
       assert get_range(rhs) == {{1, 10}, {1, 13}}
+    end
+
+    test "ellipsis operator range" do
+      code = "fn -> ... end"
+      {:ok, {:fn, _fn_meta, [clause]}} = Spitfire.parse(code, tokenizer: :toxic)
+
+      assert {:->, _clause_meta, [[], ellipsis_ast]} = clause
+      assert {:..., meta, []} = ellipsis_ast
+
+      assert meta[:range] == {{1, 7}, {1, 10}}
+      assert_range(ellipsis_ast, {{1, 7}, {1, 10}})
     end
   end
 

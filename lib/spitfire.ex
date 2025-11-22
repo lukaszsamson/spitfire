@@ -2268,7 +2268,7 @@ defmodule Spitfire do
       cond do
         current_token(parser) == :">>" ->
           close_range = token_range(parser.current_token)
-          container_range = merge_ranges([open_range, close_range])
+          container_range = container_range(open_range, close_range)
           {{:<<>>, put_meta_range(newlines ++ [{:closing, current_meta(parser)} | meta], container_range), []}, parser}
 
         current_token(parser) in [:end, :"}", :")", :"]"] ->
@@ -2286,7 +2286,7 @@ defmodule Spitfire do
 
           # For error recovery, use the error position as close_range
           close_range = token_range(parser.current_token)
-          container_range = merge_ranges([open_range, close_range])
+          container_range = container_range(open_range, close_range)
           {{:<<>>, put_meta_range([{:closing, current_meta(parser)} | meta], container_range), []}, parser}
 
         true ->
@@ -2298,7 +2298,7 @@ defmodule Spitfire do
               parser = eat_eol_at(parser, 1)
               parser = next_token(parser)
               close_range = token_range(parser.current_token)
-              container_range = merge_ranges([open_range, close_range, arg_range(pairs)])
+              container_range = container_range(open_range, close_range, arg_range(pairs))
 
               {{:<<>>, put_meta_range(newlines ++ [{:closing, current_meta(parser)} | meta], container_range), pairs},
                eat_eol(parser)}
@@ -2339,7 +2339,7 @@ defmodule Spitfire do
               {pairs, _} = pairs |> Enum.reverse() |> Enum.unzip()
 
               close_range = token_range(parser.current_token)
-              container_range = merge_ranges([open_range, close_range, arg_range(pairs)])
+              container_range = container_range(open_range, close_range, arg_range(pairs))
 
               {{:<<>>, put_meta_range(newlines ++ [{:closing, current_meta(parser)} | meta], container_range), List.wrap(pairs)},
                parser}
@@ -2363,7 +2363,7 @@ defmodule Spitfire do
 
       if current_token(parser) == :"}" do
         close_range = token_range(parser.current_token)
-        container_range = merge_ranges([open_range, close_range])
+        container_range = container_range(open_range, close_range)
         closing = current_meta(parser)
         parser = Map.put(parser, :nesting, old_nesting)
 
@@ -2390,7 +2390,7 @@ defmodule Spitfire do
           end
 
         close_range = token_range(parser.current_token)
-        container_range = merge_ranges([open_range, close_range, arg_range(pairs)])
+        container_range = container_range(open_range, close_range, arg_range(pairs))
         closing = current_meta(parser)
         parser = Map.put(parser, :nesting, old_nesting)
 
@@ -2502,7 +2502,7 @@ defmodule Spitfire do
       if peek_token(parser) == :"}" do
         parser = next_token(parser)
         brace_close_range = token_range(parser.current_token)
-        map_range = merge_ranges([brace_open_range, brace_close_range])
+        map_range = container_range(brace_open_range, brace_close_range)
         struct_range = merge_ranges([percent_range, map_range, ast_range(type)])
         closing = current_meta(parser)
 
@@ -2525,7 +2525,7 @@ defmodule Spitfire do
 
         if current_token(parser) == :"}" do
           brace_close_range = token_range(parser.current_token)
-          map_range = merge_ranges([brace_open_range, brace_close_range])
+          map_range = container_range(brace_open_range, brace_close_range)
           struct_range = merge_ranges([percent_range, map_range, ast_range(type)])
           closing = current_meta(parser)
           ast = {:%, put_meta_range(meta, struct_range), [type, {:%{}, put_meta_range(newlines ++ [{:closing, closing} | brace_meta], map_range), []}]}
@@ -2546,7 +2546,7 @@ defmodule Spitfire do
             end
 
           brace_close_range = token_range(parser.current_token)
-          map_range = merge_ranges([brace_open_range, brace_close_range, arg_range(pairs)])
+          map_range = container_range(brace_open_range, brace_close_range, arg_range(pairs))
           struct_range = merge_ranges([percent_range, map_range, ast_range(type)])
           closing = current_meta(parser)
           ast = {:%, put_meta_range(meta, struct_range), [type, {:%{}, put_meta_range(newlines ++ [{:closing, closing} | brace_meta], map_range), pairs}]}
@@ -2570,8 +2570,8 @@ defmodule Spitfire do
 
       cond do
         current_token(parser) == :"}" ->
-          close_range = token_range(parser.current_token)
-          container_range = merge_ranges([open_range, close_range])
+        close_range = token_range(parser.current_token)
+        container_range = container_range(open_range, close_range)
           closing = current_meta(parser)
           parser = Map.put(parser, :nesting, old_nesting)
 
@@ -2599,7 +2599,7 @@ defmodule Spitfire do
 
           # For error recovery, use the error position as close_range
           close_range = token_range(parser.current_token)
-          container_range = merge_ranges([open_range, close_range])
+          container_range = container_range(open_range, close_range)
           parser = put_in(parser.nesting, old_nesting)
           {{:{}, put_meta_range(meta, container_range), []}, parser}
 
@@ -2653,7 +2653,7 @@ defmodule Spitfire do
 
           if length(pairs) == 2 do
             close_range = token_range(parser.current_token)
-            container_range = merge_ranges([open_range, close_range, arg_range(pairs)])
+            container_range = container_range(open_range, close_range, arg_range(pairs))
             closing_meta = current_meta(parser)
 
             tuple =
@@ -2666,7 +2666,7 @@ defmodule Spitfire do
             {tuple, parser}
           else
             close_range = token_range(parser.current_token)
-            container_range = merge_ranges([open_range, close_range, arg_range(pairs)])
+            container_range = container_range(open_range, close_range, arg_range(pairs))
             closing = current_meta(parser)
             parser = Map.put(parser, :nesting, old_nesting)
 
@@ -2693,7 +2693,7 @@ defmodule Spitfire do
       parser = Map.put(parser, :nesting, 0)
 
       encode_list = fn values, parser_state, close_range, closing_meta ->
-        container_range = merge_ranges([open_range, close_range, arg_range(values)])
+        container_range = container_range(open_range, close_range, arg_range(values))
 
         %{parser_state | current_token: open_token}
         |> encode_literal(values, container_range)
@@ -3507,7 +3507,7 @@ defmodule Spitfire do
 
       {parts, parser, _end_meta, end_type, _end_info} = scan_linearized(parser, end_tokens, kind)
       close_range = token_range(parser.current_token)
-      container_range = merge_ranges([open_range, close_range])
+      container_range = container_range(open_range, close_range)
 
       cond do
         end_type in [:kw_identifier_safe_end, :kw_identifier_unsafe_end] ->
@@ -3602,7 +3602,7 @@ defmodule Spitfire do
         scan_linearized(parser, end_token, kind, no_unescape: true)
 
       close_range = token_range(parser.current_token)
-      container_range = merge_ranges([open_range, close_range])
+      container_range = container_range(open_range, close_range)
 
       # Extract indentation from end token
       indentation = Map.fetch!(end_info, :indentation)
@@ -3729,7 +3729,7 @@ defmodule Spitfire do
       # Scan the atom content
       {parts, parser, _end_meta, _end_type, _end_info} = scan_linearized(parser, end_token, :atom)
       close_range = token_range(parser.current_token)
-      container_range = merge_ranges([open_range, close_range])
+      container_range = container_range(open_range, close_range)
 
       cond do
         parts == [] ->
@@ -4208,6 +4208,10 @@ defmodule Spitfire do
   end
 
   defp attach_range(ast, _ranges), do: ast
+
+  defp container_range(open_range, close_range, extra_ranges \\ []) do
+    merge_ranges([open_range, close_range | List.wrap(extra_ranges)])
+  end
 
   defp put_closing_meta({form, meta, args}, closing_meta) do
     {form, Keyword.put(meta, :closing, closing_meta), args}
