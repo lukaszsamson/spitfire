@@ -622,19 +622,7 @@ defmodule Spitfire do
 
   defp parse_kw_identifier(%{current_token: {:kw_identifier, _meta, token}} = parser) do
     trace "parse_kw_identifier", trace_meta(parser) do
-      range =
-        case token_range(parser.current_token) do
-          {{sl, sc}, {el, ec}} ->
-            if sl == el do
-              {{sl, sc}, {el, ec - 1}}
-            else
-              {{sl, sc}, {el, ec}}
-            end
-
-          nil ->
-            nil
-        end
-
+      range = token_range(parser.current_token)
       token = encode_literal(parser, token, range)
       parser = parser |> next_token() |> eat_eol()
 

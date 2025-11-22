@@ -190,7 +190,7 @@ defmodule SpitfireRangesTest do
 
       # Key and value
       assert_received {:lit_meta, :a, key_meta}
-      assert key_meta[:range] == {{1, 3}, {1, 4}}
+      assert key_meta[:range] == {{1, 3}, {1, 5}}
 
       assert_received {:lit_meta, 1, val_meta}
       assert val_meta[:range] == {{1, 6}, {1, 7}}
@@ -217,7 +217,7 @@ defmodule SpitfireRangesTest do
 
       # Key and value
       assert_received {:lit_meta, :a, key_meta}
-      assert key_meta[:range] == {{1, 6}, {1, 7}}
+      assert key_meta[:range] == {{1, 6}, {1, 8}}
 
       assert_received {:lit_meta, 1, val_meta}
       assert val_meta[:range] == {{1, 9}, {1, 10}}
@@ -271,6 +271,24 @@ defmodule SpitfireRangesTest do
       assert_received {:lit_meta, [_], list_meta}
       assert list_meta[:range] == {{1, 1}, {1, 9}}
       assert_range(ast, {{1, 1}, {1, 9}})
+    end
+  end
+
+  describe "Keyword key ranges include colon" do
+    test "map keyword key includes colon" do
+      code = "%{a: 1}"
+      {:ok, _ast} = Spitfire.parse(code, tokenizer: :toxic, literal_encoder: test_encoder())
+
+      assert_received {:lit_meta, :a, meta}
+      assert meta[:range] == {{1, 3}, {1, 5}}
+    end
+
+    test "bracketless keyword key includes colon" do
+      code = "a: 1"
+      {:ok, _ast} = Spitfire.parse(code, tokenizer: :toxic, literal_encoder: test_encoder())
+
+      assert_received {:lit_meta, :a, meta}
+      assert meta[:range] == {{1, 1}, {1, 3}}
     end
   end
 
