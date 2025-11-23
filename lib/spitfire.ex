@@ -127,6 +127,30 @@ defmodule Spitfire do
     at_op: @at_op
   }
 
+  @doc """
+  Parses the given code into Elixir AST.
+
+  ## Options
+
+    * `:file` - the filename to be reported in case of errors.
+    * `:line` - the starting line of the parsed code. Defaults to 1.
+    * `:column` - the starting column of the parsed code. Defaults to 1.
+    * `:literal_encoder` - a function to encode literals. See `Code.string_to_quoted/2` for details.
+      When provided, this function receives the literal value and its metadata.
+      Spitfire passes range information in the metadata if available.
+    * `:tokenizer` - the tokenizer backend to use. Defaults to `:legacy`.
+      Set to `:toxic` to enable precise range tracking.
+
+  ## Range Metadata
+
+  When using the `:toxic` tokenizer, Spitfire attaches range information to the AST metadata.
+  The range is stored in the `:range` key as a tuple `{{start_line, start_col}, {end_line, end_col}}`.
+  The range is inclusive of the start position and exclusive of the end position (half-open interval).
+
+  For literals (integers, strings, atoms, etc.), standard Elixir AST does not support metadata.
+  To capture ranges for literals, you must provide a `:literal_encoder` that wraps the literal
+  in a node that can hold metadata (e.g., `{:__literal__, meta, [value]}`).
+  """
   @spec parse(String.t(), Keyword.t()) ::
           {:ok, Macro.t()} | {:error, :no_fuel_remaining} | {:error, Macro.t(), list()}
   def parse(code, opts \\ []) do
