@@ -151,24 +151,13 @@ container_range = merge_ranges([open_range, close_range, arg_range(values)])
 **Implementation:** Added CONVENTION comments to each helper function (lines 4165, 4203, 4215-4216) to guide future developers and ensure consistent usage patterns.
 
 #### 2.6 `strip_ranges_if_needed/2` Called Twice
-In `parse/2`, both success and error cases call `strip_ranges_if_needed` (lines 144, 149). This is correct but could be DRYer.
+✅ **Refactored** - Consolidated duplicate calls to `strip_ranges_if_needed/2` in `parse/2`.
 
-**Recommendation:**
-```elixir
-case parse_program(parser) do
-  {ast, %{errors: errors} = parser_after} ->
-    ast =
-      ast
-      |> attach_root_range(parser_after)
-      |> strip_ranges_if_needed(opts)
-
-    if errors == [] do
-      {:ok, ast}
-    else
-      {:error, ast, Enum.reverse(errors)}
-    end
-end
-```
+**Implementation:** Applied the recommended refactoring (lines 141-153):
+- Combined success and error case paths
+- Applied `attach_root_range` and `strip_ranges_if_needed` once via pipe operator
+- Used single `if` to determine success vs error return
+- Cleaner, more maintainable code (DRY principle)
 
 #### 2.7 `build_block_nr/2` Range Handling
 When building `__block__` nodes (lines 4647, 4664), ranges are attached using `arg_range(exprs)`. This works but could be more explicit about merging ranges from all children.
@@ -550,6 +539,7 @@ The range metadata implementation is **production-ready** with the following cav
 - ✅ Add ~25 test cases for missing scenarios (Priority 2) - **COMPLETED**
 - ✅ Document keyword identifier range adjustment (Priority 2) - **COMPLETED**
 - ✅ Establish helper function convention (Minor issue 2.5) - **COMPLETED**
+- ✅ Refactor strip_ranges calls (Minor issue 2.6) - **COMPLETED**
 - Extract common error recovery pattern (Priority 3)
 - Address TODOs and clean up code (Priority 3-4)
 

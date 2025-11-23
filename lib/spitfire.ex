@@ -139,15 +139,17 @@ defmodule Spitfire do
       end
 
     case parse_program(parser) do
-      {ast, %{errors: []} = parser_after} ->
-        ast = attach_root_range(ast, parser_after)
-        ast = strip_ranges_if_needed(ast, opts)
-        {:ok, ast}
-
       {ast, %{errors: errors} = parser_after} ->
-        ast = attach_root_range(ast, parser_after)
-        ast = strip_ranges_if_needed(ast, opts)
-        {:error, ast, Enum.reverse(errors)}
+        ast =
+          ast
+          |> attach_root_range(parser_after)
+          |> strip_ranges_if_needed(opts)
+
+        if errors == [] do
+          {:ok, ast}
+        else
+          {:error, ast, Enum.reverse(errors)}
+        end
     end
   rescue
     NoFuelRemaining ->
