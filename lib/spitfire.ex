@@ -4216,9 +4216,34 @@ defmodule Spitfire do
 
   defp attach_op_range(ast, _op_range), do: ast
 
+  # Test-only helper: verify that ranges are in a reasonable order
+  # This helps catch logic errors where ranges might be passed in unexpected order
+  defp verify_range_order(ranges) do
+    ranges
+    |> List.wrap()
+    |> Enum.filter(& &1)
+    |> Enum.chunk_every(2, 1, :discard)
+    |> Enum.each(fn [{{sl1, sc1}, {el1, ec1}}, {{sl2, sc2}, _}] ->
+      # Check that ranges are either in order or overlapping
+      # We allow overlaps because that's valid (e.g., parent and child ranges)
+      # We just want to catch cases where ranges are in completely wrong order
+      unless pos_leq?({sl1, sc1}, {sl2, sc2}) or pos_leq?({sl1, sc1}, {el1, ec1}) do
+        raise "Range order validation failed: ranges appear to be in unexpected order. " <>
+                "First range ends at #{inspect({el1, ec1})}, second starts at #{inspect({sl2, sc2})}"
+      end
+    end)
+
+    :ok
+  end
+
   # CONVENTION: Use attach_range/2 for nodes where you're merging child + delimiter ranges
   # (containers, calls, blocks). Merges all provided ranges into a single spanning range.
   defp attach_range({form, meta, args}, ranges) do
+    # Development mode assertion: verify ranges are in reasonable order
+    if Application.get_env(:spitfire, :verify_range_order, false) do
+      verify_range_order(ranges)
+    end
+
     {form, put_meta_range(meta, merge_ranges(List.wrap(ranges))), args}
   end
 

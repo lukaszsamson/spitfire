@@ -7,9 +7,12 @@ defmodule SpitfireToxicTest do
   setup do
     original = Application.get_env(:spitfire, :tokenizer, :legacy)
     Application.put_env(:spitfire, :tokenizer, :toxic)
+    # Enable range order verification to catch any ordering bugs
+    Application.put_env(:spitfire, :verify_range_order, true)
 
     on_exit(fn ->
       Application.put_env(:spitfire, :tokenizer, original)
+      Application.put_env(:spitfire, :verify_range_order, false)
     end)
   end
 

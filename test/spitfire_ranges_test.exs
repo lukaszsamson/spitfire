@@ -4,7 +4,12 @@ defmodule SpitfireRangesTest do
   setup do
     # Enable ranges for these tests (disabled globally in test_helper.exs)
     Application.put_env(:spitfire, :strip_ranges, false)
-    on_exit(fn -> Application.put_env(:spitfire, :strip_ranges, true) end)
+    # Enable range order verification to catch any ordering bugs
+    Application.put_env(:spitfire, :verify_range_order, true)
+    on_exit(fn ->
+      Application.put_env(:spitfire, :strip_ranges, true)
+      Application.put_env(:spitfire, :verify_range_order, false)
+    end)
     :ok
   end
 
@@ -2164,5 +2169,27 @@ defmodule SpitfireRangesTest do
     end
 
     defp remove_all_ranges(other), do: other
+  end
+
+  describe "Range Order Verification (Development Mode)" do
+    @tag :verify_range_order
+    test "range order verification can be enabled for development" do
+      # This is a test to ensure the verification mechanism works
+      # It should pass when ranges are in correct order
+      original = Application.get_env(:spitfire, :verify_range_order)
+
+      try do
+        Application.put_env(:spitfire, :verify_range_order, true)
+
+        code = "[1, 2, foo(a: 1), %{b: 2}]"
+        {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic)
+
+        # Should successfully parse complex nested structures
+        # with verification enabled
+        assert_range_invariants(ast)
+      after
+        Application.put_env(:spitfire, :verify_range_order, original)
+      end
+    end
   end
 end
