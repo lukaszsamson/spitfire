@@ -2192,4 +2192,76 @@ defmodule SpitfireRangesTest do
       end
     end
   end
+
+  describe "invariants" do
+    test "elixir sources" do
+      files =
+        Enum.module_info()[:compile][:source]
+        |> Path.join("../../..")
+        |> Path.expand()
+        |> Path.join("**/*.ex*")
+        |> Path.wildcard()
+        |> Enum.reject(&String.contains?(&1, "/_build/"))
+        |> Enum.reject(&String.contains?(&1, "/deps/"))
+
+      for file <- files do
+        code = File.read!(file)
+
+        case Spitfire.parse(code) do
+          {:ok, ast} ->
+            verify_invariants(ast, file)
+
+          {:error, ast, _errors} ->
+            verify_invariants(ast, file)
+        end
+      end
+    end
+  end
+
+  defp verify_invariants(ast, file) do
+    Macro.prewalk(ast, fn node ->
+      check_node_invariants(node, file)
+      node
+    end)
+  end
+
+  defp check_node_invariants({_form, meta, args} = node, file) when is_list(meta) do
+    if range = Keyword.get(meta, :range) do
+      {start_pos, end_pos} = range
+      assert_le(start_pos, end_pos, "Range start > end in #{file}", node)
+
+      if is_list(args) do
+        Enum.each(args, fn child ->
+          check_child_containment(range, child, file, node)
+        end)
+      end
+    end
+  end
+
+  defp check_node_invariants(_node, _file), do: :ok
+
+  defp check_child_containment(parent_range, child, file, parent_node) do
+    case child do
+      {_form, meta, _args} when is_list(meta) ->
+        if child_range = Keyword.get(meta, :range) do
+          {p_start, p_end} = parent_range
+          {c_start, c_end} = child_range
+
+          assert_le(p_start, c_start, "Child starts before parent in #{file}", {parent_node, child})
+          assert_le(c_end, p_end, "Child ends after parent in #{file}", {parent_node, child})
+        end
+
+      list when is_list(list) ->
+        Enum.each(list, fn item -> check_child_containment(parent_range, item, file, parent_node) end)
+
+      _ ->
+        :ok
+    end
+  end
+
+  defp assert_le({l1, c1}, {l2, c2}, message, context) do
+    if l1 > l2 or (l1 == l2 and c1 > c2) do
+      flunk("#{message}: {#{l1}, #{c1}} > {#{l2}, #{c2}}. Context: #{inspect(context)}")
+    end
+  end
 end
