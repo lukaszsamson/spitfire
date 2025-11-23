@@ -160,9 +160,12 @@ container_range = merge_ranges([open_range, close_range, arg_range(values)])
 - Cleaner, more maintainable code (DRY principle)
 
 #### 2.7 `build_block_nr/2` Range Handling
-When building `__block__` nodes (lines 4647, 4664), ranges are attached using `arg_range(exprs)`. This works but could be more explicit about merging ranges from all children.
+✅ **Documented** - Added comprehensive comments explaining how ranges are computed for block nodes.
 
-**Recommendation:** Document that `arg_range/1` handles lists by calling `merge_ranges`.
+**Implementation:**
+- Added 4-line comment to `build_block_nr/2` (lines 4638-4640) explaining the range spanning behavior
+- Added 4-line comment to `arg_range/1` (lines 4201-4204) explaining how it merges ranges from collections
+- Clarifies that `arg_range(exprs)` recursively extracts and merges ranges from all children
 
 ---
 

@@ -4198,6 +4198,10 @@ defmodule Spitfire do
   defp ast_range({_, meta, _}) when is_list(meta), do: meta_range(meta)
   defp ast_range(_), do: nil
 
+  # Helper to compute spanning ranges for AST nodes and collections
+  # For lists: recursively extracts ranges from all elements and merges them into a spanning range
+  # For tuples: extracts ranges from both elements and merges them
+  # For other nodes: delegates to ast_range/1 to extract from metadata
   defp arg_range(list) when is_list(list), do: merge_ranges(Enum.map(list, &arg_range/1))
   defp arg_range({left, right}), do: merge_ranges([arg_range(left), arg_range(right)])
   defp arg_range(ast), do: ast_range(ast)
@@ -4631,6 +4635,9 @@ defmodule Spitfire do
     end
   end
 
+  # Build a block node from expressions, attaching ranges that span all children
+  # For multiple expressions, creates a {:__block__, meta, exprs} node with a range
+  # spanning from the first to the last expression (computed via arg_range/1).
   defp build_block_nr(exprs, parser \\ nil) do
     case exprs do
       {:->, _, _} ->
