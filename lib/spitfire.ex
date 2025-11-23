@@ -130,16 +130,26 @@ defmodule Spitfire do
   @doc """
   Parses the given code into Elixir AST.
 
+  Returns `{:ok, ast}` if it succeeds,
+  `{:error, ast, errors}` or `{:error, :no_fuel_remaining}` otherwise.
+
   ## Options
 
     * `:file` - the filename to be reported in case of errors.
-    * `:line` - the starting line of the parsed code. Defaults to 1.
-    * `:column` - the starting column of the parsed code. Defaults to 1.
+      Defaults to "nofile".
+
+    * `:line` - the starting line of the parsed code.
+      Defaults to 1.
+
+    * `:column` - the starting column of the parsed code.
+      Defaults to 1.
+
     * `:literal_encoder` - a function to encode literals. See `Code.string_to_quoted/2` for details.
       When provided, this function receives the literal value and its metadata.
       Spitfire passes range information in the metadata if available.
+
     * `:tokenizer` - the tokenizer backend to use. Defaults to `:legacy`.
-      Set to `:toxic` to enable precise range tracking.
+      Set to `:toxic` to enable precise range tracking, on demand parsing and error recovery.
 
   ## Range Metadata
 
@@ -182,6 +192,13 @@ defmodule Spitfire do
     Process.delete(:comma_list_parsers)
   end
 
+  @doc """
+  Parses the given code into Elixir AST.
+
+  It returns the AST if it succeeds, raises an exception otherwise.
+
+  Check `parse/2` for options information.
+  """
   def parse!(code, opts \\ []) do
     case parse(code, opts) do
       {:ok, ast} ->
@@ -195,6 +212,27 @@ defmodule Spitfire do
     end
   end
 
+  @doc """
+  Parses the given code into Elixir AST and a list of comments.
+
+  This function is useful when performing textual changes to the source code,
+  while preserving information like comments and literals position.
+
+  Returns `{:ok, ast, comments}` if it succeeds,
+  `{:error, ast, comments, errors}` otherwise.
+
+  Comments are maps with the following fields:
+
+    * `:line` - The line number of the source code
+
+    * `:text` - The full text of the comment, including the leading `#`
+
+    * `:previous_eol_count` - How many end of lines there are between the comment and the previous AST node or comment
+
+    * `:next_eol_count` - How many end of lines there are between the comment and the next AST node or comment
+
+  Check `parse/2` for options information.
+  """
   def parse_with_comments(code, opts \\ []) do
     Process.put(:code_formatter_comments, [])
 
