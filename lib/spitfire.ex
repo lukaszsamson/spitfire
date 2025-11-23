@@ -2732,8 +2732,6 @@ defmodule Spitfire do
           old_comma_list_parsers = Process.get(:comma_list_parsers)
           {pairs, parser} = parse_comma_list(parser, @list_comma, true, false)
 
-          # parser = eat_eol_at(parser, 1)
-
           case peek_token_eat_eol(parser) do
             :"]" ->
               parser = eat_eol_at(parser, 1)

@@ -301,28 +301,43 @@ The comment (lines 439-440) explicitly documents which nodes legitimately don't 
 ### 🟡 Areas for Improvement
 
 #### 4.1 Magic Numbers
-Line 625-632: The `-1` adjustment for keyword identifiers should be a named constant or at least have a comment explaining why.
+✅ **Already Resolved** - The `-1` adjustment mentioned in the original review no longer exists. The current implementation (lines 625-632) uses `token_range/1` directly without any manual adjustments:
+
+```elixir
+defp parse_kw_identifier(%{current_token: {:kw_identifier, _meta, token}} = parser) do
+  range = token_range(parser.current_token)
+  token = encode_literal(parser, token, range)
+  # ...
+end
+```
+
+The Toxic tokenizer provides correct ranges for `:kw_identifier` tokens, so no workaround is needed.
 
 #### 4.2 Duplicated Logic
-The error recovery logic for containers (lists, tuples, maps, bitstrings) follows the same pattern:
-1. Check if current token is wrong closing delimiter
-2. Put error
-3. Inject fake token
-4. Calculate range with potentially nil close_range
+**Not Worth Extracting** - While error recovery for containers (lists, tuples, maps, bitstrings) follows a similar pattern, each case has context-specific differences:
+- Different fake token types (`:fake_closing_bracket`, `:fake_closing_brace`, `:fake_closing_brackets`)
+- Different error messages ("missing closing bracket for list" vs "missing closing brace for tuple")
+- Different AST node construction and metadata handling
+- Different container range calculation logic
 
-This could be extracted into a helper function.
+The duplication is only 5-6 lines of stream management code. Extracting it would require many parameters (fake token type, error message, original parser state, closing meta handling) and would likely reduce readability without significant benefit. The current approach keeps each container's error handling self-contained and clear.
+
+**Recommendation:** Leave as-is. The small amount of duplication is acceptable given the context-specific nature of each case.
 
 #### 4.3 Long Functions
-- `parse_grouped_expression/1` - 183 lines (431-614)
-- `parse_do_block/2` - 97 lines (1461-1558)
-- `parse_dot_expression/2` - 312 lines (1561-1873)
+**Not Practical to Refactor** - While these functions are long, they handle tightly coupled parsing logic:
+- `parse_grouped_expression/1` - 183 lines handling various grouped expression forms
+- `parse_do_block/2` - 97 lines managing block parsing with multiple clause types
+- `parse_dot_expression/2` - 312 lines handling dot expressions and quoted identifiers
 
-**Recommendation:** Consider extracting sub-functions, especially for the quoted identifier cases in `parse_dot_expression/2`.
+The `parse_dot_expression/2` quoted identifier cases (`:quoted_paren_identifier_end`, `:quoted_bracket_identifier_end`, `:quoted_do_identifier_end`) share state (dot_range, lhs_range, parser state, metadata) and would be difficult to extract without creating fragile parameter passing. Each case branch is cohesive and readable on its own.
+
+**Recommendation:** Leave as-is. These are inherently complex parser functions handling multiple related cases. Extracting sub-functions would increase complexity without improving clarity. The current structure with clear case branches and inline comments is maintainable.
 
 #### 4.4 Commented Code
-Line 2747: `# parser = eat_eol_at(parser, 1)`
+✅ **Cleaned Up** - Removed commented line at line 2735 (previously 2747): `# parser = eat_eol_at(parser, 1)`
 
-**Recommendation:** Remove or explain why it's commented.
+This was old code that had been replaced by `peek_token_eat_eol(parser)` on the next line. The `peek_token_eat_eol` function already handles eating EOL tokens, making the commented line redundant. All 458 tests still pass after removal.
 
 #### 4.5 Inconsistent Error Messages
 Some error messages are detailed:
