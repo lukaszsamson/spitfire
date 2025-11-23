@@ -147,6 +147,46 @@ defmodule SpitfireRangesTest do
       assert_range(rhs, {{1, 19}, {1, 24}})
     end
 
+    test "trailing newline exclusion" do
+      # Case 1: Single number WITH newline
+      code = "1\n"
+      {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic, literal_encoder: test_encoder())
+      # Should exclude newline: {{1,1}, {1,2}}
+      assert_range(ast, {{1, 1}, {1, 2}})
+
+      # Case 2: List with element WITH newline
+      code = "[1]\n"
+      {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic, literal_encoder: test_encoder())
+      # Should exclude newline: {{1,1}, {1,4}}
+      assert_range(ast, {{1, 1}, {1, 4}})
+
+      # Case 3: Multiple newlines
+      code = "1\n\n"
+      {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic, literal_encoder: test_encoder())
+      assert_range(ast, {{1, 1}, {1, 2}})
+    end
+
+    test "trailing semicolon exclusion" do
+      # Case 1: Single number WITH semicolon
+      code = "1;"
+      {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic, literal_encoder: test_encoder())
+      # Should exclude semicolon: {{1,1}, {1,2}}
+      assert_range(ast, {{1, 1}, {1, 2}})
+
+      # Case 2: Multiple semicolons (Syntax Error)
+      code = "1;;"
+      {:error, ast, _errors} = Spitfire.parse(code, tokenizer: :toxic, literal_encoder: test_encoder())
+      # The AST is a block containing the literal and the error
+      # We want to verify the literal inside has the correct range
+      {:__block__, _, [literal | _]} = ast
+      assert_range(literal, {{1, 1}, {1, 2}})
+
+      # Case 3: Semicolon and newline
+      code = "1;\n"
+      {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic, literal_encoder: test_encoder())
+      assert_range(ast, {{1, 1}, {1, 2}})
+    end
+
     test "nil literal" do
       code = "nil"
       {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic, literal_encoder: test_encoder())
@@ -601,8 +641,8 @@ defmodule SpitfireRangesTest do
       code = "1 + 2\n"
       {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic)
 
-      # Root should start at {1,1} and end at EOF
-      assert_range(ast, {{1, 1}, {2, 1}})
+      # Root should start at {1,1} and end at last token (excluding trailing newline)
+      assert_range(ast, {{1, 1}, {1, 6}})
     end
 
     test "empty source still has start range" do
@@ -1232,10 +1272,10 @@ defmodule SpitfireRangesTest do
 
       {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic, literal_encoder: test_encoder())
 
-      # Should span from line 1 to line 6 (heredoc adds trailing newline)
+      # Should span from line 1 to line 5 (excluding trailing newline)
       {{start_line, _}, {end_line, _}} = get_range(ast)
       assert start_line == 1
-      assert end_line == 6
+      assert end_line == 5
 
       assert_range_invariants(ast)
     end

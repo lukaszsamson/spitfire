@@ -3930,9 +3930,13 @@ defmodule Spitfire do
 
   defp next_token(%{stream: stream} = parser) do
     last_span =
-      case token_range(parser.current_token) do
-        {{_sl, _sc}, {_el, _ec}} = span -> span
-        _ -> parser.last_span
+      if current_token_type(parser) in [:eol, :";"] do
+        parser.last_span
+      else
+        case token_range(parser.current_token) do
+          {{_sl, _sc}, {_el, _ec}} = span -> span
+          _ -> parser.last_span
+        end
       end
 
     current = parser.peek_token
