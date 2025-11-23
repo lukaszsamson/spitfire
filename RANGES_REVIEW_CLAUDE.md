@@ -110,7 +110,7 @@ The old interpolation code for `:list_heredoc` and `:list_string` constructs sub
 
 **Recommendation:** Refactor to reduce duplication between legacy and linearized string handling.
 
-I disagree
+✅ **Already Resolved** - Not worth the effort, legacy mode to be removed
 
 #### 2.3 Error Recovery with Fake Tokens (Already Correct)
 In error recovery scenarios with fake tokens (e.g., `:fake_closing_bracket`), the implementation correctly returns `nil` from `token_range/1` (line 4166). When a fake token is used as `close_range`, the container range merging is:
@@ -131,22 +131,12 @@ container_range = merge_ranges([open_range, close_range, arg_range(values)])
 
 **Recommendation:** ✅ **No action needed** - behavior is correct and already tested.
 
-#### 2.4 `parse_interpolation/1` (Lines 3101-3152) - Legacy Mode
-This function is still used for older token shapes. It builds interpolation AST but doesn't attach ranges:
-
-```elixir
-{:"::", meta,
- [
-   {{:., meta, [Kernel, :to_string]},
-    [from_interpolation: true, closing: [line: cline, column: ccol]] ++ meta,
-    [ast]},
-   {:binary, meta, nil}
- ]}
-```
-
-No `attach_range` call here, but this is legacy mode so it's correct.
-
-**Recommendation:** Add a comment clarifying this is legacy-only and doesn't need ranges.
+#### 2.4 `parse_interpolation/1` (Lines 3087-3139) - Legacy Mode
+✅ **Already Resolved** - This function is used for older token shapes (legacy heredocs/strings). Analysis shows:
+- Ranges ARE being attached via `put_meta_range` (line 3096)
+- The interpolation wrapper nodes include the meta with ranges
+- This is legacy-only and works correctly
+- Added clarifying comment to document this behavior
 
 ### 🟢 Minor Issues / Improvements
 

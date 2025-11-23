@@ -3084,6 +3084,9 @@ defmodule Spitfire do
     end
   end
 
+  # Legacy string interpolation parsing (for non-Toxic tokenizer tokens)
+  # Ranges ARE attached via put_meta_range for each interpolated expression
+  # This is only used in non-linearized string contexts (legacy heredocs/strings)
   defp parse_interpolation(parser, tokens) do
     trace "parse_interpolation", trace_meta(parser) do
       args =
