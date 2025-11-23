@@ -1773,6 +1773,30 @@ defmodule SpitfireRangesTest do
       assert_range_invariants(ast)
       assert get_range(ast) != nil
     end
+
+    test "keyword atoms have correct ranges with literal_encoder" do
+      code = "[foo: 1, bar: 2]"
+      {:ok, _ast} = Spitfire.parse(code, tokenizer: :toxic, literal_encoder: test_encoder())
+
+      # Verify keyword atoms include the colon in their range
+      # "foo:" spans columns 2-5 (f, o, o, :)
+      assert_received {:lit_meta, :foo, foo_meta}
+      assert foo_meta[:range] == {{1, 2}, {1, 6}}
+
+      # "bar:" spans columns 10-13 (b, a, r, :)
+      assert_received {:lit_meta, :bar, bar_meta}
+      assert bar_meta[:range] == {{1, 10}, {1, 14}}
+    end
+
+    test "quoted keyword atoms in function calls" do
+      code = ~s|func("key": value)|
+      {:ok, _ast} = Spitfire.parse(code, tokenizer: :toxic, literal_encoder: test_encoder())
+
+      # Verify quoted keyword atom includes delimiter and colon
+      assert_received {:lit_meta, :key, key_meta}
+      # "key": spans from opening quote to colon
+      assert key_meta[:range] == {{1, 6}, {1, 12}}
+    end
   end
 
   describe "Capture Operator" do
