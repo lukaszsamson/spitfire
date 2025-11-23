@@ -102,6 +102,48 @@ defmodule SpitfireRangesTest do
       assert_range(ast, {{1, 1}, {1, 6}})
     end
 
+    test "parenthesized integer literal" do
+      code = "(123)"
+      {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic, literal_encoder: test_encoder())
+
+      # The encoder receives the literal with its immediate range (inside parens)
+      assert_received {:lit_meta, 123, meta}
+      assert meta[:range] == {{1, 2}, {1, 5}}
+
+      # The returned AST node has the range extended to include parentheses
+      assert_range(ast, {{1, 1}, {1, 6}})
+
+      # Verify parens metadata is present
+      {_, ast_meta, _} = ast
+      assert Keyword.has_key?(ast_meta, :parens)
+    end
+
+    test "nested parenthesized expression" do
+      code = "(((123 + 3) * 4) -((x)))"
+      # Length is 24 chars. Range should be 1..25
+      {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic, literal_encoder: test_encoder())
+
+      assert_range(ast, {{1, 1}, {1, 25}})
+
+      # Verify structure and inner ranges
+      # AST should be roughly: {:-, meta, [lhs, rhs]}
+      {op, meta, [lhs, rhs]} = ast
+      assert op == :-
+      assert meta[:range] == {{1, 1}, {1, 25}}
+
+      # LHS: ((123 + 3) * 4)
+      # Start: 2, End: 16 (exclusive 17)
+      # Chars 2..16: ((123 + 3) * 4)
+      # The outer parens are at 1 and 24.
+      # So LHS starts at 2.
+      assert_range(lhs, {{1, 2}, {1, 17}})
+
+      # RHS: ((x))
+      # Start: 19, End: 23 (exclusive 24)
+      # Chars 19..23: ((x))
+      assert_range(rhs, {{1, 19}, {1, 24}})
+    end
+
     test "nil literal" do
       code = "nil"
       {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic, literal_encoder: test_encoder())
