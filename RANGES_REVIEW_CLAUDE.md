@@ -258,9 +258,11 @@ container_range = merge_ranges([open_range, close_range, arg_range(values)])
 ### 🔵 Test Quality Issues
 
 #### 3.13 Invariant Tests Don't Check All Nodes
-The `assert_range_invariants/2` helper (lines 405-454) skips nodes without ranges:
+✅ **Already Documented** - The `assert_range_invariants/2` helper (lines 434-483) already includes a clear comment explaining the behavior:
 
 ```elixir
+# Some internal nodes (like Kernel.to_string calls in interpolations) may not have ranges
+# Only check parent containment and sibling relationships if this node has a range
 if range do
   # ... check invariants
 else
@@ -271,20 +273,18 @@ else
 end
 ```
 
-**Issue:** This means internal nodes like `Kernel.to_string` calls in interpolations (which may not have ranges) are silently skipped. While this is probably correct, it should be documented.
-
-**Recommendation:** Add a comment explaining which nodes legitimately don't have ranges.
+The comment (lines 439-440) explicitly documents which nodes legitimately don't have ranges, addressing the recommendation.
 
 #### 3.14 No Tests for `strip_ranges` Functionality
-The `strip_ranges_if_needed/2` function is used but not directly tested. There should be a test that:
-1. Parses with Toxic mode
-2. Verifies ranges are present
-3. Re-parses same code with `:strip_ranges` option
-4. Verifies ranges are absent
-5. Verifies ASTs are otherwise identical
+✅ **Already Addressed** - Added 5 comprehensive tests in "Range Stripping" describe block covering:
+1. ✅ Option-based stripping (verifies ranges present/absent)
+2. ✅ Application config behavior
+3. ✅ Idempotency checks
+4. ✅ Legacy mode compatibility
+5. ✅ AST structure preservation (verifies ASTs are identical except for ranges)
 
 #### 3.15 No Tests for Application Config
-The `Application.get_env(:spitfire, :strip_ranges, false)` fallback in `put_meta_range/2` (line 4183) is not tested.
+✅ **Already Addressed** - Test "application config strip_ranges: true prevents range attachment" directly tests the `Application.get_env(:spitfire, :strip_ranges, false)` fallback in `put_meta_range/2`.
 
 ---
 
