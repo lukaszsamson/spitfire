@@ -1884,6 +1884,176 @@ defmodule SpitfireRangesTest do
     end
   end
 
+  describe "Module Attributes" do
+    test "module attribute in expression" do
+      code = "@foo + 1"
+      {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic)
+
+      {:+, _meta, [{:@, attr_meta, _}, _]} = ast
+      assert attr_meta[:range] != nil
+      assert_range_invariants(ast)
+    end
+
+    test "nested module attributes" do
+      code = "@foo @bar"
+      {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic)
+
+      # @foo is applied to the result of @bar
+      {:@, outer_meta, [inner_call]} = ast
+      assert outer_meta[:range] != nil
+      # Inner structure has @bar inside a function call context
+      assert get_range(inner_call) != nil
+      assert_range_invariants(ast)
+    end
+
+    test "module attribute in call" do
+      code = "foo(@x, @y)"
+      {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic)
+
+      # Call has a range
+      {:foo, call_meta, _args} = ast
+      assert call_meta[:range] != nil
+      assert_range_invariants(ast)
+    end
+  end
+
+  describe "Special Operators" do
+    test "type operator outside bitstring" do
+      code = "x :: integer()"
+      {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic)
+
+      {:"::", type_meta, _} = ast
+      assert type_meta[:range] != nil
+      assert_range_invariants(ast)
+    end
+
+    test "in operator" do
+      code = "x in [1, 2, 3]"
+      {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic)
+
+      {:in, in_meta, _} = ast
+      assert in_meta[:range] != nil
+      assert_range_invariants(ast)
+    end
+
+    test "not in operator" do
+      code = "x not in [1, 2, 3]"
+      {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic)
+
+      # 'not in' is parsed as 'x not in list'
+      assert get_range(ast) != nil
+      assert_range_invariants(ast)
+    end
+  end
+
+  describe "Ellipsis Operator" do
+    test "ellipsis in map update" do
+      code = "%{map | ...}"
+      {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic)
+
+      assert get_range(ast) != nil
+      assert_range_invariants(ast)
+    end
+  end
+
+  describe "Struct Type Expressions" do
+    test "struct with alias chain" do
+      code = "%Foo.Bar.Baz{x: 1}"
+      {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic)
+
+      assert get_range(ast) != nil
+      assert_range_invariants(ast)
+    end
+
+    test "struct with module attribute" do
+      code = "%@type{}"
+      {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic)
+
+      assert get_range(ast) != nil
+      assert_range_invariants(ast)
+    end
+  end
+
+  describe "Multi-Alias" do
+    test "multi-alias expression" do
+      code = "alias Foo.{Bar, Baz}"
+      {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic)
+
+      assert get_range(ast) != nil
+      assert_range_invariants(ast)
+    end
+  end
+
+  describe "Range Operator Edge Cases" do
+    test "lonely range operator" do
+      code = ".."
+      {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic)
+
+      {:.., range_meta, _} = ast
+      assert range_meta[:range] != nil
+      assert_range_invariants(ast)
+    end
+
+    test "range with only end value" do
+      code = "..10"
+      # This is actually a syntax error, but should still have ranges
+      {:error, ast, _errors} = Spitfire.parse(code, tokenizer: :toxic)
+
+      {:.., range_meta, _} = ast
+      assert range_meta[:range] != nil
+      assert_range_invariants(ast)
+    end
+
+    test "range with identifiers" do
+      code = "start..finish"
+      {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic)
+
+      {:.., range_meta, _} = ast
+      assert range_meta[:range] != nil
+      assert_range_invariants(ast)
+    end
+  end
+
+  describe "Comma Operator" do
+    test "comma in grouped expression" do
+      code = "(1, 2, 3)"
+      {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic)
+
+      # Comma creates a tuple-like structure
+      assert get_range(ast) != nil
+      assert_range_invariants(ast)
+    end
+  end
+
+  describe "Bitstring Type Specifiers" do
+    test "bitstring with size specifier" do
+      code = "<<x :: size(8)>>"
+      {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic)
+
+      {:<<>>, bs_meta, _} = ast
+      assert bs_meta[:range] != nil
+      assert_range_invariants(ast)
+    end
+
+    test "bitstring with binary type" do
+      code = "<<x :: binary>>"
+      {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic)
+
+      {:<<>>, bs_meta, _} = ast
+      assert bs_meta[:range] != nil
+      assert_range_invariants(ast)
+    end
+
+    test "bitstring with utf8 type" do
+      code = "<<x :: utf8>>"
+      {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic)
+
+      {:<<>>, bs_meta, _} = ast
+      assert bs_meta[:range] != nil
+      assert_range_invariants(ast)
+    end
+  end
+
   describe "Range Stripping" do
     test "strip_ranges option can remove ranges from parsed AST" do
       code = "1 + 2"
