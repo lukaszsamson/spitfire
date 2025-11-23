@@ -4168,6 +4168,10 @@ defmodule Spitfire do
     end
   end
 
+  # Merge multiple ranges into a single spanning range.
+  # Nil ranges are filtered out, allowing error recovery with fake tokens to work correctly.
+  # For example, if a container has [open_range, nil (fake closer), child_range], the result
+  # is a range spanning from open through the last valid child - no approximation.
   defp merge_ranges(ranges) do
     ranges
     |> Enum.filter(& &1)

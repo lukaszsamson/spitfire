@@ -113,6 +113,8 @@ defp parse_kw_identifier(%{current_token: {:kw_identifier, _meta, token}} = pars
 2. If so, this workaround is correct but should be documented
 3. Consider whether Toxic should be fixed instead to exclude the `:`
 
+I disagree
+
 #### 2.2 Interpolation in Legacy String Parsing (Lines 2087-2137, 2169-2213)
 The old interpolation code for `:list_heredoc` and `:list_string` constructs sub-parsers (lines 2100-2116, 2182-2203) but doesn't attach ranges to the interpolation wrapper nodes built in those contexts. They use `{:., meta, [Kernel, :to_string]}` but don't call `build_interpolation_ast`.
 
@@ -120,19 +122,26 @@ The old interpolation code for `:list_heredoc` and `:list_string` constructs sub
 
 **Recommendation:** Refactor to reduce duplication between legacy and linearized string handling.
 
-#### 2.3 Missing Range for Some Error Recovery Nodes
-In error recovery scenarios with fake tokens (e.g., `:fake_closing_bracket`), the implementation correctly returns `nil` from `token_range/1` (line 4166), but some container parsers use these as `close_range`:
+I disagree
+
+#### 2.3 Error Recovery with Fake Tokens (Already Correct)
+In error recovery scenarios with fake tokens (e.g., `:fake_closing_bracket`), the implementation correctly returns `nil` from `token_range/1` (line 4166). When a fake token is used as `close_range`, the container range merging is:
 
 ```elixir
-# Line 2739 in parse_list_literal
-close_range = token_range(parser.current_token)  # May be nil for fake tokens
-closing_meta = current_meta(parser)
-{encode_list.([], parser, close_range, closing_meta), parser}
+# Line 2710, 2780 in parse_list_literal
+close_range = token_range(parser.current_token)  # nil for fake tokens
+container_range = merge_ranges([open_range, close_range, arg_range(values)])
 ```
 
-**Impact:** In error cases, containers may have partial ranges or rely only on `open_range`.
+**Why this is correct:**
+- `merge_ranges/1` (line 4190) filters out `nil` values: `ranges |> Enum.filter(& &1)`
+- The container gets a range from `[open_range, nil, arg_range(values)]` → `[open_range, arg_range(values)]`
+- This gives an **exact** range from the opening bracket through the last valid element
+- No approximation occurs; we're not guessing the closer's position
 
-**Recommendation:** This is acceptable given the "exact, not approximate" principle - we don't want to guess positions. Document this behavior.
+**Verification:** Error recovery tests (lines 515-597) confirm ranges exist even with missing closers. The V3 plan principle "exact, not approximate" is upheld.
+
+**Recommendation:** ✅ **No action needed** - behavior is correct and already tested.
 
 #### 2.4 `parse_interpolation/1` (Lines 3101-3152) - Legacy Mode
 This function is still used for older token shapes. It builds interpolation AST but doesn't attach ranges:
