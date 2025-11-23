@@ -1733,4 +1733,242 @@ defmodule SpitfireRangesTest do
       assert range == nil
     end
   end
+
+  describe "Keyword Lists" do
+    test "keyword list as function argument" do
+      code = "foo(a: 1, b: 2)"
+      {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic)
+
+      # The call should have a range
+      {:foo, call_meta, _args} = ast
+      assert call_meta[:range] != nil
+
+      # Verify invariants
+      assert_range_invariants(ast)
+    end
+
+    test "mixed positional and keyword arguments" do
+      code = "foo(1, a: 2, 3, b: 4)"
+      {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic)
+
+      {:foo, call_meta, _args} = ast
+      assert call_meta[:range] != nil
+      assert_range_invariants(ast)
+    end
+
+    test "keyword list in map-like context" do
+      code = "%{a: 1, b: 2}"
+      {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic)
+
+      # Map structure is {:%{}, meta, [args]}
+      {:%{}, map_meta, _} = ast
+      assert map_meta[:range] != nil
+      assert_range_invariants(ast)
+    end
+
+    test "nested keyword arguments" do
+      code = "outer(inner(x: 1), y: 2)"
+      {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic)
+
+      assert_range_invariants(ast)
+      assert get_range(ast) != nil
+    end
+  end
+
+  describe "Capture Operator" do
+    test "function capture with arity" do
+      code = "&foo/1"
+      {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic)
+
+      {:&, cap_meta, _} = ast
+      assert cap_meta[:range] != nil
+      assert_range_invariants(ast)
+    end
+
+    test "remote function capture" do
+      code = "&Foo.bar/2"
+      {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic)
+
+      {:&, cap_meta, _} = ast
+      assert cap_meta[:range] != nil
+      # Range spans from & to the end including /2
+      assert cap_meta[:range] == {{1, 1}, {1, 11}}
+      assert_range_invariants(ast)
+    end
+
+    test "anonymous function capture" do
+      code = "&(&1 + 1)"
+      {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic)
+
+      {:&, cap_meta, _} = ast
+      assert cap_meta[:range] != nil
+      assert_range_invariants(ast)
+    end
+  end
+
+  describe "Stab Expressions" do
+    test "simple stab expression" do
+      code = "x -> x + 1"
+      {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic)
+
+      # When parsed alone, stab is wrapped in a list
+      [stab_expr] = ast
+      {:->, stab_meta, _} = stab_expr
+      assert stab_meta[:range] != nil
+      assert_range_invariants(stab_expr)
+    end
+
+    test "stab with guards" do
+      code = "x when x > 0 -> x"
+      {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic)
+
+      # When parsed alone, stab is wrapped in a list
+      [stab_expr] = ast
+      {:->, stab_meta, _} = stab_expr
+      assert stab_meta[:range] != nil
+      assert_range_invariants(stab_expr)
+    end
+
+    test "multiple clause stab in case" do
+      code = "case x do\n  1 -> :one\n  2 -> :two\nend"
+      {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic)
+
+      {:case, _case_meta, [_scrutinee, clauses_keyword]} = ast
+      # The do block is a keyword list
+      [{:do, clauses}] = clauses_keyword
+      # Each clause is a stab expression with a range
+      assert is_list(clauses)
+      assert Enum.all?(clauses, fn clause_ast ->
+        case clause_ast do
+          {:->, meta, _} -> meta[:range] != nil
+          _ -> false
+        end
+      end)
+      assert_range_invariants(ast)
+    end
+
+    test "stab in anonymous function" do
+      code = "fn x -> x * 2 end"
+      {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic)
+
+      assert get_range(ast) != nil
+      assert_range_invariants(ast)
+    end
+  end
+
+  describe "Quoted Identifiers" do
+    test "quoted identifier in remote call" do
+      code = "Foo.\"bar-baz\"()"
+      {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic)
+
+      {{:., dot_meta, _}, call_meta, _} = ast
+      assert dot_meta[:range] != nil
+      assert call_meta[:range] != nil
+      assert_range_invariants(ast)
+    end
+
+    test "quoted identifier with special characters" do
+      code = "m.\"!@#\""
+      {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic)
+
+      {{:., _dot_meta, [_module, _identifier]}, _access_meta, _} = ast
+      assert_range_invariants(ast)
+    end
+
+    test "quoted identifier in atom access" do
+      code = "x.\"field\""
+      {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic)
+
+      assert get_range(ast) != nil
+      assert_range_invariants(ast)
+    end
+  end
+
+  describe "Range Stripping" do
+    test "strip_ranges option can remove ranges from parsed AST" do
+      code = "1 + 2"
+
+      # With setup, strip_ranges is set to false, so ranges should be attached
+      {:ok, ast_with_ranges} = Spitfire.parse(code, tokenizer: :toxic, strip_ranges: false)
+      {:ok, ast_without_ranges} = Spitfire.parse(code, tokenizer: :toxic, strip_ranges: true)
+
+      # Verify ranges are present without stripping option
+      assert get_range(ast_with_ranges) != nil
+
+      # Verify ranges are absent with stripping option
+      assert get_range(ast_without_ranges) == nil
+    end
+
+    test "application config strip_ranges: true prevents range attachment" do
+      code = "1 + 2"
+
+      # Save original config (should be false from setup)
+      original = Application.get_env(:spitfire, :strip_ranges)
+
+      try do
+        # Temporarily enable stripping at config level
+        Application.put_env(:spitfire, :strip_ranges, true)
+        {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic)
+
+        # No ranges should be present when config strips them
+        assert get_range(ast) == nil
+      after
+        # Restore original config
+        Application.put_env(:spitfire, :strip_ranges, original)
+      end
+    end
+
+    test "strip_ranges: true is idempotent when config already strips" do
+      code = "1 + 2"
+
+      # Save original config
+      original = Application.get_env(:spitfire, :strip_ranges)
+
+      try do
+        # Both config and option should result in same behavior
+        Application.put_env(:spitfire, :strip_ranges, true)
+        {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic, strip_ranges: true)
+
+        # No ranges regardless of double-stripping
+        assert get_range(ast) == nil
+      after
+        # Restore original config
+        Application.put_env(:spitfire, :strip_ranges, original)
+      end
+    end
+
+    test "strip_ranges is ignored in legacy mode" do
+      code = "1 + 2"
+
+      # Legacy mode never produces ranges regardless of stripping config
+      {:ok, ast} = Spitfire.parse(code, tokenizer: :elixir, strip_ranges: false)
+
+      assert get_range(ast) == nil
+    end
+
+    test "strip_ranges preserves AST structure except for ranges" do
+      code = "foo(a: 1, b: 2)"
+
+      # Parse with and without stripping (config has ranges enabled from setup)
+      {:ok, ast_with} = Spitfire.parse(code, tokenizer: :toxic, strip_ranges: false)
+      {:ok, ast_without} = Spitfire.parse(code, tokenizer: :toxic, strip_ranges: true)
+
+      # Remove ranges from ast_with to compare structure
+      ast_with_ranges_removed = remove_all_ranges(ast_with)
+
+      # Structure should be identical except for range metadata
+      assert ast_with_ranges_removed == ast_without
+    end
+
+    defp remove_all_ranges({form, meta, args}) when is_list(meta) do
+      new_meta = Keyword.delete(meta, :range)
+      {form, new_meta, remove_all_ranges(args)}
+    end
+
+    defp remove_all_ranges(list) when is_list(list) do
+      Enum.map(list, &remove_all_ranges/1)
+    end
+
+    defp remove_all_ranges(other), do: other
+  end
 end
