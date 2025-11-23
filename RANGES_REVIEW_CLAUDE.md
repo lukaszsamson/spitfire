@@ -141,17 +141,14 @@ container_range = merge_ranges([open_range, close_range, arg_range(values)])
 ### 🟢 Minor Issues / Improvements
 
 #### 2.5 Helper Function Consistency
-Some parsers use direct calls to `put_meta_range(meta, range)`, others use `attach_range/2`, and operators use `attach_op_range/2`. While functionally equivalent, the inconsistency makes the code harder to follow.
+✅ **Addressed** - Added documentation comments establishing a clear convention for range helper functions.
 
-**Example:**
-- Line 443: `|> attach_range([open_range, close_range])`
-- Line 2244: `|> put_meta_range(range)`
-- Line 997: `|> attach_op_range(op_range)`
+**Convention Established:**
+- `put_meta_range/2`: Low-level helper for attaching a single range to raw metadata
+- `attach_op_range/2`: Specifically for operators - merges operator range with operand ranges
+- `attach_range/2`: For nodes merging child + delimiter ranges (containers, calls, blocks)
 
-**Recommendation:** Establish a convention:
-- Use `attach_range/2` for nodes where you're merging child + delimiter ranges
-- Use `put_meta_range/2` only when working with raw metadata
-- Use `attach_op_range/2` only for operators (as it already does)
+**Implementation:** Added CONVENTION comments to each helper function (lines 4165, 4203, 4215-4216) to guide future developers and ensure consistent usage patterns.
 
 #### 2.6 `strip_ranges_if_needed/2` Called Twice
 In `parse/2`, both success and error cases call `strip_ranges_if_needed` (lines 144, 149). This is correct but could be DRYer.
@@ -550,8 +547,9 @@ The range metadata implementation is **production-ready** with the following cav
 - Well-structured helper functions
 
 ### ⚠️ Recommended Improvements
-- Add ~25 test cases for missing scenarios (Priority 2)
-- Document keyword identifier range adjustment (Priority 2)
+- ✅ Add ~25 test cases for missing scenarios (Priority 2) - **COMPLETED**
+- ✅ Document keyword identifier range adjustment (Priority 2) - **COMPLETED**
+- ✅ Establish helper function convention (Minor issue 2.5) - **COMPLETED**
 - Extract common error recovery pattern (Priority 3)
 - Address TODOs and clean up code (Priority 3-4)
 

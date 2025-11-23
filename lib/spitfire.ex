@@ -4162,6 +4162,7 @@ defmodule Spitfire do
     end
   end
 
+  # CONVENTION: Use put_meta_range/2 when attaching a single range to raw metadata (low-level helper)
   defp put_meta_range(meta, nil), do: meta
   defp put_meta_range(meta, range) do
     if Application.get_env(:spitfire, :strip_ranges, false) do
@@ -4199,6 +4200,7 @@ defmodule Spitfire do
   defp arg_range({left, right}), do: merge_ranges([arg_range(left), arg_range(right)])
   defp arg_range(ast), do: ast_range(ast)
 
+  # CONVENTION: Use attach_op_range/2 for operators - merges operator range with operand ranges
   defp attach_op_range({form, meta, args}, op_range) do
     ranges =
       args
@@ -4210,6 +4212,8 @@ defmodule Spitfire do
 
   defp attach_op_range(ast, _op_range), do: ast
 
+  # CONVENTION: Use attach_range/2 for nodes where you're merging child + delimiter ranges
+  # (containers, calls, blocks). Merges all provided ranges into a single spanning range.
   defp attach_range({form, meta, args}, ranges) do
     {form, put_meta_range(meta, merge_ranges(List.wrap(ranges))), args}
   end
