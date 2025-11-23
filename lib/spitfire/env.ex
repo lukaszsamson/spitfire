@@ -207,7 +207,6 @@ defmodule Spitfire.Env do
       # An actual compiler would raise if the module is not defined or if the require fails.
       case Macro.Env.define_require(env, meta, arg, [trace: false] ++ opts) do
         {:ok, env} -> {arg, state, env}
-        {:error, _} -> {arg, state, env}
       end
     else
       {node, state, env}

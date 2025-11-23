@@ -1566,9 +1566,6 @@ defmodule Spitfire do
             child_ranges = Enum.map(args, &arg_range/1)
             range = merge_ranges([callee_range, do_range, end_range | child_ranges])
             {form, put_meta_range(meta, range), args}
-
-          _ ->
-            ast
         end
 
       parser = Map.put(parser, :nesting, old_nesting)
@@ -3320,7 +3317,7 @@ defmodule Spitfire do
           build_interpolation_ast(
             expr,
             open_meta,
-            end_meta || open_meta,
+            end_meta,
             open_range,
             end_range,
             kind
@@ -3328,7 +3325,7 @@ defmodule Spitfire do
 
         scan_loop(
           parser,
-          [{:interpolation, end_meta || open_meta, interp_ast} | accumulator],
+          [{:interpolation, end_meta, interp_ast} | accumulator],
           end_tokens,
           kind,
           opts
@@ -3931,8 +3928,6 @@ defmodule Spitfire do
     end
   end
 
-  defp eat(_edibles, parser), do: parser
-
   defp eat_eol(parser) do
     eat(%{:eol => true, :";" => true}, parser)
   end
@@ -4314,8 +4309,6 @@ defmodule Spitfire do
 
     {form, put_meta_range(meta, merge_ranges(ranges)), args}
   end
-
-  defp attach_op_range(ast, _op_range), do: ast
 
   # Test-only helper: verify that ranges are in a reasonable order
   # This helps catch logic errors where ranges might be passed in unexpected order
