@@ -1763,8 +1763,8 @@ defmodule SpitfireLegacyTest do
         """,
         ~S'{one, two}',
         ~S'''
-        Foo.run(f: &{:ok, {:__literal__, &2, [&1]}})
-      '''
+          Foo.run(f: &{:ok, {:__literal__, &2, [&1]}})
+        '''
       ]
 
       encoder = parity_encoder()

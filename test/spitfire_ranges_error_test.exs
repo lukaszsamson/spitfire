@@ -6,11 +6,16 @@ defmodule SpitfireRangesErrorTest do
     Application.put_env(:spitfire, :tokenizer, :toxic)
     Application.put_env(:spitfire, :strip_ranges, false)
     Application.put_env(:spitfire, :verify_range_order, true)
+
     on_exit(fn ->
-      if original_tokenizer, do: Application.put_env(:spitfire, :tokenizer, original_tokenizer), else: Application.delete_env(:spitfire, :tokenizer)
+      if original_tokenizer,
+        do: Application.put_env(:spitfire, :tokenizer, original_tokenizer),
+        else: Application.delete_env(:spitfire, :tokenizer)
+
       Application.put_env(:spitfire, :strip_ranges, true)
       Application.put_env(:spitfire, :verify_range_order, false)
     end)
+
     :ok
   end
 

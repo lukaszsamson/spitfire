@@ -517,7 +517,10 @@ defmodule Spitfire do
               case ast do
                 {f, meta, args} ->
                   child_ranges = if is_list(args), do: Enum.map(args, &arg_range/1), else: []
-                  {f, put_meta_range(meta, merge_ranges([open_range, close_range | child_ranges])), args}
+
+                  {f,
+                   put_meta_range(meta, merge_ranges([open_range, close_range | child_ranges])),
+                   args}
 
                 _ ->
                   ast
@@ -607,7 +610,10 @@ defmodule Spitfire do
                 case ast do
                   {f, meta, args} ->
                     child_ranges = if is_list(args), do: Enum.map(args, &arg_range/1), else: []
-                    {f, put_meta_range(meta, merge_ranges([open_range, close_range | child_ranges])), args}
+
+                    {f,
+                     put_meta_range(meta, merge_ranges([open_range, close_range | child_ranges])),
+                     args}
 
                   _ ->
                     ast
@@ -756,6 +762,7 @@ defmodule Spitfire do
   defp parse_assoc_op(%{current_token: {:assoc_op, _, _token}} = parser, key) do
     trace "parse_assoc_op", trace_meta(parser) do
       op_range = token_range(parser.current_token)
+
       assoc_meta =
         parser
         |> current_meta()
@@ -1599,6 +1606,7 @@ defmodule Spitfire do
             if is_binary(content), do: String.to_atom(content), else: :interpolated_identifier
 
           base_call_meta = [{:delimiter, delim_str} | id_start_meta]
+
           build_dot_ast = fn dot_meta ->
             {token, dot_meta, [lhs, callee_atom]}
             |> attach_range([lhs_range, dot_range, callee_range])
@@ -1624,6 +1632,7 @@ defmodule Spitfire do
                     end
 
                   closing = Keyword.get(call_meta, :closing)
+
                   new_meta =
                     newlines
                     |> Kernel.++([{:closing, closing} | base_call_meta])
@@ -1695,10 +1704,13 @@ defmodule Spitfire do
               parser = pop_nesting(parser)
               dot_ast = build_dot_ast.(meta)
               base_ast = {dot_ast, base_call_meta, []}
+
               ast =
                 base_ast
                 |> put_elem(2, List.wrap(front) ++ List.wrap(rest))
-                |> attach_range([ast_range(dot_ast) | Enum.map(List.wrap(front) ++ List.wrap(rest), &arg_range/1)])
+                |> attach_range([
+                  ast_range(dot_ast) | Enum.map(List.wrap(front) ++ List.wrap(rest), &arg_range/1)
+                ])
 
               {ast, parser}
 
@@ -1722,10 +1734,14 @@ defmodule Spitfire do
                   end
 
                 parser = pop_nesting(parser)
+
                 ast =
                   base_ast
                   |> put_elem(2, List.wrap(front) ++ List.wrap(rest))
-                  |> attach_range([ast_range(dot_ast) | Enum.map(List.wrap(front) ++ List.wrap(rest), &arg_range/1)])
+                  |> attach_range([
+                    ast_range(dot_ast)
+                    | Enum.map(List.wrap(front) ++ List.wrap(rest), &arg_range/1)
+                  ])
 
                 {ast, parser}
               else
@@ -1747,6 +1763,7 @@ defmodule Spitfire do
           newlines = get_newlines(parser)
 
           parser = parser |> next_token() |> eat_eol()
+
           if current_token(parser) == :"}" do
             closing = current_meta(parser)
             close_range = token_range(parser.current_token)
@@ -1756,8 +1773,7 @@ defmodule Spitfire do
               |> attach_range([lhs_range, dot_range, open_range, close_range])
 
             multis =
-              {dot_ast,
-               newlines ++ [{:closing, closing} | dot_meta], []}
+              {dot_ast, newlines ++ [{:closing, closing} | dot_meta], []}
               |> attach_range([ast_range(dot_ast), open_range, close_range])
 
             {multis, parser}
@@ -1773,11 +1789,12 @@ defmodule Spitfire do
               |> attach_range([lhs_range, dot_range, open_range, close_range])
 
             multis =
-              {dot_ast,
-               newlines ++ [{:closing, closing_meta} | dot_meta], multis_list}
-              |> attach_range(
-                [ast_range(dot_ast), open_range, close_range | Enum.map(multis_list, &arg_range/1)]
-              )
+              {dot_ast, newlines ++ [{:closing, closing_meta} | dot_meta], multis_list}
+              |> attach_range([
+                ast_range(dot_ast),
+                open_range,
+                close_range | Enum.map(multis_list, &arg_range/1)
+              ])
 
             {multis, parser}
           end
@@ -1789,6 +1806,7 @@ defmodule Spitfire do
           {{:__aliases__, ameta, aliases} = rhs_alias, parser} = parse_alias(parser)
 
           last = ameta[:last]
+
           ast =
             {:__aliases__, [{:last, last} | meta], [lhs | aliases]}
             |> attach_range([lhs_range, dot_range, ast_range(rhs_alias)])
@@ -2004,9 +2022,11 @@ defmodule Spitfire do
 
         ast =
           {callee_ast, newlines ++ closing ++ meta, pairs}
-          |> attach_range(
-            [ast_range(callee_ast), open_range, close_range | Enum.map(pairs, &arg_range/1)]
-          )
+          |> attach_range([
+            ast_range(callee_ast),
+            open_range,
+            close_range | Enum.map(pairs, &arg_range/1)
+          ])
 
         {ast, parser}
       end
@@ -2295,7 +2315,12 @@ defmodule Spitfire do
         current_token(parser) == :">>" ->
           close_range = token_range(parser.current_token)
           container_range = container_range(open_range, close_range)
-          {{:<<>>, put_meta_range(newlines ++ [{:closing, current_meta(parser)} | meta], container_range), []}, parser}
+
+          {{:<<>>,
+            put_meta_range(
+              newlines ++ [{:closing, current_meta(parser)} | meta],
+              container_range
+            ), []}, parser}
 
         current_token(parser) in [:end, :"}", :")", :"]"] ->
           # if the current token is the wrong kind of ending delimiter, we revert to the previous parser
@@ -2313,7 +2338,9 @@ defmodule Spitfire do
           # For error recovery, use the error position as close_range
           close_range = token_range(parser.current_token)
           container_range = container_range(open_range, close_range)
-          {{:<<>>, put_meta_range([{:closing, current_meta(parser)} | meta], container_range), []}, parser}
+
+          {{:<<>>, put_meta_range([{:closing, current_meta(parser)} | meta], container_range),
+            []}, parser}
 
         true ->
           old_comma_list_parsers = Process.get(:comma_list_parsers)
@@ -2326,8 +2353,11 @@ defmodule Spitfire do
               close_range = token_range(parser.current_token)
               container_range = container_range(open_range, close_range, arg_range(pairs))
 
-              {{:<<>>, put_meta_range(newlines ++ [{:closing, current_meta(parser)} | meta], container_range), pairs},
-               eat_eol(parser)}
+              {{:<<>>,
+                put_meta_range(
+                  newlines ++ [{:closing, current_meta(parser)} | meta],
+                  container_range
+                ), pairs}, eat_eol(parser)}
 
             _ ->
               all_pairs = pairs |> Enum.reverse() |> Enum.zip(Process.get(:comma_list_parsers))
@@ -2367,8 +2397,11 @@ defmodule Spitfire do
               close_range = token_range(parser.current_token)
               container_range = container_range(open_range, close_range, arg_range(pairs))
 
-              {{:<<>>, put_meta_range(newlines ++ [{:closing, current_meta(parser)} | meta], container_range), List.wrap(pairs)},
-               parser}
+              {{:<<>>,
+                put_meta_range(
+                  newlines ++ [{:closing, current_meta(parser)} | meta],
+                  container_range
+                ), List.wrap(pairs)}, parser}
           end
       end
     end
@@ -2532,7 +2565,9 @@ defmodule Spitfire do
         struct_range = merge_ranges([percent_range, map_range, ast_range(type)])
         closing = current_meta(parser)
 
-        ast = {:%, put_meta_range(meta, struct_range), [type, {:%{}, put_meta_range([{:closing, closing} | brace_meta], map_range), []}]}
+        ast =
+          {:%, put_meta_range(meta, struct_range),
+           [type, {:%{}, put_meta_range([{:closing, closing} | brace_meta], map_range), []}]}
 
         {ast, parser}
       else
@@ -2546,15 +2581,23 @@ defmodule Spitfire do
 
         parser = eat_eol(parser)
 
-      old_nesting = parser.nesting
-      parser = Map.put(parser, :nesting, 0)
+        old_nesting = parser.nesting
+        parser = Map.put(parser, :nesting, 0)
 
         if current_token(parser) == :"}" do
           brace_close_range = token_range(parser.current_token)
           map_range = container_range(brace_open_range, brace_close_range)
           struct_range = merge_ranges([percent_range, map_range, ast_range(type)])
           closing = current_meta(parser)
-          ast = {:%, put_meta_range(meta, struct_range), [type, {:%{}, put_meta_range(newlines ++ [{:closing, closing} | brace_meta], map_range), []}]}
+
+          ast =
+            {:%, put_meta_range(meta, struct_range),
+             [
+               type,
+               {:%{}, put_meta_range(newlines ++ [{:closing, closing} | brace_meta], map_range),
+                []}
+             ]}
+
           parser = Map.put(parser, :nesting, old_nesting)
           {ast, parser}
         else
@@ -2575,7 +2618,15 @@ defmodule Spitfire do
           map_range = container_range(brace_open_range, brace_close_range, arg_range(pairs))
           struct_range = merge_ranges([percent_range, map_range, ast_range(type)])
           closing = current_meta(parser)
-          ast = {:%, put_meta_range(meta, struct_range), [type, {:%{}, put_meta_range(newlines ++ [{:closing, closing} | brace_meta], map_range), pairs}]}
+
+          ast =
+            {:%, put_meta_range(meta, struct_range),
+             [
+               type,
+               {:%{}, put_meta_range(newlines ++ [{:closing, closing} | brace_meta], map_range),
+                pairs}
+             ]}
+
           parser = Map.put(parser, :nesting, old_nesting)
           {ast, parser}
         end
@@ -2596,8 +2647,8 @@ defmodule Spitfire do
 
       cond do
         current_token(parser) == :"}" ->
-        close_range = token_range(parser.current_token)
-        container_range = container_range(open_range, close_range)
+          close_range = token_range(parser.current_token)
+          container_range = container_range(open_range, close_range)
           closing = current_meta(parser)
           parser = Map.put(parser, :nesting, old_nesting)
 
@@ -2812,6 +2863,7 @@ defmodule Spitfire do
   defp parse_paren_identifier(%{current_token: {:paren_identifier, token_meta, token}} = parser) do
     trace "parse_paren_identifier", trace_meta(parser) do
       callee_range = token_range(parser.current_token)
+
       meta =
         parser
         |> current_meta()
@@ -2856,7 +2908,13 @@ defmodule Spitfire do
             close_range = token_range(parser.current_token)
 
             ast = {token, newlines ++ [{:closing, closing} | meta], pairs}
-            ast = attach_range(ast, [callee_range, open_range, close_range | Enum.map(pairs, &arg_range/1)])
+
+            ast =
+              attach_range(ast, [
+                callee_range,
+                open_range,
+                close_range | Enum.map(pairs, &arg_range/1)
+              ])
 
             if peek_token(parser) == :do and parser.nesting == 0 do
               parser = next_token(parser)
@@ -3074,7 +3132,11 @@ defmodule Spitfire do
         ast = {lhs, newlines ++ [{:closing, closing} | meta], pairs}
 
         ast =
-          attach_range(ast, [callee_range, open_range, close_range | Enum.map(pairs, &arg_range/1)])
+          attach_range(ast, [
+            callee_range,
+            open_range,
+            close_range | Enum.map(pairs, &arg_range/1)
+          ])
 
         {ast, parser}
       end
@@ -3254,7 +3316,15 @@ defmodule Spitfire do
         }
 
         # 7. Build interpolation AST based on kind
-        interp_ast = build_interpolation_ast(expr, open_meta, end_meta || open_meta, open_range, end_range, kind)
+        interp_ast =
+          build_interpolation_ast(
+            expr,
+            open_meta,
+            end_meta || open_meta,
+            open_range,
+            end_range,
+            kind
+          )
 
         scan_loop(
           parser,
@@ -3455,7 +3525,10 @@ defmodule Spitfire do
           end_meta = current_meta(parser)
           end_range = token_range(parser.current_token)
           parser = next_token(parser)
-          interp_ast = build_interpolation_ast(expr, open_meta, end_meta, open_range, end_range, :identifier)
+
+          interp_ast =
+            build_interpolation_ast(expr, open_meta, end_meta, open_range, end_range, :identifier)
+
           scan_identifier_loop(parser, [{:interpolation, end_meta, interp_ast} | accumulator])
         else
           parser =
@@ -3775,7 +3848,10 @@ defmodule Spitfire do
             |> IO.iodata_to_binary()
 
           atom_value = String.to_atom(merged)
-          ast = encode_literal(parser, atom_value, container_range) |> put_start_position(start_meta)
+
+          ast =
+            encode_literal(parser, atom_value, container_range) |> put_start_position(start_meta)
+
           {attach_range(ast, [container_range]), parser}
 
         true ->
@@ -4188,6 +4264,7 @@ defmodule Spitfire do
 
   # CONVENTION: Use put_meta_range/2 when attaching a single range to raw metadata (low-level helper)
   defp put_meta_range(meta, nil), do: meta
+
   defp put_meta_range(meta, range) do
     if Application.get_env(:spitfire, :strip_ranges, false) do
       meta
@@ -4286,6 +4363,7 @@ defmodule Spitfire do
   defp put_start_position({form, meta, args}, start_meta) do
     line = Keyword.get(start_meta, :line)
     column = Keyword.get(start_meta, :column)
+
     meta =
       Enum.map(meta, fn
         {:line, _} -> {:line, line}
@@ -4605,7 +4683,7 @@ defmodule Spitfire do
     true
   end
 
-  defp valid_peek?(ctype, :"{" )
+  defp valid_peek?(ctype, :"{")
        when ctype in [
               :atom,
               :atom_quoted,
@@ -4654,7 +4732,7 @@ defmodule Spitfire do
 
   defp inject_newlines(meta, []), do: meta
 
-  defp inject_newlines(meta, [newlines: nl]) do
+  defp inject_newlines(meta, newlines: nl) do
     meta = Enum.reject(meta, fn {k, _} -> k == :newlines end)
     {parens, rest} = Enum.split_with(meta, fn {k, _} -> k == :parens end)
     parens ++ [{:newlines, nl} | rest]

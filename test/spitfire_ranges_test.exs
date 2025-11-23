@@ -6,10 +6,12 @@ defmodule SpitfireRangesTest do
     Application.put_env(:spitfire, :strip_ranges, false)
     # Enable range order verification to catch any ordering bugs
     Application.put_env(:spitfire, :verify_range_order, true)
+
     on_exit(fn ->
       Application.put_env(:spitfire, :strip_ranges, true)
       Application.put_env(:spitfire, :verify_range_order, false)
     end)
+
     :ok
   end
 
@@ -23,6 +25,7 @@ defmodule SpitfireRangesTest do
   # Helper to assert a range matches expected coordinates
   defp assert_range(ast, expected_range) do
     actual_range = get_range(ast)
+
     assert actual_range == expected_range,
            "Expected range #{inspect(expected_range)}, got #{inspect(actual_range)}"
   end
@@ -363,7 +366,7 @@ defmodule SpitfireRangesTest do
     end
   end
 
-    describe "Operator Ranges" do
+  describe "Operator Ranges" do
     test "binary operator" do
       code = "1 + 23"
 
@@ -429,22 +432,29 @@ defmodule SpitfireRangesTest do
 
     test "nested binary operator range" do
       code = "1 + 2 + 3"
-      {:ok, {:+, meta, [lhs, rhs]}} = Spitfire.parse(code, tokenizer: :toxic, literal_encoder: test_encoder())
+
+      {:ok, {:+, meta, [lhs, rhs]}} =
+        Spitfire.parse(code, tokenizer: :toxic, literal_encoder: test_encoder())
 
       # Outer +: (1 + 2) + 3
       assert meta[:range] == {{1, 1}, {1, 10}}
-      assert get_range(rhs) == {{1, 9}, {1, 10}} # 3
+      # 3
+      assert get_range(rhs) == {{1, 9}, {1, 10}}
 
       # Inner +: 1 + 2
       {:+, inner_meta, [inner_lhs, inner_rhs]} = lhs
       assert inner_meta[:range] == {{1, 1}, {1, 6}}
-      assert get_range(inner_lhs) == {{1, 1}, {1, 2}} # 1
-      assert get_range(inner_rhs) == {{1, 5}, {1, 6}} # 2
+      # 1
+      assert get_range(inner_lhs) == {{1, 1}, {1, 2}}
+      # 2
+      assert get_range(inner_rhs) == {{1, 5}, {1, 6}}
     end
 
     test "range operator range" do
       code = "1..2"
-      {:ok, {:.., meta, [lhs, rhs]}} = Spitfire.parse(code, tokenizer: :toxic, literal_encoder: test_encoder())
+
+      {:ok, {:.., meta, [lhs, rhs]}} =
+        Spitfire.parse(code, tokenizer: :toxic, literal_encoder: test_encoder())
 
       assert meta[:range] == {{1, 1}, {1, 5}}
       assert get_range(lhs) == {{1, 1}, {1, 2}}
@@ -453,13 +463,17 @@ defmodule SpitfireRangesTest do
 
     test "not in operator range" do
       code = "1 not in [2]"
-      {:ok, {:not, not_meta, [{:in, in_meta, [lhs, rhs]}]}} = Spitfire.parse(code, tokenizer: :toxic, literal_encoder: test_encoder())
+
+      {:ok, {:not, not_meta, [{:in, in_meta, [lhs, rhs]}]}} =
+        Spitfire.parse(code, tokenizer: :toxic, literal_encoder: test_encoder())
 
       assert not_meta[:range] == {{1, 1}, {1, 13}}
+
       # The inner :in node covers the full expression "1 ... [2]" because it has lhs and rhs as children
       assert in_meta[:range] == {{1, 1}, {1, 13}}
       assert in_meta[:line] == 1
-      assert in_meta[:column] == 7 # Points to "in"
+      # Points to "in"
+      assert in_meta[:column] == 7
       assert get_range(lhs) == {{1, 1}, {1, 2}}
       assert get_range(rhs) == {{1, 10}, {1, 13}}
     end
@@ -490,8 +504,10 @@ defmodule SpitfireRangesTest do
             if parent_range do
               {p_start, p_end} = parent_range
               {c_start, c_end} = range
+
               assert pos_leq?(p_start, c_start),
                      "Parent start #{inspect(p_start)} > child start #{inspect(c_start)}"
+
               assert pos_leq?(c_end, p_end),
                      "Child end #{inspect(c_end)} > parent end #{inspect(p_end)}"
             end
@@ -508,6 +524,7 @@ defmodule SpitfireRangesTest do
             |> Enum.each(fn [r1, r2] ->
               {_s1, e1} = r1
               {s2, _e2} = r2
+
               assert pos_leq?(e1, s2),
                      "Sibling ranges overlap: #{inspect(r1)} and #{inspect(r2)}"
             end)
@@ -557,6 +574,7 @@ defmodule SpitfireRangesTest do
         2
       ]
       """
+
       {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic)
 
       assert_range_invariants(ast)
@@ -574,6 +592,7 @@ defmodule SpitfireRangesTest do
         end
       end
       """
+
       {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic)
       assert_range_invariants(ast)
     end
@@ -610,10 +629,11 @@ defmodule SpitfireRangesTest do
         :bar -> :ok
       end
       """
+
       {:ok, {:case, _case_meta, [_, [do: [clause]]]}} =
         Spitfire.parse(code, tokenizer: :toxic)
 
-      assert {:"->", clause_meta, _} = clause
+      assert {:->, clause_meta, _} = clause
       assert clause_meta[:range] == {{2, 8}, {2, 10}}
       assert_range(clause, {{2, 8}, {2, 10}})
     end
@@ -631,7 +651,9 @@ defmodule SpitfireRangesTest do
   describe "Edge Cases" do
     test "malformed list with missing closer" do
       code = "[1, 2"
-      {:error, ast, _errors} = Spitfire.parse(code, tokenizer: :toxic, literal_encoder: test_encoder())
+
+      {:error, ast, _errors} =
+        Spitfire.parse(code, tokenizer: :toxic, literal_encoder: test_encoder())
 
       # Should still have a range even with error recovery
       range = get_range(ast)
@@ -643,7 +665,9 @@ defmodule SpitfireRangesTest do
 
     test "malformed tuple with missing closer" do
       code = "{1, 2"
-      {:error, ast, _errors} = Spitfire.parse(code, tokenizer: :toxic, literal_encoder: test_encoder())
+
+      {:error, ast, _errors} =
+        Spitfire.parse(code, tokenizer: :toxic, literal_encoder: test_encoder())
 
       range = get_range(ast)
       assert range != nil
@@ -703,6 +727,7 @@ defmodule SpitfireRangesTest do
 
       # Root should have a range even with errors (if parser can provide it)
       range = get_range(ast)
+
       if range do
         {{start_line, start_col}, {end_line, _end_col}} = range
         assert start_line == 1
@@ -728,6 +753,7 @@ defmodule SpitfireRangesTest do
         2
       ]
       """
+
       {:ok, _ast} = Spitfire.parse(code, tokenizer: :toxic, literal_encoder: test_encoder())
 
       # Elements on different lines
@@ -757,7 +783,9 @@ defmodule SpitfireRangesTest do
   describe "Operator Edge Cases" do
     test "grouped expression range includes parentheses" do
       code = "(1 + 2)"
-      {:ok, {:+, meta, [lhs, rhs]}} = Spitfire.parse(code, tokenizer: :toxic, literal_encoder: test_encoder())
+
+      {:ok, {:+, meta, [lhs, rhs]}} =
+        Spitfire.parse(code, tokenizer: :toxic, literal_encoder: test_encoder())
 
       assert_range({:+, meta, [lhs, rhs]}, {{1, 1}, {1, 8}})
       assert_range(lhs, {{1, 2}, {1, 3}})
@@ -766,7 +794,9 @@ defmodule SpitfireRangesTest do
 
     test "do block range spans do...end" do
       code = "foo do :ok end"
-      {:ok, {:foo, meta, [_clauses]} = ast} = Spitfire.parse(code, tokenizer: :toxic, literal_encoder: test_encoder())
+
+      {:ok, {:foo, meta, [_clauses]} = ast} =
+        Spitfire.parse(code, tokenizer: :toxic, literal_encoder: test_encoder())
 
       assert_range(ast, {{1, 1}, {1, 15}})
       assert get_range({:foo, meta, []}) == {{1, 1}, {1, 15}}
@@ -774,7 +804,9 @@ defmodule SpitfireRangesTest do
 
     test "anonymous function range spans fn...end" do
       code = "fn x -> x end"
-      {:ok, {:fn, meta, _clauses} = ast} = Spitfire.parse(code, tokenizer: :toxic, literal_encoder: test_encoder())
+
+      {:ok, {:fn, meta, _clauses} = ast} =
+        Spitfire.parse(code, tokenizer: :toxic, literal_encoder: test_encoder())
 
       assert_range(ast, {{1, 1}, {1, 14}})
       assert meta[:range] == {{1, 1}, {1, 14}}
@@ -782,7 +814,9 @@ defmodule SpitfireRangesTest do
 
     test "__block__ range derives from children" do
       code = "1\n2"
-      {:ok, {:__block__, meta, [one, two]} = ast} = Spitfire.parse(code, tokenizer: :toxic, literal_encoder: test_encoder())
+
+      {:ok, {:__block__, meta, [one, two]} = ast} =
+        Spitfire.parse(code, tokenizer: :toxic, literal_encoder: test_encoder())
 
       assert_range(ast, {{1, 1}, {2, 2}})
       assert_range(one, {{1, 1}, {1, 2}})
@@ -1195,6 +1229,7 @@ defmodule SpitfireRangesTest do
         3
       ]
       """
+
       {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic, literal_encoder: test_encoder())
 
       # Should span from line 1 to line 6 (heredoc adds trailing newline)
@@ -1340,7 +1375,9 @@ defmodule SpitfireRangesTest do
   describe "Block and Special Form Edge Cases" do
     test "multi-line __block__ derives range from children" do
       code = "1\n2\n3"
-      {:ok, {:__block__, _meta, [one, two, three]} = ast} = Spitfire.parse(code, tokenizer: :toxic, literal_encoder: test_encoder())
+
+      {:ok, {:__block__, _meta, [one, two, three]} = ast} =
+        Spitfire.parse(code, tokenizer: :toxic, literal_encoder: test_encoder())
 
       # Block should span all three lines
       {{start_line, _}, {end_line, _}} = get_range(ast)
@@ -1589,10 +1626,11 @@ defmodule SpitfireRangesTest do
       assert {:<<>>, meta, args} = ast
       assert meta[:range] == {{1, 1}, {3, 4}}
 
-      interp = Enum.find(args, fn
-        {:"::", _, _} -> true
-        _ -> false
-      end)
+      interp =
+        Enum.find(args, fn
+          {:"::", _, _} -> true
+          _ -> false
+        end)
 
       assert {:"::", interp_meta, _} = interp
       assert interp_meta[:range] == {{2, 1}, {2, 5}}
@@ -1724,6 +1762,7 @@ defmodule SpitfireRangesTest do
 
     test "missing interpolation closer still uses synthesized end range" do
       code = "\"\#{1\""
+
       {:error, ast, _errors} =
         Spitfire.parse(code, tokenizer: :toxic, literal_encoder: test_encoder())
 
@@ -1909,12 +1948,14 @@ defmodule SpitfireRangesTest do
       [{:do, clauses}] = clauses_keyword
       # Each clause is a stab expression with a range
       assert is_list(clauses)
+
       assert Enum.all?(clauses, fn clause_ast ->
-        case clause_ast do
-          {:->, meta, _} -> meta[:range] != nil
-          _ -> false
-        end
-      end)
+               case clause_ast do
+                 {:->, meta, _} -> meta[:range] != nil
+                 _ -> false
+               end
+             end)
+
       assert_range_invariants(ast)
     end
 
@@ -2289,12 +2330,20 @@ defmodule SpitfireRangesTest do
           {p_start, p_end} = parent_range
           {c_start, c_end} = child_range
 
-          assert_le(p_start, c_start, "Child starts before parent in #{file}", {parent_node, child})
+          assert_le(
+            p_start,
+            c_start,
+            "Child starts before parent in #{file}",
+            {parent_node, child}
+          )
+
           assert_le(c_end, p_end, "Child ends after parent in #{file}", {parent_node, child})
         end
 
       list when is_list(list) ->
-        Enum.each(list, fn item -> check_child_containment(parent_range, item, file, parent_node) end)
+        Enum.each(list, fn item ->
+          check_child_containment(parent_range, item, file, parent_node)
+        end)
 
       _ ->
         :ok
