@@ -4799,6 +4799,11 @@ defmodule SpitfireToxicTest do
     assert Spitfire.parse(code) == s2q(code)
   end
 
+  test "empty fn" do
+    code = "fn -> end"
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
   test "elixir sources" do
     # files = @regressions
     files =
