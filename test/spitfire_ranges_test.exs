@@ -175,7 +175,10 @@ defmodule SpitfireRangesTest do
 
       # Case 2: Multiple semicolons (Syntax Error)
       code = "1;;"
-      {:error, ast, _errors} = Spitfire.parse(code, tokenizer: :toxic, literal_encoder: test_encoder())
+
+      {:error, ast, _errors} =
+        Spitfire.parse(code, tokenizer: :toxic, literal_encoder: test_encoder())
+
       # The AST is a block containing the literal and the error
       # We want to verify the literal inside has the correct range
       {:__block__, _, [literal | _]} = ast
@@ -2312,6 +2315,58 @@ defmodule SpitfireRangesTest do
         assert_range_invariants(ast)
       after
         Application.put_env(:spitfire, :verify_range_order, original)
+      end
+    end
+  end
+
+  describe "Bug Fixes" do
+    test "Issue 1c: Metadata Range Pollution in Aliases" do
+      code = "My.Struct"
+      {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic)
+      {:__aliases__, meta, _} = ast
+
+      # Check if 'last' metadata has 'range' key
+      last_meta = Keyword.get(meta, :last)
+      assert last_meta, "Expected :last metadata in alias"
+
+      refute Keyword.has_key?(last_meta, :range),
+             "Found :range in nested :last metadata: #{inspect(last_meta)}"
+    end
+
+    test "Issue 1b: Missing :format metadata for booleans" do
+      code = ":true"
+      {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic, literal_encoder: test_encoder())
+
+      # Expected: {:__literal__, [format: :atom, ...], [true]}
+      {:__literal__, meta, [val]} = ast
+      assert val == true
+      assert Keyword.get(meta, :format) == :atom, "Missing format: :atom for :true"
+
+      code = ":false"
+      {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic, literal_encoder: test_encoder())
+      {:__literal__, meta, [val]} = ast
+      assert val == false
+      assert Keyword.get(meta, :format) == :atom, "Missing format: :atom for :false"
+
+      code = ":nil"
+      {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic, literal_encoder: test_encoder())
+      {:__literal__, meta, [val]} = ast
+      assert val == nil
+      assert Keyword.get(meta, :format) == :atom, "Missing format: :atom for :nil"
+    end
+
+    test "Issue 2.3: Block with Semicolons" do
+      code = "( 1 ; 2 )"
+      {:ok, ast} = Spitfire.parse(code, tokenizer: :toxic, literal_encoder: test_encoder())
+
+      # Should not have error nodes
+      # Expected structure: {:__block__, ..., [{:__literal__, ..., [1]}, {:__literal__, ..., [2]}]}
+      assert {:__block__, _, args} = ast
+      assert length(args) == 2
+
+      for arg <- args do
+        refute match?({:__block__, [{:error, true} | _], _}, arg),
+               "Found error node in valid block with semicolon"
       end
     end
   end

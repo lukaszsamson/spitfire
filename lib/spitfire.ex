@@ -567,11 +567,11 @@ defmodule Spitfire do
             {ast, parser}
 
           # if the next token is a new line, but the next next token is not the closing paren (implied from previous clause)
-          peek_token(parser) == :eol or current_token(parser) == :-> ->
+          peek_token(parser) in [:eol, :";"] or current_token(parser) == :-> ->
             # second conditon checks of the next next token is a closing paren or another expression
             {exprs, parser} =
               while2 current_token(parser) == :-> ||
-                       (peek_token(parser) == :eol &&
+                       (peek_token(parser) in [:eol, :";"] &&
                           parser |> next_token() |> peek_token() != :")") <- parser do
                 {ast, parser} =
                   case Map.get(parser, :stab_state) do
@@ -2315,7 +2315,7 @@ defmodule Spitfire do
         |> current_meta()
         |> put_meta_range(range)
 
-      Process.put(:alias_last_meta, meta)
+      Process.put(:alias_last_meta, Keyword.delete(meta, :range))
 
       {aliases, parser} =
         while2 peek_token(parser) == :. && peek_token(next_token(parser)) == :alias <- parser do
@@ -2325,7 +2325,7 @@ defmodule Spitfire do
             {:alias, _, alias} ->
               parser = next_token(parser)
               meta = put_meta_range(current_meta(parser), token_range(parser.current_token))
-              Process.put(:alias_last_meta, meta)
+              Process.put(:alias_last_meta, Keyword.delete(meta, :range))
               {alias, parser}
           end
         end
@@ -4592,6 +4592,11 @@ defmodule Spitfire do
 
   defp additional_meta(_literal, %{current_token: {:kw_identifier, _, _}}) do
     [format: :keyword]
+  end
+
+  defp additional_meta(literal, %{current_token: {:atom, _, _}})
+       when literal in [true, false, nil] do
+    [format: :atom]
   end
 
   defp additional_meta(_, %{current_token: {type, _, indent, _token}})

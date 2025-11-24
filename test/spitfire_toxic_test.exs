@@ -4789,6 +4789,16 @@ defmodule SpitfireToxicTest do
     assert Spitfire.parse(code) == s2q(code)
   end
 
+  test "block with semicolon" do
+    code = "( 1 ; 2 )"
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
+  test "atom format metadata" do
+    code = ":true"
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
   test "elixir sources" do
     # files = @regressions
     files =
