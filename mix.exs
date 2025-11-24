@@ -35,6 +35,7 @@ defmodule Spitfire.MixProject do
       {:styler, "~> 0.11", only: :dev},
       {:credo, "~> 1.7", only: :dev},
       {:dialyxir, "~> 1.0", only: :dev},
+      {:stream_data, "~> 1.2", only: :test},
       {:toxic, path: "/Users/lukaszsamson/claude_fun/toxic"}
 
       # {:dep_from_hexpm, "~> 0.3.0"},
