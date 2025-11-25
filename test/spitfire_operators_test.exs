@@ -454,6 +454,23 @@ defmodule SpitfireOperatorsTest do
     end
   end
 
+  describe "mixed right associative list operators" do
+    test "++ and -- share right associativity" do
+      code = "a ++ b -- c"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "range operator shares precedence with ++" do
+      code = "a ++ b .. c"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "<> and ++ share precedence and right associativity" do
+      code = "a <> b ++ c"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+  end
+
   # =============================================================================
   # Membership Operators in, not in (Left Associativity)
   # =============================================================================
@@ -603,6 +620,13 @@ defmodule SpitfireOperatorsTest do
 
     test "chained <~> - left associative" do
       code = "a <~> b <~> c"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+  end
+
+  describe "mixed pipeline family operators" do
+    test "operators in the pipeline family stay left associative" do
+      code = "a <<< b |> c ~>> d"
       assert Spitfire.parse(code) == s2q(code)
     end
   end
@@ -989,6 +1013,33 @@ defmodule SpitfireOperatorsTest do
     end
   end
 
+  describe "... operator - unary" do
+    test "bare ellipsis expression" do
+      code = "..."
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "ellipsis inside anonymous function body" do
+      code = "fn -> ... end"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "= has higher precedence than ..." do
+      code = "... = a = b"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "ellipsis keeps inner arithmetic precedence" do
+      code = "... + 1 * 2"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "ellipsis can be captured" do
+      code = "&..."
+      assert Spitfire.parse(code) == s2q(code)
+    end
+  end
+
   # =============================================================================
   # Map Arrow Operator => (Right Associativity, only in %{})
   # =============================================================================
@@ -1042,6 +1093,11 @@ defmodule SpitfireOperatorsTest do
 
     test "struct update with |" do
       code = "%Foo{struct | a: 1}"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "| is right associative across repeated operators" do
+      code = "a | b | c"
       assert Spitfire.parse(code) == s2q(code)
     end
 
@@ -1142,6 +1198,11 @@ defmodule SpitfireOperatorsTest do
       code = "for x when is_integer(x) <- xs, do: x"
       assert Spitfire.parse(code) == s2q(code)
     end
+
+    test "<- groups left to right when chained" do
+      code = "a <- b <- c"
+      assert Spitfire.parse(code) == s2q(code)
+    end
   end
 
   # =============================================================================
@@ -1161,6 +1222,11 @@ defmodule SpitfireOperatorsTest do
 
     test "default with complex expression" do
       code = "def foo(a \\\\ 1 + 2), do: a"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "\\\\ groups left to right when chained" do
+      code = "a \\\\ b \\\\ c"
       assert Spitfire.parse(code) == s2q(code)
     end
   end
