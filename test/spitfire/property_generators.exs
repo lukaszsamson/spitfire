@@ -35,7 +35,7 @@ defmodule Spitfire.Property.Generators do
     expr(:expr, expr_depth, interp_depth, block_depth)
   end
 
-  def expr(context, depth, interp_depth, block_depth) when depth <= 0 do
+  def expr(context, depth, _interp_depth, _block_depth) when depth <= 0 do
     case context do
       :expr -> one_of([literal(), variable()])
       :pattern -> one_of([literal(), variable(), pinned_variable()])
@@ -63,6 +63,7 @@ defmodule Spitfire.Property.Generators do
       {2, heredoc(:charlist, depth, interp_depth, block_depth)},
       {4, keyword_list(:expr, depth - 1, interp_depth, block_depth)},
       {4, map_expr(:expr, depth - 1, interp_depth, block_depth)},
+      {3, struct_expr(:expr, depth - 1, interp_depth, block_depth)},
       {4, list_expr(:expr, depth - 1, interp_depth, block_depth)},
       {4, tuple_expr(:expr, depth - 1, interp_depth, block_depth)},
       {4, call_expr(depth - 1, interp_depth, block_depth)},
@@ -76,6 +77,7 @@ defmodule Spitfire.Property.Generators do
       {2, unary_expr(:expr, depth - 1, interp_depth, block_depth)},
       {2, concat_expr(depth - 1, interp_depth, block_depth)},
       {2, module_attribute(depth - 1, interp_depth, block_depth)},
+      {2, typespec()},
       {1, edge_cases(depth - 1, interp_depth, block_depth)}
     ]
 
@@ -84,7 +86,8 @@ defmodule Spitfire.Property.Generators do
         [
           {2, fn_block(depth - 1, interp_depth, block_depth - 1)},
           {2, quote_block(depth - 1, interp_depth, block_depth - 1)},
-          {2, case_expr(depth - 1, interp_depth, block_depth - 1)}
+          {2, case_expr(depth - 1, interp_depth, block_depth - 1)},
+          {2, with_expr(depth - 1, interp_depth, block_depth - 1)}
         ]
       else
         []
@@ -211,6 +214,13 @@ defmodule Spitfire.Property.Generators do
   end
 
   defp sigil(depth, interp_depth, block_depth) do
+    one_of([
+      sigil_inline(depth, interp_depth, block_depth),
+      sigil_heredoc(depth, interp_depth, block_depth)
+    ])
+  end
+
+  defp sigil_inline(depth, interp_depth, block_depth) do
     sigil_letter = member_of(~w(s S c C)a)
     delimiter = member_of(["'", "\"", "/"])
     modifiers = member_of(["", "i", "s", "im"])
@@ -225,6 +235,25 @@ defmodule Spitfire.Property.Generators do
 
     map({sigil_letter, delimiter, inner, modifiers}, fn {letter, delim, content, mods} ->
       "~#{letter}#{delim}#{content}#{delim}#{mods}"
+    end)
+  end
+
+  defp sigil_heredoc(depth, interp_depth, block_depth) do
+    sigil_letter = member_of(~w(s S c C)a)
+    modifiers = member_of(["", "i", "s", "im"])
+    delimiter_kind = member_of([:binary, :charlist])
+
+    inner =
+      if interp_depth > 0 do
+        expr(:expr, max(depth - 1, 0), interp_depth - 1, block_depth)
+        |> map(fn e -> "foo #{wrap_interpolation(e)} bar" end)
+      else
+        string(:alphanumeric, length: 1..6)
+      end
+
+    map({sigil_letter, delimiter_kind, inner, modifiers}, fn {letter, kind, content, mods} ->
+      delim = if kind == :binary, do: ~s("""), else: "'''"
+      "~#{letter}#{delim}\n#{content}\n#{delim}#{mods}"
     end)
   end
 
@@ -248,6 +277,16 @@ defmodule Spitfire.Property.Generators do
     bind(expr(context, depth, interp_depth, block_depth), fn value ->
       bind(keyword_key(), fn key ->
         constant("%{#{key}: #{value}}")
+      end)
+    end)
+  end
+
+  defp struct_expr(context, depth, interp_depth, block_depth) do
+    bind(member_of(@aliases), fn mod ->
+      bind(expr(context, depth, interp_depth, block_depth), fn value ->
+        bind(keyword_key(), fn key ->
+          constant("%#{mod}{#{key}: #{value}}")
+        end)
       end)
     end)
   end
@@ -357,9 +396,29 @@ defmodule Spitfire.Property.Generators do
   defp binary_op(context, depth, interp_depth, block_depth) do
     ops =
       case context do
-        :expr -> ["+", "-", "*", "==", "and", "or", "|>"]
-        :pattern -> ["++", "="]
-        :guard -> ["+", "-", "*", "==", "and", "or"]
+        :expr ->
+          [
+            # Arithmetic
+            "+", "-", "*", "**",
+            # Comparison
+            "==", "!=", "<", ">", "<=", ">=", "===", "!==",
+            # Boolean
+            "and", "or",
+            # Pipe
+            "|>",
+            # List
+            "++", "--",
+            # Bitwise
+            "<<<", ">>>", "&&&", "|||", "^^^",
+            # In
+            "in"
+          ]
+
+        :pattern ->
+          ["++", "="]
+
+        :guard ->
+          ["+", "-", "*", "==", "!=", "<", ">", "<=", ">=", "and", "or", "in"]
       end
 
     bind(
@@ -451,6 +510,39 @@ defmodule Spitfire.Property.Generators do
     bind(variable(), fn name ->
       bind(expr(:expr, depth, interp_depth, block_depth), fn value ->
         constant("@#{name} #{value}")
+      end)
+    end)
+  end
+
+  defp typespec do
+    bind(variable(), fn name ->
+      bind(member_of(["any()", "term()", "integer()", "atom()", "binary()"]), fn type ->
+        one_of([
+          constant("@spec #{name}() :: #{type}"),
+          constant("@spec #{name}(#{type}) :: #{type}"),
+          constant("@type #{name} :: #{type}")
+        ])
+      end)
+    end)
+  end
+
+  defp with_expr(depth, interp_depth, block_depth) do
+    bind(expr(:pattern, max(depth - 1, 0), interp_depth, block_depth), fn pattern ->
+      bind(expr(:expr, max(depth - 1, 0), interp_depth, block_depth), fn match_expr ->
+        bind(expr(:expr, max(depth - 1, 0), interp_depth, block_depth), fn body ->
+          bind(expr(:expr, max(depth - 1, 0), interp_depth, block_depth), fn else_body ->
+            one_of([
+              constant("with #{pattern} <- #{match_expr}, do: #{body}"),
+              constant("""
+              with #{pattern} <- #{match_expr} do
+                #{body}
+              else
+                _ -> #{else_body}
+              end
+              """ |> String.trim())
+            ])
+          end)
+        end)
       end)
     end)
   end
