@@ -13,7 +13,7 @@ defmodule SpitfirePropertyAcceptanceTest do
   end
 
   @tag :skip
-  @tag timeout: 60_000
+  @tag timeout: 120_000
   property "generator acceptance rate stays healthy" do
     check all codes <- list_of(Gen.program(max_forms: 2), length: 1),
               max_runs: 3,

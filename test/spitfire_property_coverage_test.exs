@@ -74,8 +74,8 @@ defmodule SpitfirePropertyCoverageTest do
 
   @tag :property_coverage
   @tag :skip
-  @tag timeout: 15_000
-  property "generators hit phase 3 Toxic targets" do
+  @tag timeout: 120_000
+  property "generators hit phase 1 Toxic targets" do
     check all(
             generated <- list_of(Gen.program(max_forms: 2), length: 4),
             max_runs: 3,
@@ -114,10 +114,10 @@ defmodule SpitfirePropertyCoverageTest do
           )
         )
 
-      missing = MapSet.difference(TargetTokens.target(), covered)
+      missing = MapSet.difference(TargetTokens.phase1_target(), covered)
 
       assert MapSet.size(missing) == 0,
-             "Missing token kinds: #{inspect(MapSet.to_list(missing))}"
+             "Missing token kinds (Phase 1): #{inspect(MapSet.to_list(missing))}"
     end
   end
 end

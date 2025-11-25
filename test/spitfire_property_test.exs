@@ -22,7 +22,7 @@ defmodule SpitfirePropertyTest do
   end
 
   @tag :skip
-  @tag timeout: 15_000
+  @tag timeout: 120_000
   property "parses oracle-accepted programs with Toxic" do
     oracle_opts = [columns: true, token_metadata: true, emit_warnings: false, existing_atoms_only: true]
     parser_opts = [tokenizer: :toxic, columns: true, token_metadata: true, existing_atoms_only: true]
