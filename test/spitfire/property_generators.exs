@@ -36,14 +36,23 @@ defmodule Spitfire.Property.Generators do
   end
 
   def expr(context, depth, interp_depth, block_depth) when depth <= 0 do
-    expr(context, 0, interp_depth, block_depth)
-  end
-
-  def expr(_context, 0, _interp_depth, _block_depth) do
-    one_of([literal(), variable()])
+    case context do
+      :expr -> one_of([literal(), variable()])
+      :pattern -> one_of([literal(), variable(), pinned_variable()])
+      :guard -> one_of([literal(), variable()])
+    end
   end
 
   def expr(context, depth, interp_depth, block_depth) do
+    case context do
+      :expr -> expr_expr(depth, interp_depth, block_depth)
+      :pattern -> expr_pattern(depth, interp_depth, block_depth)
+      :guard -> expr_guard(depth, interp_depth, block_depth)
+    end
+    |> map(&wrap_context(context, &1))
+  end
+
+  defp expr_expr(depth, interp_depth, block_depth) do
     base_generators = [
       {5, literal()},
       {3, quoted_atom()},
@@ -52,21 +61,22 @@ defmodule Spitfire.Property.Generators do
       {3, string_like(:charlist, depth, interp_depth, block_depth)},
       {3, heredoc(:binary, depth, interp_depth, block_depth)},
       {2, heredoc(:charlist, depth, interp_depth, block_depth)},
-      {4, keyword_list(depth - 1, interp_depth, block_depth)},
-      {4, map_expr(depth - 1, interp_depth, block_depth)},
-      {4, list_expr(depth - 1, interp_depth, block_depth)},
-      {4, tuple_expr(depth - 1, interp_depth, block_depth)},
+      {4, keyword_list(:expr, depth - 1, interp_depth, block_depth)},
+      {4, map_expr(:expr, depth - 1, interp_depth, block_depth)},
+      {4, list_expr(:expr, depth - 1, interp_depth, block_depth)},
+      {4, tuple_expr(:expr, depth - 1, interp_depth, block_depth)},
       {4, call_expr(depth - 1, interp_depth, block_depth)},
-      {3, dot_call(depth - 1, interp_depth, block_depth)},
+      {5, dot_call(depth - 1, interp_depth, block_depth)},
       {3, capture(depth - 1, interp_depth, block_depth)},
       {3, sigil(depth - 1, interp_depth, block_depth)},
-      {2, bitstring(depth - 1, interp_depth, block_depth)},
-      {3, binary_op(depth - 1, interp_depth, block_depth)},
+      {2, bitstring(:expr, depth - 1, interp_depth, block_depth)},
+      {4, binary_op(:expr, depth - 1, interp_depth, block_depth)},
       {3, range_expr(depth - 1, interp_depth, block_depth)},
-      {3, pipe_expr(depth - 1, interp_depth, block_depth)},
-      {2, unary_expr(depth - 1, interp_depth, block_depth)},
+      {5, pipe_expr(depth - 1, interp_depth, block_depth)},
+      {2, unary_expr(:expr, depth - 1, interp_depth, block_depth)},
       {2, concat_expr(depth - 1, interp_depth, block_depth)},
-      {2, module_attribute(depth - 1, interp_depth, block_depth)}
+      {2, module_attribute(depth - 1, interp_depth, block_depth)},
+      {1, edge_cases(depth - 1, interp_depth, block_depth)}
     ]
 
     block_generators =
@@ -81,7 +91,34 @@ defmodule Spitfire.Property.Generators do
       end
 
     frequency(base_generators ++ block_generators)
-    |> map(&wrap_context(context, &1))
+  end
+
+  defp expr_pattern(depth, interp_depth, block_depth) do
+    frequency([
+      {5, literal()},
+      {4, variable()},
+      {3, pinned_variable()},
+      {2, quoted_atom()},
+      {3, list_expr(:pattern, depth - 1, interp_depth, block_depth)},
+      {3, tuple_expr(:pattern, depth - 1, interp_depth, block_depth)},
+      {3, map_expr(:pattern, depth - 1, interp_depth, block_depth)},
+      {3, keyword_list(:pattern, depth - 1, interp_depth, block_depth)},
+      {2, binary_op(:pattern, depth - 1, interp_depth, block_depth)},
+      {2, bitstring(:pattern, depth - 1, interp_depth, block_depth)}
+    ])
+  end
+
+  defp expr_guard(depth, interp_depth, block_depth) do
+    frequency([
+      {5, literal()},
+      {4, variable()},
+      {3, list_expr(:guard, depth - 1, interp_depth, block_depth)},
+      {3, tuple_expr(:guard, depth - 1, interp_depth, block_depth)},
+      {3, map_expr(:guard, depth - 1, interp_depth, block_depth)},
+      {3, binary_op(:guard, depth - 1, interp_depth, block_depth)},
+      {2, unary_expr(:guard, depth - 1, interp_depth, block_depth)},
+      {2, guard_call(depth - 1, interp_depth, block_depth)}
+    ])
   end
 
   defp wrap_context(_context, generated), do: generated
@@ -110,6 +147,10 @@ defmodule Spitfire.Property.Generators do
 
   defp variable do
     member_of(@identifiers) |> map(&Atom.to_string/1)
+  end
+
+  defp pinned_variable do
+    variable() |> map(&"^#{&1}")
   end
 
   defp float_literal do
@@ -187,10 +228,10 @@ defmodule Spitfire.Property.Generators do
     end)
   end
 
-  defp keyword_list(depth, interp_depth, block_depth) do
+  defp keyword_list(context, depth, interp_depth, block_depth) do
     keyword_key()
     |> bind(fn key ->
-      expr(:expr, depth, interp_depth, block_depth)
+      expr(context, depth, interp_depth, block_depth)
       |> map(&"[#{key}: #{&1}]")
     end)
   end
@@ -203,21 +244,21 @@ defmodule Spitfire.Property.Generators do
     ])
   end
 
-  defp map_expr(depth, interp_depth, block_depth) do
-    bind(expr(:expr, depth, interp_depth, block_depth), fn value ->
+  defp map_expr(context, depth, interp_depth, block_depth) do
+    bind(expr(context, depth, interp_depth, block_depth), fn value ->
       bind(keyword_key(), fn key ->
         constant("%{#{key}: #{value}}")
       end)
     end)
   end
 
-  defp list_expr(depth, interp_depth, block_depth) do
-    list_of(expr(:expr, depth, interp_depth, block_depth), length: 1..3)
+  defp list_expr(context, depth, interp_depth, block_depth) do
+    list_of(expr(context, depth, interp_depth, block_depth), length: 1..3)
     |> map(&"[#{Enum.join(&1, ", ")}]")
   end
 
-  defp tuple_expr(depth, interp_depth, block_depth) do
-    list_of(expr(:expr, depth, interp_depth, block_depth), length: 2..3)
+  defp tuple_expr(context, depth, interp_depth, block_depth) do
+    list_of(expr(context, depth, interp_depth, block_depth), length: 2..3)
     |> map(&"{#{Enum.join(&1, ", ")}}")
   end
 
@@ -229,6 +270,17 @@ defmodule Spitfire.Property.Generators do
       ])
 
     args = list_of(expr(:expr, depth, interp_depth, block_depth), length: 0..2)
+
+    map({identifier, args}, fn {id, args} ->
+      "#{id}(#{Enum.join(args, ", ")})"
+    end)
+  end
+
+  defp guard_call(depth, interp_depth, block_depth) do
+    funcs = ~w(is_atom is_binary is_bitstring is_boolean is_float is_function is_integer is_list is_map is_nil is_number is_pid is_port is_reference is_tuple abs bit_size byte_size ceil div floor hd length map_size max min node rem round tl trunc tuple_size)
+
+    identifier = member_of(funcs)
+    args = list_of(expr(:guard, depth, interp_depth, block_depth), length: 1..2)
 
     map({identifier, args}, fn {id, args} ->
       "#{id}(#{Enum.join(args, ", ")})"
@@ -273,13 +325,18 @@ defmodule Spitfire.Property.Generators do
 
   defp fn_block(depth, interp_depth, block_depth) do
     bind(expr(:expr, depth, interp_depth, block_depth), fn body ->
-      constant("fn -> #{body} end")
+      one_of([
+        constant("fn -> #{body} end"),
+        bind(list_of(expr(:pattern, depth, interp_depth, block_depth), length: 1..2), fn args ->
+          constant("fn #{Enum.join(args, ", ")} -> #{body} end")
+        end)
+      ])
     end)
   end
 
   defp case_expr(depth, interp_depth, block_depth) do
     bind(expr(:expr, depth, interp_depth, block_depth), fn subject ->
-      bind(expr(:expr, max(depth - 1, 0), interp_depth, block_depth), fn lhs ->
+      bind(expr(:pattern, max(depth - 1, 0), interp_depth, block_depth), fn lhs ->
         bind(expr(:expr, max(depth - 1, 0), interp_depth, block_depth), fn rhs ->
           bind(expr(:expr, max(depth - 1, 0), interp_depth, block_depth), fn fallback ->
             constant(
@@ -297,12 +354,17 @@ defmodule Spitfire.Property.Generators do
     end)
   end
 
-  defp binary_op(depth, interp_depth, block_depth) do
-    ops = ["+", "-", "*", "==", "and", "or", "|>"]
+  defp binary_op(context, depth, interp_depth, block_depth) do
+    ops =
+      case context do
+        :expr -> ["+", "-", "*", "==", "and", "or", "|>"]
+        :pattern -> ["++", "="]
+        :guard -> ["+", "-", "*", "==", "and", "or"]
+      end
 
     bind(
-      {expr(:expr, depth, interp_depth, block_depth), member_of(ops),
-       expr(:expr, depth, interp_depth, block_depth)},
+      {expr(context, depth, interp_depth, block_depth), member_of(ops),
+       expr(context, depth, interp_depth, block_depth)},
       fn {left, op, right} ->
         constant("#{left} #{op} #{right}")
       end
@@ -321,8 +383,8 @@ defmodule Spitfire.Property.Generators do
     ["\#{", inner, "}"] |> IO.iodata_to_binary()
   end
 
-  defp bitstring(depth, interp_depth, block_depth) do
-    exprs = list_of(expr(:expr, depth, interp_depth, block_depth), length: 1..2)
+  defp bitstring(context, depth, interp_depth, block_depth) do
+    exprs = list_of(expr(context, depth, interp_depth, block_depth), length: 1..2)
 
     map(exprs, fn parts ->
       inner = Enum.join(parts, ", ")
@@ -354,14 +416,25 @@ defmodule Spitfire.Property.Generators do
     )
   end
 
-  defp unary_expr(depth, interp_depth, block_depth) do
-    bind(expr(:expr, depth, interp_depth, block_depth), fn inner ->
-      one_of([
-        constant("+#{inner}"),
-        constant("-#{inner}"),
-        constant("not #{inner}")
-      ])
-    end)
+  defp unary_expr(context, depth, interp_depth, block_depth) do
+    case context do
+      :pattern ->
+        bind(literal(), fn inner ->
+          one_of([
+            constant("+#{inner}"),
+            constant("-#{inner}")
+          ])
+        end)
+
+      _ ->
+        bind(expr(context, depth, interp_depth, block_depth), fn inner ->
+          one_of([
+            constant("+#{inner}"),
+            constant("-#{inner}"),
+            constant("not #{inner}")
+          ])
+        end)
+    end
   end
 
   defp concat_expr(depth, interp_depth, block_depth) do
@@ -390,5 +463,22 @@ defmodule Spitfire.Property.Generators do
         constant("quote do\n  unquote(#{argument})\n  #{inner}\nend")
       ])
     end)
+  end
+
+  defp edge_cases(_depth, _interp_depth, _block_depth) do
+    one_of([
+      # Operator spacing
+      bind({variable(), variable()}, fn {a, b} ->
+        one_of([
+          constant("#{a}+#{b}"),
+          constant("#{a} +#{b}"),
+          constant("#{a}+ #{b}")
+        ])
+      end),
+      # Escaped interpolation
+      bind(variable(), fn v -> constant(~s("foo\\\#{#{v}}")) end),
+      # Nested stabs
+      constant("fn -> fn -> :ok end end")
+    ])
   end
 end

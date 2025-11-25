@@ -28,14 +28,14 @@ The implementation of `PROPERTY_TEST_V4.md` is complete. All planned modules and
 ## Next Tasks
 
 ### 1. Refine Generators
-- [ ] **Implement Context Awareness**: Update `expr/4` to dispatch to context-specific helpers.
+- [x] **Implement Context Awareness**: Update `expr/4` to dispatch to context-specific helpers.
     - `expr(:pattern, ...)` should only generate valid pattern matches (literals, variables, pinned variables, tuples/lists/maps of patterns).
     - `expr(:guard, ...)` should only generate valid guard expressions (allowed kernel functions, type checks).
-- [ ] **Add Edge-Case Generators**: Explicitly add generators for:
+- [x] **Add Edge-Case Generators**: Explicitly add generators for:
     - Operator spacing (`foo+bar` vs `foo + bar`).
     - Escaped interpolation (`"foo\#{bar}"`).
     - Nested stabs (`fn -> fn -> end end`).
-- [ ] **Tune Frequencies**: Adjust `frequency/1` weights to ensure `|>` and `.` calls are generated often enough to pass coverage without seeds.
+- [x] **Tune Frequencies**: Adjust `frequency/1` weights to ensure `|>` and `.` calls are generated often enough to pass coverage without seeds.
 
 ### 2. Operationalize Tests
 - [ ] **CI Integration**: Create a `mix test.property` alias that runs these tests (excluding `:skip` by default, but including them with the alias).
