@@ -7,7 +7,7 @@ defmodule Spitfire.Property.Generators do
   @aliases ~w(Foo Bar Baz Qux Remote Mod State Schema Context Config Default)a
   @atoms ~w(ok error foo bar baz one two three alice bob do end)a
   @kw_keys ~w(label count opts config metadata)a
-  @operator_atoms ~w(+ - * / == != < > <= >= and or not when in |> <<< >>> &&& ||| ^^^)a
+  @operator_atoms ~w(+ - * == != < > <= >= and or not when in |> <<< >>> &&& ||| ^^^)a
 
   @max_expr_depth 3
   @max_interp_depth 2
@@ -38,6 +38,7 @@ defmodule Spitfire.Property.Generators do
   def expr(context, depth, interp_depth, block_depth) do
     frequency([
       {5, literal()},
+      {3, quoted_atom()},
       {4, variable()},
       {4, string_like(:binary, depth, interp_depth)},
       {3, string_like(:charlist, depth, interp_depth)},
@@ -51,7 +52,9 @@ defmodule Spitfire.Property.Generators do
       {3, dot_call(depth - 1, interp_depth, block_depth)},
       {3, capture(depth - 1, interp_depth, block_depth)},
       {3, sigil(depth - 1, interp_depth)},
+      {2, fn_block(depth - 1, interp_depth, block_depth)},
       {2, quote_block(depth - 1, interp_depth, block_depth)},
+      {2, bitstring(depth - 1, interp_depth, block_depth)},
       {4, binary_op(depth - 1, interp_depth, block_depth)}
     ])
     |> map(&wrap_context(context, &1))
@@ -69,6 +72,16 @@ defmodule Spitfire.Property.Generators do
     ]
 
     one_of(fragments)
+  end
+
+  defp quoted_atom do
+    frequency([
+      {3, member_of(@atoms) |> map(&":\"#{&1}\"")},
+      {2, member_of(@atoms) |> map(&":'#{&1}'")},
+      {1,
+       expr(:expr, 1, 0, 0)
+       |> map(fn inner -> ":\"foo#{inner}bar\"" end)}
+    ])
   end
 
   defp variable do
@@ -135,6 +148,7 @@ defmodule Spitfire.Property.Generators do
   defp sigil(depth, interp_depth) do
     sigil_letter = member_of(~w(s S c C)a)
     delimiter = member_of(["'", "\"", "/"])
+    modifiers = member_of(["", "i", "s", "im"])
 
     inner =
       if interp_depth > 0 do
@@ -144,8 +158,8 @@ defmodule Spitfire.Property.Generators do
         string(:alphanumeric, length: 1..6)
       end
 
-    map({sigil_letter, delimiter, inner}, fn {letter, delim, content} ->
-      "~#{letter}#{delim}#{content}#{delim}"
+    map({sigil_letter, delimiter, inner, modifiers}, fn {letter, delim, content, mods} ->
+      "~#{letter}#{delim}#{content}#{delim}#{mods}"
     end)
   end
 
@@ -217,13 +231,20 @@ defmodule Spitfire.Property.Generators do
       map(variable(), &"&#{&1}/1"),
       expr(:expr, depth, interp_depth, block_depth)
       |> map(fn inner -> "&(" <> inner <> " + 1)" end),
-      member_of(@operator_atoms) |> map(&"&#{&1}/2")
+      member_of(@operator_atoms) |> map(&"&#{&1}/2"),
+      member_of(1..3) |> map(&"&#{&1}")
     ])
   end
 
   defp quote_block(depth, interp_depth, block_depth) do
     bind(expr(:expr, depth, interp_depth, block_depth), fn body ->
       constant("quote do: #{body}")
+    end)
+  end
+
+  defp fn_block(depth, interp_depth, block_depth) do
+    bind(expr(:expr, depth, interp_depth, block_depth), fn body ->
+      constant("fn -> #{body} end")
     end)
   end
 
@@ -249,5 +270,14 @@ defmodule Spitfire.Property.Generators do
 
   defp wrap_interpolation(inner) do
     ["\#{", inner, "}"] |> IO.iodata_to_binary()
+  end
+
+  defp bitstring(depth, interp_depth, block_depth) do
+    exprs = list_of(expr(:expr, depth, interp_depth, block_depth), length: 1..2)
+
+    map(exprs, fn parts ->
+      inner = Enum.join(parts, ", ")
+      "<<#{inner}>>"
+    end)
   end
 end

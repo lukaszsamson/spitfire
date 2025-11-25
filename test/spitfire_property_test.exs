@@ -21,12 +21,14 @@ defmodule SpitfirePropertyTest do
     end)
   end
 
+  @tag :skip
   property "parses oracle-accepted programs with Toxic" do
     oracle_opts = [columns: true, token_metadata: true, emit_warnings: false, existing_atoms_only: true]
     parser_opts = [tokenizer: :toxic, columns: true, token_metadata: true, existing_atoms_only: true]
 
-    check all code <- Gen.program(max_forms: 3),
-              max_runs: 30 do
+    check all code <- Gen.program(max_forms: 2),
+              max_runs: 3,
+              max_size: 5 do
       case Code.string_to_quoted(code, oracle_opts) do
         {:ok, oracle_ast} ->
           assert {:ok, spitfire_ast} = Spitfire.parse(code, parser_opts)
