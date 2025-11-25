@@ -8,6 +8,9 @@ defmodule SpitfirePropertyCoverageTest do
   import Spitfire.Property, only: [touch_atom_pools: 0]
 
   @seed_samples [
+    "?a",
+    "1.0",
+    "foo = bar",
     "[foo: 1]",
     "[\"foo\": 1]",
     "[\"foo#{1}\": 1]",
@@ -52,9 +55,14 @@ defmodule SpitfirePropertyCoverageTest do
     "Foo.\"foo\"[1]",
     "Foo.\"foo\" do :ok end",
     "foo.(1)",
+    "foo.(1, 2)",
+    "foo[1]",
+    "foo[1][2]",
     "fn -> :ok end",
     "quote do: foo",
+    "quote do\n  unquote(foo)\n  foo\nend",
     "@foo 1",
+    "%{foo | bar: 1}",
     "foo...bar",
     "foo\nbar"
   ]
@@ -66,21 +74,28 @@ defmodule SpitfirePropertyCoverageTest do
 
   @tag :property_coverage
   @tag :skip
-  property "generators hit phase 2 Toxic targets" do
-    check all generated <- list_of(Gen.program(max_forms: 2), length: 4),
-              max_runs: 1,
-              max_size: 5 do
+  @tag timeout: 15_000
+  property "generators hit phase 3 Toxic targets" do
+    check all(
+            generated <- list_of(Gen.program(max_forms: 2), length: 4),
+            max_runs: 3,
+            max_size: 3
+          ) do
       samples = generated ++ @seed_samples
 
       covered =
         samples
-        |> Enum.flat_map(&TokenIntrospection.collect_types_and_ranges(&1, existing_atoms_only: true))
+        |> Enum.flat_map(
+          &TokenIntrospection.collect_types_and_ranges(&1, existing_atoms_only: true)
+        )
         |> Enum.map(&elem(&1, 0))
         |> MapSet.new()
 
       extra_tokens =
         ["foo |> bar", "Foo.bar(1)"]
-        |> Enum.flat_map(&TokenIntrospection.collect_types_and_ranges(&1, existing_atoms_only: true))
+        |> Enum.flat_map(
+          &TokenIntrospection.collect_types_and_ranges(&1, existing_atoms_only: true)
+        )
         |> Enum.map(&elem(&1, 0))
 
       covered =
@@ -92,12 +107,14 @@ defmodule SpitfirePropertyCoverageTest do
         |> MapSet.union(
           MapSet.new(
             samples
-            |> Enum.flat_map(&TokenIntrospection.collect_types_and_ranges(&1, existing_atoms_only: false))
+            |> Enum.flat_map(
+              &TokenIntrospection.collect_types_and_ranges(&1, existing_atoms_only: false)
+            )
             |> Enum.map(&elem(&1, 0))
           )
         )
 
-      missing = MapSet.difference(TargetTokens.phase2_target(), covered)
+      missing = MapSet.difference(TargetTokens.target(), covered)
 
       assert MapSet.size(missing) == 0,
              "Missing token kinds: #{inspect(MapSet.to_list(missing))}"

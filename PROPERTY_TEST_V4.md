@@ -1,7 +1,7 @@
 # Spitfire Property Tests with Toxic — V3 Plan
 
 This document revises `PROPERTY_TEST_V2.md` based on
-`PROPERTY_TEST_V2_OPUS45.md` and earlier reviews:
+`PROPERTY_TEST_V2_OPUS45.md` and earlier reviews.
 
 - `PROPERTY_TEST_CODEX.md`
 - `PROPERTY_TEST_GEMINI3.md`
@@ -19,13 +19,11 @@ The core strategy is unchanged:
   coverage**, especially around linearized interpolation, heredocs, sigils, and
   quoted identifiers/atoms.
 
-V3 focuses on:
+Progress trackers
+-----------------
 
-- Tightening the **Toxic token reference** and keyword identifier flow.
-- Adding missing generator categories (quote/unquote, edge cases).
-- Separating expression vs interpolation vs block **depth budgets**.
-- Strengthening **integration checks** for `:error_token` and synthetic tokens.
-- Making the token coverage target set **explicit**.
+- **Phase 1 (done)**: Property scaffolding landed in tests with initial Toxic-mode generators, AST parity helper, and token coverage list. Core parity/coverage/acceptance properties exist (some tagged `:skip` for runtime tuning).
+- **Phase 2 (in progress)**: Generators expanded to cover quoted atoms/identifiers, sigil modifiers, bitstrings, captures, fn blocks, map updates, and a phase-2 target token set added. Coverage seeds widened. Parity/coverage/acceptance properties present but currently skipped pending performance tuning.
 
 ---
 
