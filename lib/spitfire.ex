@@ -1114,21 +1114,35 @@ defmodule Spitfire do
       old_nesting = parser.nesting
       parser = Map.put(parser, :nesting, 0)
 
-      {exprs, parser} =
-        while2 peek_token(parser) not in [:end, :")"] <- parser do
-          parser = parser |> next_token() |> eat_eol()
-          {ast, parser} = parse_expression(parser, @lowest, false, false, true)
+      next_peek = peek_token_eat_eol(parser)
 
-          eoe = peek_eoe(parser)
+      {rhs, parser} =
+        if next_peek in [:end, :")", :eof] do
+          parser =
+            case next_peek do
+              :end -> parser |> next_token() |> eat_eol()
+              :eof -> parser |> next_token()
+              _ -> parser
+            end
 
-          parser = eat_eol_at(parser, 1)
+          {nil, parser}
+        else
+          {exprs, parser} =
+            while2 peek_token(parser) not in [:end, :")"] <- parser do
+              parser = parser |> next_token() |> eat_eol()
+              {ast, parser} = parse_expression(parser, @lowest, false, false, true)
 
-          ast = push_eoe(ast, eoe)
+              eoe = peek_eoe(parser)
 
-          {ast, parser}
+              parser = eat_eol_at(parser, 1)
+
+              ast = push_eoe(ast, eoe)
+
+              {ast, parser}
+            end
+
+          {build_block_nr(exprs), parser}
         end
-
-      rhs = build_block_nr(exprs)
 
       meta =
         meta
@@ -1200,7 +1214,11 @@ defmodule Spitfire do
               end
             end
 
-          rhs = build_block_nr(exprs)
+          rhs =
+            case exprs do
+              [] -> nil
+              _ -> build_block_nr(exprs)
+            end
 
           {lhs, meta} =
             case lhs do
@@ -1936,6 +1954,28 @@ defmodule Spitfire do
     end
   end
 
+  defp finalize_anon_function_clause(ast, parser) do
+    cond do
+      current_token(parser) == :-> and peek_token_eat_eol(parser) in [:end, :eof] ->
+        {ast, parser |> next_token() |> eat_eol()}
+
+      current_token(parser) == :-> ->
+        {ast, parser}
+
+      current_token(parser) == :end and peek_token(parser) == :eof ->
+        {ast, parser}
+
+      peek_token(parser) == :end ->
+        {ast, next_token(parser)}
+
+      true ->
+        parser = next_token(parser)
+        eoe = current_eoe(parser)
+        ast = push_eoe(ast, eoe)
+        {ast, eat_eol(parser)}
+    end
+  end
+
   defp parse_anon_function(%{current_token: {:fn, _}} = parser) do
     trace "parse_anon_function", trace_meta(parser) do
       meta = current_meta(parser)
@@ -1949,45 +1989,13 @@ defmodule Spitfire do
           {ast, parser} =
             case Map.get(parser, :stab_state) do
               %{ast: lhs} ->
-                {ast, parser} = parse_stab_expression(Map.delete(parser, :stab_state), lhs)
-
-                {ast, parser} =
-                  if current_token(parser) == :-> do
-                    {ast, parser}
-                  else
-                    if peek_token(parser) == :end do
-                      parser = next_token(parser)
-                      {ast, parser}
-                    else
-                      parser = next_token(parser)
-                      eoe = current_eoe(parser)
-                      ast = push_eoe(ast, eoe)
-                      {ast, eat_eol(parser)}
-                    end
-                  end
-
-                {ast, parser}
+                parse_stab_expression(Map.delete(parser, :stab_state), lhs)
 
               nil ->
-                {ast, parser} = parse_expression(parser, @lowest, false, false, true)
-
-                {ast, parser} =
-                  if current_token(parser) in [:->] do
-                    {ast, parser}
-                  else
-                    if peek_token(parser) == :end do
-                      parser = next_token(parser)
-                      {ast, parser}
-                    else
-                      parser = next_token(parser)
-                      eoe = current_eoe(parser)
-                      ast = push_eoe(ast, eoe)
-                      {ast, eat_eol(parser)}
-                    end
-                  end
-
-                {ast, parser}
+                parse_expression(parser, @lowest, false, false, true)
             end
+
+          {ast, parser} = finalize_anon_function_clause(ast, parser)
 
           {ast, parser}
         end
