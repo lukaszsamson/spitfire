@@ -23,7 +23,8 @@ Progress trackers
 -----------------
 
 - **Phase 1 (done)**: Property scaffolding landed in tests with initial Toxic-mode generators, AST parity helper, and token coverage list. Core parity/coverage/acceptance properties exist (some tagged `:skip` for runtime tuning).
-- **Phase 2 (in progress)**: Generators expanded to cover quoted atoms/identifiers, sigil modifiers, bitstrings, captures, fn blocks, map updates, and a phase-2 target token set added. Coverage seeds widened. Parity/coverage/acceptance properties present but currently skipped pending performance tuning.
+- **Phase 2 (done)**: Generators expanded to cover quoted atoms/identifiers, sigil modifiers, bitstrings, captures, fn blocks, map updates, and a phase-2 target token set added. Coverage seeds widened. Parity/coverage/acceptance properties present but currently skipped pending performance tuning.
+- **Phase 3 (in progress)**: Depth budgets increased; generators now thread block depth through interpolation, add range/pipe/unary/concat/module-attribute/quote+unquote/case paths, and broaden coverage seeds. New “no synthetic tokens for oracle-accepted programs” property added (tagged `:skip`). Coverage test targets the full phase-3 token set but remains skipped pending runtime tuning.
 
 ---
 
