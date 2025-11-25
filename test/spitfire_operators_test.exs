@@ -1371,6 +1371,659 @@ defmodule SpitfireOperatorsTest do
   end
 
   # =============================================================================
+  # Nullary Range Operator ..
+  # =============================================================================
+
+  describe "nullary .. operator" do
+    test "bare range" do
+      code = ".."
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "nullary range in function call" do
+      code = "Enum.to_list(..)"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+  end
+
+  # =============================================================================
+  # Range with Step Operator ..//
+  # =============================================================================
+
+  describe "..// operator" do
+    test "simple range with step" do
+      code = "1..10//2"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "range with negative step" do
+      code = "10..1//-1"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "range with step and variables" do
+      code = "a..b//c"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "range with step has correct precedence with +" do
+      code = "1 + 2..3 + 4//5"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "range with step in comprehension" do
+      code = "for i <- 1..10//2, do: i"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+  end
+
+  # =============================================================================
+  # Comprehensive Precedence Boundary Tests
+  # Each test verifies precedence between adjacent levels in the table
+  # =============================================================================
+
+  describe "precedence boundaries: @ (highest) vs . (second highest)" do
+    test "@ binds tighter than dot on result" do
+      code = "@foo.bar"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "@ with chained dots" do
+      code = "@foo.bar.baz"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+  end
+
+  describe "precedence boundaries: . vs unary +/-/!/^/not" do
+    test "dot binds tighter than unary minus" do
+      code = "-foo.bar"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "dot binds tighter than unary plus" do
+      code = "+foo.bar"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "dot binds tighter than unary not" do
+      code = "!foo.bar"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "dot binds tighter than not keyword" do
+      code = "not foo.bar"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "dot binds tighter than pin" do
+      code = "^foo.bar"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+  end
+
+  describe "precedence boundaries: unary +/-/!/^/not vs **" do
+    test "unary minus binds tighter than **" do
+      code = "-2 ** 3"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "unary plus binds tighter than **" do
+      code = "+2 ** 3"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "unary ! with ** operand" do
+      code = "!a ** b"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+  end
+
+  describe "precedence boundaries: ** vs * /" do
+    test "** binds tighter than *" do
+      code = "2 * 3 ** 4"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "** binds tighter than /" do
+      code = "8 / 2 ** 2"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "* after ** expression" do
+      code = "2 ** 3 * 4"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "/ after ** expression" do
+      code = "2 ** 3 / 4"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+  end
+
+  describe "precedence boundaries: * / vs + -" do
+    test "* binds tighter than +" do
+      code = "1 + 2 * 3"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "/ binds tighter than -" do
+      code = "6 - 4 / 2"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "* binds tighter than -" do
+      code = "6 - 2 * 2"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "/ binds tighter than +" do
+      code = "1 + 6 / 2"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+  end
+
+  describe "precedence boundaries: + - vs ++ -- +++ --- .. <>" do
+    test "+ binds tighter than ++" do
+      code = "a + b ++ c + d"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "- binds tighter than --" do
+      code = "a - b -- c - d"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "+ binds tighter than .." do
+      code = "1 + 2..3 + 4"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "+ binds tighter than <>" do
+      code = "a + b <> c + d"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "- binds tighter than +++" do
+      code = "a - b +++ c - d"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "- binds tighter than ---" do
+      code = "a - b --- c - d"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+  end
+
+  describe "precedence boundaries: ++ -- +++ --- .. <> vs in/not in" do
+    test "++ binds tighter than in" do
+      code = "a in b ++ c"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "-- binds tighter than in" do
+      code = "a in b -- c"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test ".. binds tighter than in" do
+      code = "a in 1..10"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "<> binds tighter than in" do
+      code = "a in b <> c"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "++ binds tighter than not in" do
+      code = "a not in b ++ c"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+  end
+
+  describe "precedence boundaries: in/not in vs |> <<< >>> <<~ ~>> <~ ~> <~>" do
+    test "in binds tighter than |>" do
+      code = "a in b |> c"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "not in binds tighter than |>" do
+      code = "a not in b |> c"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "in binds tighter than <<<" do
+      code = "a in b <<< c"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "in binds tighter than >>>" do
+      code = "a in b >>> c"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "in binds tighter than ~>" do
+      code = "a in b ~> c"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "in binds tighter than <~" do
+      code = "a in b <~ c"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "in binds tighter than <~>" do
+      code = "a in b <~> c"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "in binds tighter than <<~" do
+      code = "a in b <<~ c"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "in binds tighter than ~>>" do
+      code = "a in b ~>> c"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+  end
+
+  describe "precedence boundaries: |> <<< >>> <<~ ~>> <~ ~> <~> vs < > <= >=" do
+    test "|> binds tighter than <" do
+      code = "a |> b < c |> d"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "|> binds tighter than >" do
+      code = "a |> b > c |> d"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "|> binds tighter than <=" do
+      code = "a |> b <= c |> d"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "|> binds tighter than >=" do
+      code = "a |> b >= c |> d"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "<<< binds tighter than <" do
+      code = "a <<< b < c <<< d"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test ">>> binds tighter than >" do
+      code = "a >>> b > c >>> d"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "~> binds tighter than <" do
+      code = "a ~> b < c ~> d"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+  end
+
+  describe "precedence boundaries: < > <= >= vs == != =~ === !==" do
+    test "< binds tighter than ==" do
+      code = "a < b == c < d"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "> binds tighter than !=" do
+      code = "a > b != c > d"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "<= binds tighter than ===" do
+      code = "a <= b === c <= d"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test ">= binds tighter than !==" do
+      code = "a >= b !== c >= d"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "< binds tighter than =~" do
+      code = "a < b =~ c"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+  end
+
+  describe "precedence boundaries: == != =~ === !== vs && &&& and" do
+    test "== binds tighter than &&" do
+      code = "a == b && c == d"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "!= binds tighter than &&&" do
+      code = "a != b &&& c != d"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "=== binds tighter than and" do
+      code = "a === b and c === d"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "!== binds tighter than &&" do
+      code = "a !== b && c !== d"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "=~ binds tighter than and" do
+      code = "a =~ b and c =~ d"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+  end
+
+  describe "precedence boundaries: && &&& and vs || ||| or" do
+    test "&& binds tighter than ||" do
+      code = "a && b || c && d"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "&&& binds tighter than |||" do
+      code = "a &&& b ||| c &&& d"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "and binds tighter than or" do
+      code = "a and b or c and d"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "&& binds tighter than or" do
+      code = "a && b or c && d"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "and binds tighter than ||" do
+      code = "a and b || c and d"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+  end
+
+  describe "precedence boundaries: || ||| or vs =" do
+    test "|| binds tighter than =" do
+      code = "a = b || c"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "||| binds tighter than =" do
+      code = "a = b ||| c"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "or binds tighter than =" do
+      code = "a = b or c"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "|| on both sides of =" do
+      code = "a || b = c || d"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+  end
+
+  describe "precedence boundaries: = vs & ..." do
+    test "= binds tighter than &" do
+      code = "f = &foo/1"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "& captures result of =" do
+      code = "&(a = b)"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+  end
+
+  describe "precedence boundaries: & vs =>" do
+    test "& and => in map" do
+      code = "%{&foo/1 => 1}"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "=> with capture on both sides" do
+      code = "%{&foo/1 => &bar/2}"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+  end
+
+  describe "precedence boundaries: => vs |" do
+    test "=> binds tighter than | in map" do
+      code = "%{a => b | c}"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "| in map update with =>" do
+      code = "%{map | a => b}"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+  end
+
+  describe "precedence boundaries: | vs ::" do
+    test "| binds tighter than ::" do
+      code = "a | b :: c"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test ":: after | in type spec context" do
+      code = "@spec foo(a | b :: c)"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+  end
+
+  describe "precedence boundaries: :: vs when" do
+    test ":: binds tighter than when" do
+      code = "a :: b when c"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "when with typed parameter" do
+      code = "@spec foo(a :: integer) when a: term"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+  end
+
+  describe "precedence boundaries: when vs <- \\\\" do
+    test "when binds tighter than <-" do
+      code = "for x when is_integer(x) <- xs, do: x"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "when binds tighter than \\\\" do
+      code = "x when true \\\\ default"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "<- with when guard" do
+      code = "for x when x > 0 <- list, do: x"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+  end
+
+  # =============================================================================
+  # Mixed Operators at Same Precedence Level
+  # =============================================================================
+
+  describe "same precedence level: ++ -- +++ --- .. <>" do
+    test "++ and -- at same precedence" do
+      code = "a ++ b -- c"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "++ and .. at same precedence" do
+      code = "a ++ 1..10"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "-- and <> at same precedence" do
+      code = "a -- b <> c"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "+++ and --- at same precedence" do
+      code = "a +++ b --- c"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "all list ops mixed" do
+      code = "a ++ b -- c +++ d --- e"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "<> and ++ and .." do
+      code = "a <> b ++ 1..10"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+  end
+
+  describe "same precedence level: |> <<< >>> <<~ ~>> <~ ~> <~>" do
+    test "|> and <<< at same precedence" do
+      code = "a |> b <<< c"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "|> and >>> at same precedence" do
+      code = "a |> b >>> c"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "<<< and >>> at same precedence" do
+      code = "a <<< b >>> c"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "<<~ and ~>> at same precedence" do
+      code = "a <<~ b ~>> c"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "<~ and ~> at same precedence" do
+      code = "a <~ b ~> c"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "<~> with other arrow ops" do
+      code = "a <~> b |> c ~> d"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "all arrow ops mixed" do
+      code = "a |> b <<< c >>> d <<~ e ~>> f <~ g ~> h <~> i"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+  end
+
+  describe "same precedence level: < > <= >=" do
+    test "< and > at same precedence" do
+      code = "a < b > c"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "<= and >= at same precedence" do
+      code = "a <= b >= c"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "< and >= at same precedence" do
+      code = "a < b >= c"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "> and <= at same precedence" do
+      code = "a > b <= c"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "all comparison ops" do
+      code = "a < b > c <= d >= e"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+  end
+
+  describe "same precedence level: == != =~ === !==" do
+    test "== and != at same precedence" do
+      code = "a == b != c"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "=== and !== at same precedence" do
+      code = "a === b !== c"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "== and =~ at same precedence" do
+      code = "a == b =~ c"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "all equality ops" do
+      code = "a == b != c =~ d === e !== f"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+  end
+
+  describe "same precedence level: && &&& and" do
+    test "&& and &&& at same precedence" do
+      code = "a && b &&& c"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "&& and and at same precedence" do
+      code = "a && b and c"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "&&& and and at same precedence" do
+      code = "a &&& b and c"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "all AND ops" do
+      code = "a && b &&& c and d"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+  end
+
+  describe "same precedence level: || ||| or" do
+    test "|| and ||| at same precedence" do
+      code = "a || b ||| c"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "|| and or at same precedence" do
+      code = "a || b or c"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "||| and or at same precedence" do
+      code = "a ||| b or c"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "all OR ops" do
+      code = "a || b ||| c or d"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+  end
+
+  describe "same precedence level: <- \\\\" do
+    test "<- and \\\\ at same precedence" do
+      code = "a <- b \\\\ c"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "\\\\ and <- at same precedence" do
+      code = "a \\\\ b <- c"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+  end
+
+  # =============================================================================
   # Edge Cases and Special Scenarios
   # =============================================================================
 
@@ -1422,6 +2075,296 @@ defmodule SpitfireOperatorsTest do
 
     test "function call with operator expression" do
       code = "foo(a + b, c * d)"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "deeply nested arithmetic" do
+      code = "1 + 2 * 3 ** 4 / 5 - 6 + 7 * 8"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "mixed unary operators" do
+      code = "- - - -a"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "unary not chain" do
+      code = "not not not a"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "unary ! chain" do
+      code = "!!!a"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "complex pipe chain" do
+      code = "a |> b() |> c(1, 2) |> d.e() |> f"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "binary operator after pipe" do
+      code = "a |> b + c"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "comparison chain" do
+      code = "1 < 2 <= 3 > 0 >= -1"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "match in if condition" do
+      code = "if a = b, do: a"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "operator in anonymous function" do
+      code = "fn a, b -> a + b end"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "operator in case clause" do
+      code = "case a do\n  x when x > 0 -> x * 2\n  _ -> 0\nend"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "multiple matches on same line" do
+      code = "a = b = c = 1"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "range in case pattern" do
+      code = "case x do\n  n when n in 1..10 -> :small\n  _ -> :large\nend"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+  end
+
+  # =============================================================================
+  # Complete Precedence Level Tests (Full Chain from Highest to Lowest)
+  # =============================================================================
+
+  describe "full precedence chain tests" do
+    test "expression using operators from many precedence levels" do
+      # @ > . > unary > ** > * > + > ++ > in > |> > < > == > && > || > =
+      code = "result = a || b && c == d < e |> f in g ++ h + i * j ** k"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "complex boolean expression with all logical operators" do
+      code = "a and b && c or d || e and f && g or h"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "arithmetic with all arithmetic operators" do
+      code = "a ** b * c / d + e - f"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "list operations chain" do
+      code = "a ++ b -- c ++ d -- e"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "all comparison operators in sequence" do
+      code = "a < b > c <= d >= e == f != g === h !== i =~ j"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "@ with full operator chain" do
+      code = "@foo + 1 * 2 == 3 and true"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "dot call with full operator chain" do
+      code = "a.b + c.d * e.f == g.h"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "capture with complex expression" do
+      code = "&(&1 + &2 * &3)"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "match with complex right side" do
+      code = "{a, b} = c ++ d |> e"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "guard clause with multiple operators" do
+      code = "def foo(a, b) when is_integer(a) and a > 0 and b < 100 or is_float(a), do: a + b"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "type spec with union and constraints" do
+      code = "@spec foo(a :: integer | float, b :: atom) :: boolean when a: number"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "comprehension with complex generators and filters" do
+      code = "for x <- xs, x > 0, y <- ys, x + y < 10, do: {x, y}"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "with expression with multiple clauses" do
+      code = "with {:ok, a} <- foo(), {:ok, b} <- bar(a), c = a + b, do: c"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "bitstring with multiple type specs" do
+      code = "<<a::8, b::16-big-unsigned, c::binary-size(4), rest::binary>>"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "map with arrow and expression values" do
+      code = "%{a + b => c * d, e => f || g}"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "struct with update and expressions" do
+      code = "%Foo{bar | a: b + c, d: e * f}"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "nested data structures with operators" do
+      code = "[a: b + c, d: [e * f, g | h]]"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+  end
+
+  # =============================================================================
+  # Regression Tests for Known Edge Cases
+  # =============================================================================
+
+  describe "regression and tricky cases" do
+    test "minus after dot without space" do
+      code = "a.b-c"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "plus after dot without space" do
+      code = "a.b+c"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "unary minus in function call" do
+      code = "foo(-1)"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "unary minus in list" do
+      code = "[-1, -2, -3]"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "unary plus in tuple" do
+      code = "{+1, +2}"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "not in with complex expression" do
+      code = "a + b not in c ++ d"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "double pipe confusion" do
+      # || is boolean or, | is cons/union
+      code = "a || [b | c]"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "triple less than" do
+      # <<< is custom operator, << is bitstring
+      code = "a <<< b"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "power with negative exponent" do
+      code = "2 ** -3"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "range with negative bounds" do
+      code = "-10..-1"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "range with negative step" do
+      code = "10..1//-1"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "capture with arithmetic" do
+      code = "&(&1 + 1)"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "pin in match with binary operator" do
+      code = "^a = b + c"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "when in anonymous function" do
+      code = "fn x when x > 0 -> x end"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "multiple when clauses" do
+      code = "fn x when is_integer(x) when x > 0 -> x end"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "default argument with complex expression" do
+      code = "def foo(a \\\\ 1 + 2 * 3), do: a"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "access in operator expression" do
+      code = "a[b] + c[d]"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "dot call on result of operator" do
+      code = "(a + b).c"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "operators in sigil" do
+      code = "~w(a + b)"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "string interpolation with operators" do
+      code = ~S'"result: #{a + b * c}"'
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "heredoc with operators" do
+      code = ~s'"""\n\#{a + b}\n"""'
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "keyword list with operator values" do
+      code = "[a: b + c, d: e * f]"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "keyword argument in function call" do
+      code = "foo(a, b: c + d)"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "pipe into keyword function" do
+      code = "a |> foo(b: c)"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "capture with module function" do
+      code = "&Mod.fun/2"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "capture placeholder in operator" do
+      code = "&(&1 <> &2)"
       assert Spitfire.parse(code) == s2q(code)
     end
   end
