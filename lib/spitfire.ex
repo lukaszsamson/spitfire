@@ -70,7 +70,7 @@ defmodule Spitfire do
   @kw_identifier {:left, 16}
   @assoc_op {:right, 20}
   @type_op {:right, 18}
-  @pipe_op {:left, 36}
+  @pipe_op {:right, 22}
   @capture_op {:left, 24}
   @match_op {:right, 26}
   @or_op {:left, 28}
@@ -2615,7 +2615,61 @@ defmodule Spitfire do
         |> current_meta()
         |> put_meta_range(token_range(parser.current_token))
 
-      {{:..., meta, []}, parser}
+      peek = peek_token_type(parser)
+
+      is_prefix =
+        peek in [
+          :identifier,
+          :do_identifier,
+          :paren_identifier,
+          :bracket_identifier,
+          :op_identifier,
+          :alias,
+          :"<<",
+          :kw_identifier,
+          :kw_identifier_unsafe,
+          :int,
+          :flt,
+          :atom,
+          :atom_quoted,
+          :atom_unsafe,
+          true,
+          false,
+          :bin_string,
+          :bin_heredoc,
+          :list_string,
+          :list_heredoc,
+          :char,
+          :sigil,
+          :fn,
+          :at_op,
+          :unary_op,
+          :capture_op,
+          :dual_op,
+          :capture_int,
+          :"[",
+          :"(",
+          :"{",
+          :%{},
+          :%,
+          :ellipsis_op,
+          nil,
+          :bin_string_start,
+          :list_string_start,
+          :bin_heredoc_start,
+          :list_heredoc_start,
+          :sigil_start,
+          :atom_safe_start,
+          :atom_unsafe_start
+        ]
+
+      if is_prefix do
+        parser = next_token(parser)
+        {rhs, parser} = parse_expression(parser, @capture_op, false, false, false)
+        {{:..., meta, [rhs]}, parser}
+      else
+        {{:..., meta, []}, parser}
+      end
     end
   end
 

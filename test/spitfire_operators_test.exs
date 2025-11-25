@@ -1038,6 +1038,16 @@ defmodule SpitfireOperatorsTest do
       code = "&..."
       assert Spitfire.parse(code) == s2q(code)
     end
+
+    test "ellipsis as term before infix operator" do
+      code = "... * 1"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "ellipsis as term before range" do
+      code = "... .. 1"
+      assert Spitfire.parse(code) == s2q(code)
+    end
   end
 
   # =============================================================================
