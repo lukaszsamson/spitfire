@@ -1,14 +1,10 @@
-# Spitfire Property Tests with Toxic — V3 Plan
+# Spitfire Property Tests with Toxic
 
-This document revises `PROPERTY_TEST_V2.md` based on
-`PROPERTY_TEST_V2_OPUS45.md` and earlier reviews.
+Property-based testing for Spitfire's Toxic tokenizer integration.
 
-- `PROPERTY_TEST_CODEX.md`
-- `PROPERTY_TEST_GEMINI3.md`
-- `PROPERTY_TEST_OPUS.md`
-- `PROPERTY_TEST_SONNET.md`
+**Quick start**: See `PROPERTY_TEST_QUICKSTART.md` for run commands.
 
-The core strategy is unchanged:
+## Strategy
 
 - Generate **valid or almost‑valid** Elixir source strings from a constrained,
   grammar‑biased generator.
@@ -22,13 +18,22 @@ The core strategy is unchanged:
 Progress trackers
 -----------------
 
-**Note (2025-11-25)**: Phases 1-3 are feature-complete. Tests are tagged `:skip` due to performance constraints (not missing functionality). See `PROP_PROFILING_RESULTS.md` and `PROPERTY_TEST_PERFORMANCE.md` for timing details.
+**Status (2025-11-25)**: All implementation steps (§10) are complete. Tests are tagged
+`:skip` due to performance constraints (~60-120s each). See `PROPERTY_TEST_QUICKSTART.md`
+for run commands.
 
-- **Phase 1 (complete)**: Property scaffolding and initial generators implemented. All Phase 1 target tokens (30/30) are covered. Core parity/coverage/acceptance properties working. Tests tagged `:skip` (60-120s timeout).
-- **Phase 2 (complete)**: Generators expanded for quoted atoms/identifiers, sigil modifiers, bitstrings, captures, fn blocks, map updates. Phase 2 target tokens (51/51) covered. All properties implemented and passing.
-- **Phase 3 (complete)**: Depth budgets increased (4/2/3). Block depth threading, range/pipe/unary/concat/module-attribute/quote+unquote/case generators all implemented. "No synthetic tokens" integration property added. Full target token set (71/71) covered. All properties implemented and passing.
-- **Phase 4 (complete)**: Performance/CI strategy documented. Baseline runtime (~60-120s per property test) captured in `PROPERTY_TEST_PERFORMANCE.md`. Quick-start commands and run modes documented in `PROPERTY_TEST_QUICKSTART.md`. Tests remain skipped by default; recommended to run manually or in scheduled CI with extended timeouts.
-- **Phase 5 (in progress)**: Error-tolerance coverage added (UTF-8 no-crash, Toxic error propagation) in `test/spitfire_property_error_test.exs`, tagged `:skip` for runtime. Further tuning/expansion of malformed-code generators and assertions to follow.
+| Step | Description | Status |
+|------|-------------|--------|
+| 0 | Sanity-check Toxic API | ✅ Done |
+| 1 | Add `:stream_data` dependency | ✅ Done (`mix.exs`) |
+| 2 | Implement generators | ✅ Done (`test/spitfire/property_generators.exs`) |
+| 3 | Implement property helpers | ✅ Done (`test/spitfire/property.exs`) |
+| 4 | Implement core parity properties | ✅ Done (`test/spitfire_property_test.exs`) |
+| 5 | Implement coverage/acceptance tests | ✅ Done (`test/spitfire_property_coverage_test.exs`, `test/spitfire_property_acceptance_test.exs`) |
+| 6 | Implement error-tolerance/integration | ✅ Done (`test/spitfire_property_error_test.exs`, `test/spitfire_property_integration_test.exs`) |
+| 7 | Tune depth/run counts | ✅ Done (tests tagged `:skip`, run on-demand) |
+
+**Token coverage**: 71/71 target tokens covered by generators and seed samples.
 
 ---
 
@@ -837,7 +842,5 @@ Then:
 7. Tune depth/run counts and generator distributions based on runtime and
    coverage feedback; convert interesting failures into targeted regressions.
 
-With these adjustments, V3 addresses the remaining gaps from
-`PROPERTY_TEST_V2_OPUS45.md` while keeping the design coherent and aligned with
-Spitfire’s actual Toxic integration. It is ready to guide implementation of a
-robust property‑testing suite for `tokenizer: :toxic` mode.
+This document provides the specification for a robust property-testing suite
+for Spitfire's `tokenizer: :toxic` mode.

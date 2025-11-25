@@ -72,10 +72,11 @@ defmodule SpitfirePropertyCoverageTest do
     :ok
   end
 
+  @tag :property
   @tag :property_coverage
   @tag :skip
   @tag timeout: 120_000
-  property "generators hit phase 1 Toxic targets" do
+  property "generators hit phase 3 Toxic targets" do
     check all(
             generated <- list_of(Gen.program(max_forms: 2), length: 4),
             max_runs: 3,
@@ -114,10 +115,45 @@ defmodule SpitfirePropertyCoverageTest do
           )
         )
 
-      missing = MapSet.difference(TargetTokens.phase1_target(), covered)
+      missing = MapSet.difference(TargetTokens.target(), covered)
 
       assert MapSet.size(missing) == 0,
-             "Missing token kinds (Phase 1): #{inspect(MapSet.to_list(missing))}"
+             "Missing token kinds: #{inspect(MapSet.to_list(missing))}"
+    end
+  end
+
+  @min_token_frequency 2
+
+  @tag :property
+  @tag :property_coverage
+  @tag :property_coverage_frequency
+  @tag :skip
+  @tag timeout: 120_000
+  property "target tokens appear with reasonable frequency" do
+    check all(
+            generated <- list_of(Gen.program(max_forms: 2), length: 4),
+            max_runs: 3,
+            max_size: 3
+          ) do
+      samples = generated ++ @seed_samples
+
+      freqs =
+        samples
+        |> Enum.flat_map(
+          &TokenIntrospection.collect_types_and_ranges(&1, existing_atoms_only: true)
+        )
+        |> Enum.map(&elem(&1, 0))
+        |> Enum.frequencies()
+
+      low =
+        freqs
+        |> Enum.filter(fn {kind, count} ->
+          kind in TargetTokens.target() and count < @min_token_frequency
+        end)
+
+      if low != [] do
+        IO.warn("Low-frequency tokens: #{inspect(low)}")
+      end
     end
   end
 end
