@@ -26,6 +26,10 @@ defmodule Spitfire.Property do
         Spitfire.Property.Generators.keyword_pool() ++
         Spitfire.Property.Generators.operator_atoms()
 
+    Enum.each(Spitfire.Property.Generators.alias_pool(), fn alias_atom ->
+      _ = Module.concat([alias_atom])
+    end)
+
     :ok
   end
 end

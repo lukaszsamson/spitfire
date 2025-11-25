@@ -33,7 +33,7 @@ for run commands.
 | 6 | Implement error-tolerance/integration | ✅ Done (`test/spitfire_property_error_test.exs`, `test/spitfire_property_integration_test.exs`) |
 | 7 | Tune depth/run counts | ✅ Done (tests tagged `:skip`, run on-demand) |
 
-**Token coverage**: 71/71 target tokens covered by generators and seed samples.
+**Token coverage**: 82/82 target tokens covered by generators and seed samples.
 
 ---
 

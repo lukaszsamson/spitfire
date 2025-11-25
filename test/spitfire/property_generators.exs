@@ -15,6 +15,7 @@ defmodule Spitfire.Property.Generators do
 
   def atom_pool, do: @atoms
   def keyword_pool, do: @kw_keys
+  def alias_pool, do: @aliases
   def operator_atoms, do: @operator_atoms
 
   def program(opts \\ []) do
@@ -143,8 +144,10 @@ defmodule Spitfire.Property.Generators do
       {3, member_of(@atoms) |> map(&":\"#{&1}\"")},
       {2, member_of(@atoms) |> map(&":'#{&1}'")},
       {1,
-       expr(:expr, 1, 0, 0)
-       |> map(fn inner -> ":\"foo#{inner}bar\"" end)}
+       bind(constant(:ok), fn _ ->
+         expr(:expr, 1, 0, 0)
+         |> map(fn inner -> ":\"foo#{inner}bar\"" end)
+       end)}
     ])
   end
 
@@ -274,11 +277,20 @@ defmodule Spitfire.Property.Generators do
   end
 
   defp map_expr(context, depth, interp_depth, block_depth) do
-    bind(expr(context, depth, interp_depth, block_depth), fn value ->
-      bind(keyword_key(), fn key ->
-        constant("%{#{key}: #{value}}")
+    value_gen = expr(context, depth, interp_depth, block_depth)
+
+    one_of([
+      bind(value_gen, fn value ->
+        bind(keyword_key(), fn key ->
+          constant("%{#{key}: #{value}}")
+        end)
+      end),
+      bind(value_gen, fn value ->
+        map(string(:alphanumeric, length: 1..4), fn key ->
+          "%{\"#{key}\" => #{value}}"
+        end)
       end)
-    end)
+    ])
   end
 
   defp struct_expr(context, depth, interp_depth, block_depth) do
