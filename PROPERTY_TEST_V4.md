@@ -22,12 +22,13 @@ The core strategy is unchanged:
 Progress trackers
 -----------------
 
-**Note (2025-11-25)**: The implementation is complete for all three phases. Tests are tagged `:skip` due to performance constraints, not missing functionality. See `PROP_P1.md`, `PROP_PROGRESS.md`, and `PROP_PROFILING_RESULTS.md` for detailed status.
+**Note (2025-11-25)**: Phases 1-3 are feature-complete. Tests are tagged `:skip` due to performance constraints (not missing functionality). See `PROP_PROFILING_RESULTS.md` and `PROPERTY_TEST_PERFORMANCE.md` for timing details.
 
 - **Phase 1 (complete)**: Property scaffolding and initial generators implemented. All Phase 1 target tokens (30/30) are covered. Core parity/coverage/acceptance properties working. Tests tagged `:skip` (60-120s timeout).
 - **Phase 2 (complete)**: Generators expanded for quoted atoms/identifiers, sigil modifiers, bitstrings, captures, fn blocks, map updates. Phase 2 target tokens (51/51) covered. All properties implemented and passing.
 - **Phase 3 (complete)**: Depth budgets increased (4/2/3). Block depth threading, range/pipe/unary/concat/module-attribute/quote+unquote/case generators all implemented. "No synthetic tokens" integration property added. Full target token set (71/71) covered. All properties implemented and passing.
-- **Phase 4 (recommended)**: Performance optimization and CI integration strategy. Baseline established: 60-120s per property test. Viable approaches: on-demand runs, nightly CI, selective tagging. See `PROP_PROFILING_RESULTS.md` for strategy.
+- **Phase 4 (complete)**: Performance/CI strategy documented. Baseline runtime (~60-120s per property test) captured in `PROPERTY_TEST_PERFORMANCE.md`. Quick-start commands and run modes documented in `PROPERTY_TEST_QUICKSTART.md`. Tests remain skipped by default; recommended to run manually or in scheduled CI with extended timeouts.
+- **Phase 5 (in progress)**: Error-tolerance coverage added (UTF-8 no-crash, Toxic error propagation) in `test/spitfire_property_error_test.exs`, tagged `:skip` for runtime. Further tuning/expansion of malformed-code generators and assertions to follow.
 
 ---
 
