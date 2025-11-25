@@ -68,9 +68,9 @@ defmodule Spitfire do
   # comma are commas inside a right stab argument list
   @comma {:left, 14}
   @kw_identifier {:left, 16}
-  @assoc_op {:right, 18}
-  @type_op {:right, 20}
-  @pipe_op {:right, 22}
+  @assoc_op {:right, 20}
+  @type_op {:right, 18}
+  @pipe_op {:left, 36}
   @capture_op {:left, 24}
   @match_op {:right, 26}
   @or_op {:left, 28}
@@ -82,7 +82,7 @@ defmodule Spitfire do
   @xor_op {:left, 40}
   @ternary_op {:right, 42}
   @concat_op {:right, 44}
-  @range_op {:right, 46}
+  @range_op {:right, 44}
   @dual_op {:left, 48}
   @mult_op {:left, 50}
   @power_op {:left, 52}
@@ -351,7 +351,11 @@ defmodule Spitfire do
 
       prefix =
         case current_token_type(parser) do
-          :identifier -> &parse_identifier/1
+          :identifier ->
+            case parser.current_token do
+              {:identifier, _, :not} -> &parse_prefix_expression/1
+              _ -> &parse_identifier/1
+            end
           :do_identifier -> &parse_do_identifier/1
           :paren_identifier -> &parse_paren_identifier/1
           :bracket_identifier -> &parse_lone_identifier/1
@@ -447,7 +451,7 @@ defmodule Spitfire do
                 :concat_op -> &parse_infix_expression/2
                 :assoc_op -> &parse_assoc_op/2
                 :arrow_op -> &parse_infix_expression/2
-                :ternary_op -> &parse_infix_expression/2
+                :ternary_op -> &parse_ternary_op/2
                 :or_op -> &parse_infix_expression/2
                 :and_op -> &parse_infix_expression/2
                 :comp_op -> &parse_infix_expression/2
@@ -1041,11 +1045,16 @@ defmodule Spitfire do
       op_range = token_range(parser.current_token)
 
       precedence =
-        if current_token_type(parser) == :dual_op do
-          # dual ops are treated as unary ops when being used as a prefix operator
-          @unary_op
-        else
-          current_precedence(parser)
+        cond do
+          current_token_type(parser) == :dual_op ->
+            # dual ops are treated as unary ops when being used as a prefix operator
+            @unary_op
+
+          match?({:identifier, _, :not}, current_token(parser)) ->
+            @unary_op
+
+          true ->
+            current_precedence(parser)
         end
 
       parser = parser |> next_token() |> eat_eol()
@@ -1472,6 +1481,37 @@ defmodule Spitfire do
     end
   end
 
+  defp parse_ternary_op(parser, lhs) do
+    trace "parse_ternary_op", trace_meta(parser) do
+      token = current_token(parser)
+      meta = current_meta(parser)
+      op_range = token_range(parser.current_token)
+      precedence = current_precedence(parser)
+      parser = parser |> next_token() |> eat_eol()
+      {rhs, parser} = parse_expression(parser, precedence, false, false, false)
+
+      {ast, parser} =
+        case lhs do
+          {:.., range_meta, [start, stop]} ->
+            {{:..//, range_meta, [start, stop, rhs]}, parser}
+
+          _ ->
+            parser =
+              put_error(
+                parser,
+                {meta,
+                 "the range step operator (//) must immediately follow the range definition operator (..), for example: 1..9//2. If you wanted to define a default argument, use (\\\\) instead. Syntax error before: '//'"}
+              )
+
+            {{token, meta, [lhs, rhs]}, parser}
+        end
+
+      ast = attach_op_range(ast, op_range)
+
+      {ast, eat_eol(parser)}
+    end
+  end
+
   defp parse_range_expression(parser, lhs) do
     trace "parse_range_expression (with lhs)", trace_meta(parser) do
       token = current_token(parser)
@@ -1481,16 +1521,7 @@ defmodule Spitfire do
       parser = next_token(parser)
       {rhs, parser} = parse_expression(parser, precedence, false, false, false)
 
-      {ast, parser} =
-        case peek_token(parser) do
-          :ternary_op ->
-            parser = parser |> next_token() |> next_token()
-            {rrhs, parser} = parse_expression(parser, precedence, false, false, false)
-            {{:..//, meta, [lhs, rhs, rrhs]}, eat_eol(parser)}
-
-          _ ->
-            {{token, meta, [lhs, rhs]}, eat_eol(parser)}
-        end
+      {ast, parser} = {{token, meta, [lhs, rhs]}, eat_eol(parser)}
 
       ast = attach_op_range(ast, op_range)
 
@@ -3301,10 +3332,12 @@ defmodule Spitfire do
 
         # 2. Save and reset nesting
         saved_nesting = parser.nesting
+        saved_kw_pair = Map.get(parser, :produced_kw_pair, false)
 
         parser = %{
           parser
           | nesting: 0,
+            produced_kw_pair: false,
             saved_nesting_stack: [saved_nesting | parser.saved_nesting_stack]
         }
 
@@ -3354,6 +3387,7 @@ defmodule Spitfire do
         parser = %{
           parser
           | nesting: saved,
+            produced_kw_pair: saved_kw_pair,
             saved_nesting_stack: rest,
             interpolation_depth: parser.interpolation_depth - 1
         }
@@ -3926,6 +3960,7 @@ defmodule Spitfire do
       interpolation_depth: 0,
       # Stack to save/restore nesting during interpolations
       saved_nesting_stack: [],
+      produced_kw_pair: false,
       errors: [],
       last_span: nil
     }
