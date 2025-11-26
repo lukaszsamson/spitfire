@@ -217,7 +217,7 @@ defmodule Spitfire do
         ast =
           ast
           |> attach_root_range(parser_after)
-          |> normalize_not_pipelines()
+          |> normalize_ast()
           |> strip_ranges_if_needed(opts)
 
         if errors == [] do
@@ -4737,6 +4737,12 @@ defmodule Spitfire do
     end
   end
 
+  defp normalize_ast(ast) do
+    ast
+    |> normalize_not_pipelines()
+    |> normalize_block_sensitive_unary()
+  end
+
   defp normalize_not_pipelines(ast) do
     Macro.prewalk(ast, fn
       {:not, meta, [{:|>, pipe_meta, [lhs | rest]} = pipe]} ->
@@ -4750,6 +4756,32 @@ defmodule Spitfire do
         other
     end)
   end
+
+  @block_sensitive_unaries MapSet.new([:not, :!, :+, :-])
+  @block_sensitive_binaries MapSet.new([:||, :|||, :===, :!==, :!=, :==, :or])
+
+  defp normalize_block_sensitive_unary(ast) do
+    Macro.prewalk(ast, fn
+      {bin_op, bin_meta, [{unary_op, unary_meta, [operand]}, rhs]} = node ->
+        if block_sensitive_binary_op?(bin_op) and unary_block_op?(unary_op) and block_with_do?(operand) do
+          {unary_op, unary_meta, [{bin_op, bin_meta, [operand, rhs]}]}
+        else
+          node
+        end
+
+      other ->
+        other
+    end)
+  end
+
+  defp unary_block_op?(op), do: MapSet.member?(@block_sensitive_unaries, op)
+  defp block_sensitive_binary_op?(op), do: MapSet.member?(@block_sensitive_binaries, op)
+
+  defp block_with_do?({_, meta, _}) when is_list(meta) do
+    Keyword.has_key?(meta, :do)
+  end
+
+  defp block_with_do?(_), do: false
 
   defp encode_literal(parser, literal, range_override \\ nil)
 

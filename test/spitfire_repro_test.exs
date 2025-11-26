@@ -134,7 +134,22 @@ defmodule SpitfireReproTest do
   end
 
   test "repro 21" do
-    code = "-quote do\n  unquote(baz)\n  gamma(eggs)\nend ||| %Context{'bob': \"\"}"
+    code = "-quote do\n baz\nend ||| a"
+    assert Spitfire.parse(code) == s2q(code)
+
+    code = "+quote do\n baz\nend === a"
+    assert Spitfire.parse(code) == s2q(code)
+
+    code = "!quote do\n baz\nend != a"
+    assert Spitfire.parse(code) == s2q(code)
+
+    code = "not quote do\n baz\nend == a"
+    assert Spitfire.parse(code) == s2q(code)
+
+    code = "not quote do\n baz\nend or a"
+    assert Spitfire.parse(code) == s2q(code)
+
+    code = "not quote do\n baz\nend || a"
     assert Spitfire.parse(code) == s2q(code)
   end
 
