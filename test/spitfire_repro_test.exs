@@ -68,13 +68,18 @@ defmodule SpitfireReproTest do
     assert Spitfire.parse(code) == s2q(code)
   end
 
-  test "repro 9" do
-    code = "[not case ?l do\n  gamma -> alpha\n  _ -> 26.0\nend <= %Default{\"two\": ?o}]"
+  test "repro 9a" do
+    code = "not try do\n :ok\nend <= 1"
     assert Spitfire.parse(code) == s2q(code)
   end
 
   test "repro 10" do
     code = "[@spec foo() :: term(), with gamma <- beta do\n  Bar\nelse\n  _ -> 0\nend |> {-7, qux} + ~s\"\"\"\nfoo \#{0.0} bar\n\"\"\"]"
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
+  test "repro 10a" do
+    code = "[@foobar foo() :: term(), with gamma <- beta do\n  Bar\nelse\n  _ -> 0\nend |> {-7, qux} + ~s\"\"\"\nfoo \#{0.0} bar\n\"\"\"]"
     assert Spitfire.parse(code) == s2q(code)
   end
 
@@ -155,6 +160,28 @@ defmodule SpitfireReproTest do
 
   test "repro 25" do
     code = "not [?r]..29.0 ++ gamma |> [%Foo{label: eggs}, [\"end\": Bar]]"
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
+  test "repro 25a" do
+    code = "not b |> a"
+    assert Spitfire.parse(code) == s2q(code)
+
+    code = "!b |> a"
+    assert Spitfire.parse(code) == s2q(code)
+
+    code = "+b |> a"
+    assert Spitfire.parse(code) == s2q(code)
+
+    code = "-b |> a"
+    assert Spitfire.parse(code) == s2q(code)
+
+    code = "^b |> a"
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
+  test "repro 26a" do
+    code = "1..(&not/2)//0"
     assert Spitfire.parse(code) == s2q(code)
   end
 end

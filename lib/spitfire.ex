@@ -217,6 +217,7 @@ defmodule Spitfire do
         ast =
           ast
           |> attach_root_range(parser_after)
+          |> normalize_not_pipelines()
           |> strip_ranges_if_needed(opts)
 
         if errors == [] do
@@ -1117,10 +1118,15 @@ defmodule Spitfire do
       parser = parser |> next_token() |> eat_eol()
 
       effective_precedence =
-        if token_type == :at_op and attribute_value_context?(parser) do
-          @lowest
-        else
-          precedence
+        cond do
+          token_type == :at_op and attribute_value_context?(parser) ->
+            @lowest
+
+          logical_not_operator?(token) ->
+            @comp_op
+
+          true ->
+            precedence
         end
 
       {rhs, parser} = parse_expression(parser, effective_precedence, false, false, false)
@@ -4720,6 +4726,29 @@ defmodule Spitfire do
   defp pop_capture_name_context(parser) do
     ctx = Map.get(parser, :capture_name_context, 0)
     Map.put(parser, :capture_name_context, max(ctx - 1, 0))
+  end
+
+  defp logical_not_operator?(token) do
+    case token do
+      :not -> true
+      {:identifier, _, :not} -> true
+      {:unary_op, _, :not} -> true
+      _ -> false
+    end
+  end
+
+  defp normalize_not_pipelines(ast) do
+    Macro.prewalk(ast, fn
+      {:not, meta, [{:|>, pipe_meta, [lhs | rest]} = pipe]} ->
+        if Keyword.has_key?(pipe_meta, :parens) do
+          {:not, meta, [pipe]}
+        else
+          {:|>, pipe_meta, [{:not, meta, [lhs]} | rest]}
+        end
+
+      other ->
+        other
+    end)
   end
 
   defp encode_literal(parser, literal, range_override \\ nil)
