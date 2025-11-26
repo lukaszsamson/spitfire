@@ -4758,7 +4758,7 @@ defmodule Spitfire do
   end
 
   @block_sensitive_unaries MapSet.new([:not, :!, :+, :-])
-  @block_sensitive_binaries MapSet.new([:||, :|||, :===, :!==, :!=, :==, :or])
+  @block_sensitive_binaries MapSet.new([:||, :|||, :===, :!==, :!=, :==, :or, :and, :&&, :&&&, :=])
 
   defp normalize_block_sensitive_unary(ast) do
     Macro.prewalk(ast, fn

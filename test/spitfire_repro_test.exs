@@ -149,6 +149,18 @@ defmodule SpitfireReproTest do
     code = "not quote do\n baz\nend or a"
     assert Spitfire.parse(code) == s2q(code)
 
+    code = "not quote do\n baz\nend = a"
+    assert Spitfire.parse(code) == s2q(code)
+
+    code = "not quote do\n baz\nend && a"
+    assert Spitfire.parse(code) == s2q(code)
+
+    code = "not quote do\n baz\nend &&& a"
+    assert Spitfire.parse(code) == s2q(code)
+
+    code = "not quote do\n baz\nend and a"
+    assert Spitfire.parse(code) == s2q(code)
+
     code = "not quote do\n baz\nend || a"
     assert Spitfire.parse(code) == s2q(code)
   end
