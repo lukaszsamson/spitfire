@@ -199,6 +199,14 @@ defmodule SpitfireReproTest do
     assert Spitfire.parse(code) == s2q(code)
   end
 
+  test "repro 25a1" do
+    code = "not a..2//3 - gamma"
+    assert Spitfire.parse(code) == s2q(code)
+
+    code = "not a..2 ++ gamma"
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
   test "repro 25a" do
     code = "not b |> a"
     assert Spitfire.parse(code) == s2q(code)

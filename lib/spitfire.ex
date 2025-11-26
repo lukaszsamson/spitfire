@@ -4740,6 +4740,7 @@ defmodule Spitfire do
   defp normalize_ast(ast) do
     ast
     |> normalize_not_pipelines()
+    |> normalize_unary_ranges()
     |> normalize_block_sensitive_unary()
   end
 
@@ -4750,6 +4751,27 @@ defmodule Spitfire do
           {:not, meta, [pipe]}
         else
           {:|>, pipe_meta, [{:not, meta, [lhs]} | rest]}
+        end
+
+      other ->
+        other
+    end)
+  end
+
+  defp normalize_unary_ranges(ast) do
+    Macro.prewalk(ast, fn
+      {op, meta, [{:.., range_meta, [lhs, rhs]}]} = node ->
+        if unary_block_op?(op) do
+          {:.., range_meta, [{op, meta, [lhs]}, rhs]}
+        else
+          node
+        end
+
+      {op, meta, [{:..//, range_meta, [lhs, rhs, step]}]} = node ->
+        if unary_block_op?(op) do
+          {:..//, range_meta, [{op, meta, [lhs]}, rhs, step]}
+        else
+          node
         end
 
       other ->
