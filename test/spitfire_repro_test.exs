@@ -64,7 +64,16 @@ defmodule SpitfireReproTest do
   end
 
   test "repro 8" do
-    code = "+case -:ok do\n  18.0 -> 49.0\n  _ -> -7\nend + foo()"
+    code = "!case 1 do\n  18.0 -> 49.0\nend * foo"
+    assert Spitfire.parse(code) == s2q(code)
+
+    code = "not case 1 do\n  18.0 -> 49.0\nend * foo"
+    assert Spitfire.parse(code) == s2q(code)
+
+    code = "-case 1 do\n  18.0 -> 49.0\nend * foo"
+    assert Spitfire.parse(code) == s2q(code)
+
+    code = "+case 1 do\n  18.0 -> 49.0\nend - foo"
     assert Spitfire.parse(code) == s2q(code)
   end
 
