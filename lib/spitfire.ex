@@ -393,8 +393,15 @@ defmodule Spitfire do
         case current_token_type(parser) do
           :identifier ->
             case parser.current_token do
-              {:identifier, _, :not} -> &parse_prefix_expression/1
-              _ -> &parse_identifier/1
+              {:identifier, _, :not} ->
+                if in_capture_name_context?(parser) do
+                  &parse_identifier/1
+                else
+                  &parse_prefix_expression/1
+                end
+
+              _ ->
+                &parse_identifier/1
             end
           :do_identifier -> &parse_do_identifier/1
           :paren_identifier -> &parse_paren_identifier/1
@@ -422,7 +429,7 @@ defmodule Spitfire do
           :fn -> &parse_anon_function/1
           :at_op -> &parse_prefix_expression/1
           :unary_op -> &parse_prefix_expression/1
-          :capture_op -> &parse_prefix_expression/1
+          :capture_op -> &parse_capture_expression/1
           :dual_op -> &parse_prefix_expression/1
           :capture_int -> &parse_capture_int/1
           :stab_op -> &parse_stab_expression/1
@@ -1117,6 +1124,32 @@ defmodule Spitfire do
         end
 
       {rhs, parser} = parse_expression(parser, effective_precedence, false, false, false)
+
+      ast =
+        {token, meta, [rhs]}
+        |> attach_op_range(op_range)
+
+      {ast, parser}
+    end
+  end
+
+  defp parse_capture_expression(parser) do
+    trace "parse_capture_expression", trace_meta(parser) do
+      token = current_token(parser)
+      meta = current_meta(parser)
+      op_range = token_range(parser.current_token)
+
+      parser = parser |> next_token() |> eat_eol()
+
+      {rhs, parser} =
+        if current_token(parser) == :"(" do
+          parse_grouped_expression(parser)
+        else
+          parser = push_capture_name_context(parser)
+          {expr, parser} = parse_expression(parser, @capture_op, false, false, false)
+          parser = pop_capture_name_context(parser)
+          {expr, parser}
+        end
 
       ast =
         {token, meta, [rhs]}
@@ -4033,7 +4066,8 @@ defmodule Spitfire do
       saved_nesting_stack: [],
       produced_kw_pair: false,
       errors: [],
-      last_span: nil
+      last_span: nil,
+      capture_name_context: 0
     }
   end
 
@@ -4672,6 +4706,20 @@ defmodule Spitfire do
 
   defp push_nesting(%{nesting: nesting} = parser) do
     %{parser | nesting: nesting + 1}
+  end
+
+  defp in_capture_name_context?(parser) do
+    Map.get(parser, :capture_name_context, 0) > 0
+  end
+
+  defp push_capture_name_context(parser) do
+    ctx = Map.get(parser, :capture_name_context, 0)
+    Map.put(parser, :capture_name_context, ctx + 1)
+  end
+
+  defp pop_capture_name_context(parser) do
+    ctx = Map.get(parser, :capture_name_context, 0)
+    Map.put(parser, :capture_name_context, max(ctx - 1, 0))
   end
 
   defp encode_literal(parser, literal, range_override \\ nil)
