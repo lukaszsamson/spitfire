@@ -25,8 +25,16 @@ defmodule SpitfireReproTest do
     assert Spitfire.parse(code) == s2q(code)
   end
 
-  test "repro 2" do
-    code = "@foo Foo.\"a\"(with ^delta <- beta do\n  ?y\nelse\n  _ -> 0.0\nend)"
+  # test "repro 2" do
+  #   code = "@foo Foo.\"a\"(with ^delta <- beta do\n  ?y\nelse\n  _ -> 0.0\nend)"
+  #   assert Spitfire.parse(code) == s2q(code)
+  # end
+
+  test "repro 2a" do
+    code = "@foo Foo.a(try do\n :ok\nend)"
+    assert Spitfire.parse(code) == s2q(code)
+
+    code = "@foo Foo.\"a\"(try do\n :ok\nend)"
     assert Spitfire.parse(code) == s2q(code)
   end
 

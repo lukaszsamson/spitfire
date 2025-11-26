@@ -1706,7 +1706,10 @@ defmodule Spitfire do
 
               case current_token(parser1) do
                 :"(" ->
-                  {{lhs_dot, call_meta, args}, parser2} = parse_call_expression(parser1, dot_ast)
+                  old_nesting = parser1.nesting
+                  parser_for_call = if old_nesting == 0, do: parser1, else: %{parser1 | nesting: 0}
+                  {{lhs_dot, call_meta, args}, parser2} = parse_call_expression(parser_for_call, dot_ast)
+                  parser2 = %{parser2 | nesting: old_nesting}
 
                   # Preserve newlines and closing from call_meta, but replace base meta with base_call_meta
                   newlines =
