@@ -143,8 +143,13 @@ defmodule SpitfireReproTest do
     assert Spitfire.parse(code) == s2q(code)
   end
 
-  test "repro 24" do
-    code = "quote do\n  unquote({:two, spam} or -10 |> beta)\n  @spec baz() :: integer() and quote do\n  bar\nend..quote do\n  3.0\nend//2\nend"
+  test "repro 24a" do
+    code = "@foo try do\n  1\nrescue\n_ -> 0\nend..1"
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
+  test "repro 24b" do
+    code = "@foo try do\n  1\nend..1//2"
     assert Spitfire.parse(code) == s2q(code)
   end
 

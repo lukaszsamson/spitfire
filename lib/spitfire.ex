@@ -127,6 +127,46 @@ defmodule Spitfire do
     at_op: @at_op
   }
 
+  @operators [
+    :"=>",
+    :->,
+    :+,
+    :**,
+    :-,
+    :/,
+    :*,
+    :|>,
+    :++,
+    :||,
+    :&&,
+    :and,
+    :or,
+    :**,
+    :range_op,
+    :power_op,
+    :stab_op,
+    :xor_op,
+    :rel_op,
+    :and_op,
+    :or_op,
+    :mult_op,
+    :arrow_op,
+    :assoc_op,
+    :pipe_op,
+    :concat_op,
+    :dual_op,
+    :ternary_op,
+    :in_op,
+    :in_match_op,
+    :comp_op,
+    :match_op,
+    :type_op,
+    :dot_call_op,
+    :when_op
+  ]
+
+  @peeks MapSet.new([:";", :eol, :eof, :end, :",", :")", :do, :., :"}", :"]", :">>"] ++ @operators)
+
   @doc """
   Parses the given code into Elixir AST.
 
@@ -1038,15 +1078,25 @@ defmodule Spitfire do
     end
   end
 
+  defp identifier_stop_peek?(parser) do
+    MapSet.member?(@peeks, peek_token(parser)) ||
+      (parser.interpolation_depth > 0 and peek_token_type(parser) == :end_interpolation)
+  end
+
+  defp attribute_value_context?(parser) do
+    current_token_type(parser) in [:identifier, :op_identifier] and not identifier_stop_peek?(parser)
+  end
+
   defp parse_prefix_expression(parser) do
     trace "parse_prefix_expression", trace_meta(parser) do
       token = current_token(parser)
       meta = current_meta(parser)
       op_range = token_range(parser.current_token)
+      token_type = current_token_type(parser)
 
       precedence =
         cond do
-          current_token_type(parser) == :dual_op ->
+          token_type == :dual_op ->
             # dual ops are treated as unary ops when being used as a prefix operator
             @unary_op
 
@@ -1058,7 +1108,15 @@ defmodule Spitfire do
         end
 
       parser = parser |> next_token() |> eat_eol()
-      {rhs, parser} = parse_expression(parser, precedence, false, false, false)
+
+      effective_precedence =
+        if token_type == :at_op and attribute_value_context?(parser) do
+          @lowest
+        else
+          precedence
+        end
+
+      {rhs, parser} = parse_expression(parser, effective_precedence, false, false, false)
 
       ast =
         {token, meta, [rhs]}
@@ -3069,48 +3127,6 @@ defmodule Spitfire do
     end
   end
 
-  @operators [
-    :"=>",
-    :->,
-    :+,
-    :**,
-    :-,
-    :/,
-    :*,
-    :|>,
-    :++,
-    :||,
-    :&&,
-    :and,
-    :or,
-    :**,
-    :range_op,
-    :power_op,
-    :stab_op,
-    :xor_op,
-    :rel_op,
-    :and_op,
-    :or_op,
-    :mult_op,
-    :arrow_op,
-    :assoc_op,
-    :pipe_op,
-    :concat_op,
-    :dual_op,
-    :ternary_op,
-    :in_op,
-    :in_match_op,
-    :comp_op,
-    :match_op,
-    :type_op,
-    :dot_call_op,
-    :when_op
-  ]
-
-  @peeks MapSet.new(
-           [:";", :eol, :eof, :end, :",", :")", :do, :., :"}", :"]", :">>"] ++ @operators
-         )
-
   defp parse_identifier(%{current_token: {_identifier, _, token}} = parser)
        when token in [:__MODULE__, :__ENV__, :__DIR__, :__CALLER__] do
     trace "parse_identifier (__MODULE__, etc)", trace_meta(parser) do
@@ -3121,9 +3137,7 @@ defmodule Spitfire do
   defp parse_identifier(%{current_token: {identifier, _, token}} = parser)
        when identifier in [:identifier, :op_identifier] do
     trace "parse_identifier (#{identifier})", trace_meta(parser) do
-      stop_peek? =
-        MapSet.member?(@peeks, peek_token(parser)) ||
-          (parser.interpolation_depth > 0 and peek_token_type(parser) == :end_interpolation)
+      stop_peek? = identifier_stop_peek?(parser)
 
       if identifier == :identifier && stop_peek? do
         parse_lone_identifier(parser)
