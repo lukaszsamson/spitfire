@@ -27,7 +27,7 @@ defmodule SpitfirePropertyTest do
     oracle_opts = [columns: true, token_metadata: true, emit_warnings: false, existing_atoms_only: true]
     parser_opts = [tokenizer: :toxic, columns: true, token_metadata: true, existing_atoms_only: true]
 
-    check all code <- Gen.program(max_forms: 10),
+    check all code <- Gen.program(max_forms: 25),
               max_runs: 1500,
               max_size: 5 do
       case Code.string_to_quoted(code |> IO.inspect(), oracle_opts) do
