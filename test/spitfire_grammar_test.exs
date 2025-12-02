@@ -1,6 +1,5 @@
 defmodule SpitfireGrammarTest do
   use ExUnit.Case, async: false
-  import Spitfire.TestHelpers, except: [==: 2]
 
   setup do
     original = Application.get_env(:spitfire, :tokenizer, :legacy)
@@ -31,14 +30,14 @@ defmodule SpitfireGrammarTest do
       assert Spitfire.parse(code) == s2q(code)
       code = "1\n2"
       assert Spitfire.parse(code) == s2q(code)
-      code = "1;\n2"
+      code = "1\n;2"
       assert Spitfire.parse(code) == s2q(code)
 
       code = "1;2;3"
       assert Spitfire.parse(code) == s2q(code)
       code = "1\n2\n3"
       assert Spitfire.parse(code) == s2q(code)
-      code = "1;\n2;\n3"
+      code = "1\n;2\n;3"
       assert Spitfire.parse(code) == s2q(code)
     end
 
@@ -47,14 +46,14 @@ defmodule SpitfireGrammarTest do
       assert Spitfire.parse(code) == s2q(code)
       code = "\n1"
       assert Spitfire.parse(code) == s2q(code)
-      code = ";\n1"
+      code = "\n;1"
       assert Spitfire.parse(code) == s2q(code)
 
       code = ";1;2"
       assert Spitfire.parse(code) == s2q(code)
       code = "\n1\n2"
       assert Spitfire.parse(code) == s2q(code)
-      code = ";\n1;\n2"
+      code = "\n;1\n;2"
       assert Spitfire.parse(code) == s2q(code)
     end
 
@@ -63,14 +62,14 @@ defmodule SpitfireGrammarTest do
       assert Spitfire.parse(code) == s2q(code)
       code = "1\n"
       assert Spitfire.parse(code) == s2q(code)
-      code = "1;\n"
+      code = "1\n;"
       assert Spitfire.parse(code) == s2q(code)
 
       code = "2;1;"
       assert Spitfire.parse(code) == s2q(code)
       code = "2\n1\n"
       assert Spitfire.parse(code) == s2q(code)
-      code = "2;\n1;\n"
+      code = "2\n;1\n;"
       assert Spitfire.parse(code) == s2q(code)
     end
 
@@ -79,14 +78,14 @@ defmodule SpitfireGrammarTest do
       assert Spitfire.parse(code) == s2q(code)
       code = "\n1\n"
       assert Spitfire.parse(code) == s2q(code)
-      code = ";\n1;\n"
+      code = "\n;1\n;"
       assert Spitfire.parse(code) == s2q(code)
 
       code = ";1;2;"
       assert Spitfire.parse(code) == s2q(code)
       code = "\n1\n2\n"
       assert Spitfire.parse(code) == s2q(code)
-      code = ";\n1;\n2;\n"
+      code = "\n;1\n;2\n;"
       assert Spitfire.parse(code) == s2q(code)
     end
 
