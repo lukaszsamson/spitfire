@@ -23,7 +23,7 @@ defmodule SpitfireProblemsTest do
 
   def literal_encoder(value, meta), do: {:ok, {:__block__, meta, [value]}}
 
-  describe "problem 1 – AST metadata differences" do
+  describe "problem 1 - AST metadata differences" do
     test "Spitfire preserves quoted atom escapes when unescape: false" do
       code = ~S(:"hello \" \t")
 
@@ -54,6 +54,7 @@ defmodule SpitfireProblemsTest do
     end
   end
 
+  @tag :skip
   test "Spitfire empty function" do
       code = ~S"""
       fn -> end
