@@ -206,12 +206,6 @@ defmodule Spitfire do
   def parse(code, opts \\ []) do
     parser = code |> new(opts) |> next_token() |> next_token()
 
-    # eat all the beginning eol tokens in case the file starts with a comment
-    parser =
-      while current_token(parser) in [:eol, :";"] <- parser do
-        skip_eoe(parser)
-      end
-
     case parse_program(parser) do
       {ast, %{errors: errors} = parser_after} ->
         ast =
@@ -322,6 +316,12 @@ defmodule Spitfire do
 
   defp parse_program(parser) do
     trace "parse_program", trace_meta(parser) do
+      # Consume any leading separators (grammar -> eoe ...)
+      parser =
+        while current_token(parser) in [:eol, :";"] <- parser do
+          skip_eoe(parser)
+        end
+
       {exprs, parser} =
         while2 current_token(parser) != :eof <- parser do
           if current_token(parser) in [:eol, :";"] do
