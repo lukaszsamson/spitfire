@@ -773,6 +773,28 @@ defmodule SpitfireGrammarTest do
       assert Spitfire.parse(code) == s2q(code)
       code = "!\nfoo 1, 2"
       assert Spitfire.parse(code) == s2q(code)
+
+      # unmatched_expr
+      code = "-if true do\n:ok\nend"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "-\nif true do\n:ok\nend"
+      assert Spitfire.parse(code) == s2q(code)
+      # no_parens_expr
+      code = "-foo 1, 2"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "-\nfoo 1, 2"
+      assert Spitfire.parse(code) == s2q(code)
+
+      # unmatched_expr
+      code = "//if true do\n:ok\nend"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "//\nif true do\n:ok\nend"
+      assert Spitfire.parse(code) == s2q(code)
+      # no_parens_expr
+      code = "//foo 1, 2"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "//\nfoo 1, 2"
+      assert Spitfire.parse(code) == s2q(code)
     end
 
     test "at_op_eol expr" do
@@ -941,6 +963,16 @@ defmodule SpitfireGrammarTest do
       assert Spitfire.parse(code) == s2q(code)
       code = "!\nfoo 1, 2"
       assert Spitfire.parse(code) == s2q(code)
+
+      code = "-foo 1, 2"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "-\nfoo 1, 2"
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "//foo 1, 2"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "//\nfoo 1, 2"
+      assert Spitfire.parse(code) == s2q(code)
     end
 
     test "at_op_eol no_parens_expr" do
@@ -963,14 +995,35 @@ defmodule SpitfireGrammarTest do
     end
 
     test "no_parens_one_ambig_expr" do
-      # TODO
+      # dot_identifier call_args_no_parens_ambig
       code = "foo bar 1, 2"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "foo.baz bar 1, 2"
+      assert Spitfire.parse(code) == s2q(code)
+      # dot_op_identifier call_args_no_parens_ambig
+      code = "foo -bar 1, 2"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "foo.baz -bar 1, 2"
       assert Spitfire.parse(code) == s2q(code)
     end
 
     test "no_parens_many_expr" do
-      # TODO
       code = "foo 1, 2"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "foo 1, 2, 3"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "foo.bar 1, 2"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "foo.bar 1, 2, 3"
+      assert Spitfire.parse(code) == s2q(code)
+
+      code = "foo -1, 2"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "foo -1, 2, 3"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "foo.bar -1, 2"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "foo.bar -1, 2, 3"
       assert Spitfire.parse(code) == s2q(code)
     end
   end
