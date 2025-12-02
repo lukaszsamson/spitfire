@@ -332,11 +332,13 @@ defmodule SpitfireGrammarTest do
     end
 
     test "sub_matched_expr (access_expr)" do
+      # TODO
       code = "..."
       assert Spitfire.parse(code) == s2q(code)
     end
 
     test "sub_matched_expr (access_expr kw_identifier)" do
+      # TODO
       code = "..."
       assert Spitfire.parse(code) == s2q(code)
     end
@@ -356,55 +358,618 @@ defmodule SpitfireGrammarTest do
 
   describe "unmatched_expr" do
     test "matched_expr unmatched_op_expr" do
-      code = "a = 1"
+      # match_op_eol unmatched_op_expr
+      code = "1 = if true do\n:ok\nend"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "1 =\n if true do\n:ok\nend"
+      assert Spitfire.parse(code) == s2q(code)
+      # dual_op_eol unmatched_op_expr
+      code = "1 + if true do\n:ok\nend"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "1 +\nif true do\n:ok\nend"
+      assert Spitfire.parse(code) == s2q(code)
+      # mult_op_eol unmatched_op_expr
+      code = "1 * if true do\n:ok\nend"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "1 *\nif true do\n:ok\nend"
+      assert Spitfire.parse(code) == s2q(code)
+      # power_op_eol unmatched_op_expr
+      code = "1 ** if true do\n:ok\nend"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "1 **\nif true do\n:ok\nend"
+      assert Spitfire.parse(code) == s2q(code)
+      # concat_op_eol unmatched_op_expr
+      code = "1 <> if true do\n:ok\nend"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "1 <>\nif true do\n:ok\nend"
+      assert Spitfire.parse(code) == s2q(code)
+      # range_op_eol unmatched_op_expr
+      code = "1 .. if true do\n:ok\nend"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "1 ..\nif true do\n:ok\nend"
+      assert Spitfire.parse(code) == s2q(code)
+      # ternary_op_eol unmatched_op_expr
+      code = "1 // if true do\n:ok\nend"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "1 //\nif true do\n:ok\nend"
+      assert Spitfire.parse(code) == s2q(code)
+      # xor_op_eol unmatched_op_expr
+      code = "1 ^^^ if true do\n:ok\nend"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "1 ^^^\nif true do\n:ok\nend"
+      assert Spitfire.parse(code) == s2q(code)
+      # and_op_eol unmatched_op_expr
+      code = "1 && if true do\n:ok\nend"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "1 &&\nif true do\n:ok\nend"
+      assert Spitfire.parse(code) == s2q(code)
+      # or_op_eol unmatched_op_expr
+      code = "1 || if true do\n:ok\nend"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "1 ||\nif true do\n:ok\nend"
+      assert Spitfire.parse(code) == s2q(code)
+      # in_op_eol unmatched_op_expr
+      code = "1 in if true do\n:ok\nend"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "1 in\nif true do\n:ok\nend"
+      assert Spitfire.parse(code) == s2q(code)
+      # in_match_op_eol unmatched_op_expr
+      code = "1 <- if true do\n:ok\nend"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "1 <-\nif true do\n:ok\nend"
+      assert Spitfire.parse(code) == s2q(code)
+      # type_op_eol unmatched_op_expr
+      code = "1 :: if true do\n:ok\nend"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "1 ::\nif true do\n:ok\nend"
+      assert Spitfire.parse(code) == s2q(code)
+      # when_op_eol unmatched_op_expr
+      code = "1 when if true do\n:ok\nend"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "1 when\nif true do\n:ok\nend"
+      assert Spitfire.parse(code) == s2q(code)
+      # pipe_op_eol unmatched_op_expr
+      code = "1 | if true do\n:ok\nend"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "1 |\nif true do\n:ok\nend"
+      assert Spitfire.parse(code) == s2q(code)
+      # comp_op_eol unmatched_op_expr
+      code = "1 == if true do\n:ok\nend"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "1 ==\nif true do\n:ok\nend"
+      assert Spitfire.parse(code) == s2q(code)
+      # rel_op_eol unmatched_op_expr
+      code = "1 < if true do\n:ok\nend"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "1 <\nif true do\n:ok\nend"
+      assert Spitfire.parse(code) == s2q(code)
+      # arrow_op_eol unmatched_op_expr
+      code = "1 <~> if true do\n:ok\nend"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "1 <~>\nif true do\n:ok\nend"
       assert Spitfire.parse(code) == s2q(code)
     end
 
     test "unmatched_expr matched_op_expr" do
-      code = "a = 1 + 2"
+      # match_op_eol matched_expr
+      code = "if true do\n:ok\nend = 2"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "if true do\n:ok\nend =\n2"
+      assert Spitfire.parse(code) == s2q(code)
+      # dual_op_eol matched_expr
+      code = "if true do\n:ok\nend + 2"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "if true do\n:ok\nend +\n2"
+      assert Spitfire.parse(code) == s2q(code)
+      # mult_op_eol matched_expr
+      code = "if true do\n:ok\nend * 2"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "if true do\n:ok\nend *\n2"
+      assert Spitfire.parse(code) == s2q(code)
+      # power_op_eol matched_expr
+      code = "if true do\n:ok\nend ** 2"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "if true do\n:ok\nend **\n2"
+      assert Spitfire.parse(code) == s2q(code)
+      # concat_op_eol matched_expr
+      code = "if true do\n:ok\nend <> 2"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "if true do\n:ok\nend <>\n2"
+      assert Spitfire.parse(code) == s2q(code)
+      # range_op_eol matched_expr
+      code = "if true do\n:ok\nend .. 2"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "if true do\n:ok\nend ..\n2"
+      assert Spitfire.parse(code) == s2q(code)
+      # ternary_op_eol matched_expr
+      code = "if true do\n:ok\nend // 2"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "if true do\n:ok\nend //\n2"
+      assert Spitfire.parse(code) == s2q(code)
+      # xor_op_eol matched_expr
+      code = "if true do\n:ok\nend ^^^ 2"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "if true do\n:ok\nend ^^^\n2"
+      assert Spitfire.parse(code) == s2q(code)
+      # and_op_eol matched_expr
+      code = "if true do\n:ok\nend && 2"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "if true do\n:ok\nend &&\n2"
+      assert Spitfire.parse(code) == s2q(code)
+      # or_op_eol matched_expr
+      code = "if true do\n:ok\nend || 2"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "if true do\n:ok\nend ||\n2"
+      assert Spitfire.parse(code) == s2q(code)
+      # in_op_eol matched_expr
+      code = "if true do\n:ok\nend in 2"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "if true do\n:ok\nend in\n2"
+      assert Spitfire.parse(code) == s2q(code)
+      # in_match_op_eol matched_expr
+      code = "if true do\n:ok\nend <- 2"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "if true do\n:ok\nend <-\n2"
+      assert Spitfire.parse(code) == s2q(code)
+      # type_op_eol matched_expr
+      code = "if true do\n:ok\nend :: 2"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "if true do\n:ok\nend ::\n2"
+      assert Spitfire.parse(code) == s2q(code)
+      # when_op_eol matched_expr
+      code = "if true do\n:ok\nend when 2"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "if true do\n:ok\nend when\n2"
+      assert Spitfire.parse(code) == s2q(code)
+      # pipe_op_eol matched_expr
+      code = "if true do\n:ok\nend | 2"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "if true do\n:ok\nend |\n2"
+      assert Spitfire.parse(code) == s2q(code)
+      # comp_op_eol matched_expr
+      code = "if true do\n:ok\nend == 2"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "if true do\n:ok\nend ==\n2"
+      assert Spitfire.parse(code) == s2q(code)
+      # rel_op_eol matched_expr
+      code = "if true do\n:ok\nend < 2"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "if true do\n:ok\nend <\n2"
+      assert Spitfire.parse(code) == s2q(code)
+      # arrow_op_eol matched_expr
+      code = "if true do\n:ok\nend <~> 2"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "if true do\n:ok\nend <~>\n2"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "unmatched_expr matched_op_expr - arrow_op_eol no_parens_one_expr" do
+      # identifier matched_expr
+      code = "if true do\n:ok\nend |> a 2"
+      assert Spitfire.parse(code) == s2q(code)
+
+      # op_identifier matched_expr
+      code = "if true do\n:ok\nend |> a -2"
+      assert Spitfire.parse(code) == s2q(code)
+
+      # identifier call_args_no_parens_kw
+      code = "if true do\n:ok\nend |> a x: 2"
+      assert Spitfire.parse(code) == s2q(code)
+
+      # matched_expr dot_op identifier matched_expr
+      code = "if true do\n:ok\nend |> a.b 2"
+      assert Spitfire.parse(code) == s2q(code)
+
+      # matched_expr dot_op op_identifier matched_expr
+      code = "if true do\n:ok\nend |> a.b -2"
+      assert Spitfire.parse(code) == s2q(code)
+
+      # matched_expr dot_op identifier call_args_no_parens_kw
+      code = "if true do\n:ok\nend |> a.b x: 2"
       assert Spitfire.parse(code) == s2q(code)
     end
 
     test "unmatched_expr unmatched_op_expr" do
-      code = "a = b = 1"
+      # match_op_eol matched_expr
+      code = "if true do\n:ok\nend = unless false do\n:error\nend"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "if true do\n:ok\nend =\nunless false do\n:error\nend"
+      assert Spitfire.parse(code) == s2q(code)
+      # dual_op_eol matched_expr
+      code = "if true do\n:ok\nend + unless false do\n:error\nend"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "if true do\n:ok\nend +\nunless false do\n:error\nend"
+      assert Spitfire.parse(code) == s2q(code)
+      # mult_op_eol matched_expr
+      code = "if true do\n:ok\nend * unless false do\n:error\nend"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "if true do\n:ok\nend *\nunless false do\n:error\nend"
+      assert Spitfire.parse(code) == s2q(code)
+      # power_op_eol matched_expr
+      code = "if true do\n:ok\nend ** unless false do\n:error\nend"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "if true do\n:ok\nend **\nunless false do\n:error\nend"
+      assert Spitfire.parse(code) == s2q(code)
+      # concat_op_eol matched_expr
+      code = "if true do\n:ok\nend <> unless false do\n:error\nend"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "if true do\n:ok\nend <>\nunless false do\n:error\nend"
+      assert Spitfire.parse(code) == s2q(code)
+      # range_op_eol matched_expr
+      code = "if true do\n:ok\nend .. unless false do\n:error\nend"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "if true do\n:ok\nend ..\nunless false do\n:error\nend"
+      assert Spitfire.parse(code) == s2q(code)
+      # ternary_op_eol matched_expr
+      code = "if true do\n:ok\nend // unless false do\n:error\nend"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "if true do\n:ok\nend //\nunless false do\n:error\nend"
+      assert Spitfire.parse(code) == s2q(code)
+      # xor_op_eol matched_expr
+      code = "if true do\n:ok\nend ^^^ unless false do\n:error\nend"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "if true do\n:ok\nend ^^^\nunless false do\n:error\nend"
+      assert Spitfire.parse(code) == s2q(code)
+      # and_op_eol matched_expr
+      code = "if true do\n:ok\nend && unless false do\n:error\nend"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "if true do\n:ok\nend &&\nunless false do\n:error\nend"
+      assert Spitfire.parse(code) == s2q(code)
+      # or_op_eol matched_expr
+      code = "if true do\n:ok\nend || unless false do\n:error\nend"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "if true do\n:ok\nend ||\nunless false do\n:error\nend"
+      assert Spitfire.parse(code) == s2q(code)
+      # in_op_eol matched_expr
+      code = "if true do\n:ok\nend in unless false do\n:error\nend"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "if true do\n:ok\nend in\nunless false do\n:error\nend"
+      assert Spitfire.parse(code) == s2q(code)
+      # in_match_op_eol matched_expr
+      code = "if true do\n:ok\nend <- unless false do\n:error\nend"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "if true do\n:ok\nend <-\nunless false do\n:error\nend"
+      assert Spitfire.parse(code) == s2q(code)
+      # type_op_eol matched_expr
+      code = "if true do\n:ok\nend :: unless false do\n:error\nend"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "if true do\n:ok\nend ::\nunless false do\n:error\nend"
+      assert Spitfire.parse(code) == s2q(code)
+      # when_op_eol matched_expr
+      code = "if true do\n:ok\nend when unless false do\n:error\nend"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "if true do\n:ok\nend when\nunless false do\n:error\nend"
+      assert Spitfire.parse(code) == s2q(code)
+      # pipe_op_eol matched_expr
+      code = "if true do\n:ok\nend | unless false do\n:error\nend"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "if true do\n:ok\nend |\nunless false do\n:error\nend"
+      assert Spitfire.parse(code) == s2q(code)
+      # comp_op_eol matched_expr
+      code = "if true do\n:ok\nend == unless false do\n:error\nend"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "if true do\n:ok\nend ==\nunless false do\n:error\nend"
+      assert Spitfire.parse(code) == s2q(code)
+      # rel_op_eol matched_expr
+      code = "if true do\n:ok\nend < unless false do\n:error\nend"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "if true do\n:ok\nend <\nunless false do\n:error\nend"
+      assert Spitfire.parse(code) == s2q(code)
+      # arrow_op_eol matched_expr
+      code = "if true do\n:ok\nend <~> unless false do\n:error\nend"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "if true do\n:ok\nend <~>\nunless false do\n:error\nend"
       assert Spitfire.parse(code) == s2q(code)
     end
 
     test "unmatched_expr no_parens_op_expr" do
-      code = "a = foo 1"
+      # match_op_eol matched_expr
+      code = "if true do\n:ok\nend = foo 1, 2"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "if true do\n:ok\nend =\nfoo 1, 2"
+      assert Spitfire.parse(code) == s2q(code)
+      # dual_op_eol matched_expr
+      code = "if true do\n:ok\nend + foo 1, 2"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "if true do\n:ok\nend +\nfoo 1, 2"
+      assert Spitfire.parse(code) == s2q(code)
+      # mult_op_eol matched_expr
+      code = "if true do\n:ok\nend * foo 1, 2"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "if true do\n:ok\nend *\nfoo 1, 2"
+      assert Spitfire.parse(code) == s2q(code)
+      # power_op_eol matched_expr
+      code = "if true do\n:ok\nend ** foo 1, 2"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "if true do\n:ok\nend **\nfoo 1, 2"
+      assert Spitfire.parse(code) == s2q(code)
+      # concat_op_eol matched_expr
+      code = "if true do\n:ok\nend <> foo 1, 2"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "if true do\n:ok\nend <>\nfoo 1, 2"
+      assert Spitfire.parse(code) == s2q(code)
+      # range_op_eol matched_expr
+      code = "if true do\n:ok\nend .. foo 1, 2"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "if true do\n:ok\nend ..\nfoo 1, 2"
+      assert Spitfire.parse(code) == s2q(code)
+      # ternary_op_eol matched_expr
+      code = "if true do\n:ok\nend // foo 1, 2"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "if true do\n:ok\nend //\nfoo 1, 2"
+      assert Spitfire.parse(code) == s2q(code)
+      # xor_op_eol matched_expr
+      code = "if true do\n:ok\nend ^^^ foo 1, 2"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "if true do\n:ok\nend ^^^\nfoo 1, 2"
+      assert Spitfire.parse(code) == s2q(code)
+      # and_op_eol matched_expr
+      code = "if true do\n:ok\nend && foo 1, 2"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "if true do\n:ok\nend &&\nfoo 1, 2"
+      assert Spitfire.parse(code) == s2q(code)
+      # or_op_eol matched_expr
+      code = "if true do\n:ok\nend || foo 1, 2"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "if true do\n:ok\nend ||\nfoo 1, 2"
+      assert Spitfire.parse(code) == s2q(code)
+      # in_op_eol matched_expr
+      code = "if true do\n:ok\nend in foo 1, 2"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "if true do\n:ok\nend in\nfoo 1, 2"
+      assert Spitfire.parse(code) == s2q(code)
+      # in_match_op_eol matched_expr
+      code = "if true do\n:ok\nend <- foo 1, 2"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "if true do\n:ok\nend <-\nfoo 1, 2"
+      assert Spitfire.parse(code) == s2q(code)
+      # type_op_eol matched_expr
+      code = "if true do\n:ok\nend :: foo 1, 2"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "if true do\n:ok\nend ::\nfoo 1, 2"
+      assert Spitfire.parse(code) == s2q(code)
+      # when_op_eol matched_expr
+      code = "if true do\n:ok\nend when foo 1, 2"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "if true do\n:ok\nend when\nfoo 1, 2"
+      assert Spitfire.parse(code) == s2q(code)
+      # pipe_op_eol matched_expr
+      code = "if true do\n:ok\nend | foo 1, 2"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "if true do\n:ok\nend |\nfoo 1, 2"
+      assert Spitfire.parse(code) == s2q(code)
+      # comp_op_eol matched_expr
+      code = "if true do\n:ok\nend == foo 1, 2"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "if true do\n:ok\nend ==\nfoo 1, 2"
+      assert Spitfire.parse(code) == s2q(code)
+      # rel_op_eol matched_expr
+      code = "if true do\n:ok\nend < foo 1, 2"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "if true do\n:ok\nend <\nfoo 1, 2"
+      assert Spitfire.parse(code) == s2q(code)
+      # arrow_op_eol matched_expr
+      code = "if true do\n:ok\nend <~> foo 1, 2"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "if true do\n:ok\nend <~>\nfoo 1, 2"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "unmatched_expr no_parens_op_expr - when_op_eol call_args_no_parens_kw" do
+      code = "if true do\n:ok\nend when foo: 2"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "if true do\n:ok\nend when\nfoo: 2"
       assert Spitfire.parse(code) == s2q(code)
     end
 
     test "unary_op_eol expr" do
-      # This is tricky. unmatched_expr -> unary_op_eol expr
-      # `! a = 1` -> `!(a = 1)`
-      code = "! a = 1"
+      # unmatched_expr
+      code = "!if true do\n:ok\nend"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "!\nif true do\n:ok\nend"
+      assert Spitfire.parse(code) == s2q(code)
+      # no_parens_expr
+      code = "!foo 1, 2"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "!\nfoo 1, 2"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "at_op_eol expr" do
+      # unmatched_expr
+      code = "@if true do\n:ok\nend"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "@\nif true do\n:ok\nend"
+      assert Spitfire.parse(code) == s2q(code)
+      # no_parens_expr
+      code = "@foo 1, 2"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "@\nfoo 1, 2"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "capture_op_eol expr" do
+      # unmatched_expr
+      code = "&if true do\n:ok\nend"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "&\nif true do\n:ok\nend"
+      assert Spitfire.parse(code) == s2q(code)
+      # no_parens_expr
+      code = "&foo 1, 2"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "&\nfoo 1, 2"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "ellipsis_op expr" do
+      # unmatched_expr
+      code = "...if true do\n:ok\nend"
+      assert Spitfire.parse(code) == s2q(code)
+      # no_parens_expr
+      code = "...foo 1, 2"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "block_expr (dot_do_identifier do_block)" do
+      # TODO
+      code = "foo do end"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "block_expr (dot_identifier call_args_no_parens_all do_block)" do
+      # TODO
+      code = "foo 1 do end"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "block_expr (dot_call_identifier call_args_parens do_block)" do
+      # TODO
+      code = "foo() do end"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "block_expr (dot_call_identifier call_args_parens call_args_parens do_block)" do
+      # TODO
+      code = "foo()() do end"
       assert Spitfire.parse(code) == s2q(code)
     end
   end
 
   describe "no_parens_expr" do
     test "matched_expr no_parens_op_expr" do
-      code = "1 + foo 1"
+      # match_op_eol matched_expr
+      code = "1 = foo 3, 4"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "1 =\nfoo 3, 4"
+      assert Spitfire.parse(code) == s2q(code)
+      # dual_op_eol matched_expr
+      code = "1 + foo 3, 4"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "1 +\nfoo 3, 4"
+      assert Spitfire.parse(code) == s2q(code)
+      # mult_op_eol matched_expr
+      code = "1 * foo 3, 4"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "1 *\nfoo 3, 4"
+      assert Spitfire.parse(code) == s2q(code)
+      # power_op_eol matched_expr
+      code = "1 ** foo 3, 4"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "1 **\nfoo 3, 4"
+      assert Spitfire.parse(code) == s2q(code)
+      # concat_op_eol matched_expr
+      code = "1 <> foo 3, 4"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "1 <>\nfoo 3, 4"
+      assert Spitfire.parse(code) == s2q(code)
+      # range_op_eol matched_expr
+      code = "1 .. foo 3, 4"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "1 ..\nfoo 3, 4"
+      assert Spitfire.parse(code) == s2q(code)
+      # ternary_op_eol matched_expr
+      code = "1 // foo 3, 4"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "1 //\nfoo 3, 4"
+      assert Spitfire.parse(code) == s2q(code)
+      # xor_op_eol matched_expr
+      code = "1 ^^^ foo 3, 4"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "1 ^^^\nfoo 3, 4"
+      assert Spitfire.parse(code) == s2q(code)
+      # and_op_eol matched_expr
+      code = "1 && foo 3, 4"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "1 &&\nfoo 3, 4"
+      assert Spitfire.parse(code) == s2q(code)
+      # or_op_eol matched_expr
+      code = "1 || foo 3, 4"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "1 ||\nfoo 3, 4"
+      assert Spitfire.parse(code) == s2q(code)
+      # in_op_eol matched_expr
+      code = "1 in foo 3, 4"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "1 in\nfoo 3, 4"
+      assert Spitfire.parse(code) == s2q(code)
+      # in_match_op_eol matched_expr
+      code = "1 <- foo 3, 4"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "1 <-\nfoo 3, 4"
+      assert Spitfire.parse(code) == s2q(code)
+      # type_op_eol matched_expr
+      code = "1 :: foo 3, 4"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "1 ::\nfoo 3, 4"
+      assert Spitfire.parse(code) == s2q(code)
+      # when_op_eol matched_expr
+      code = "1 when foo 3, 4"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "1 when\nfoo 3, 4"
+      assert Spitfire.parse(code) == s2q(code)
+      # pipe_op_eol matched_expr
+      code = "1 | foo 3, 4"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "1 |\nfoo 3, 4"
+      assert Spitfire.parse(code) == s2q(code)
+      # comp_op_eol matched_expr
+      code = "1 == foo 3, 4"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "1 ==\nfoo 3, 4"
+      assert Spitfire.parse(code) == s2q(code)
+      # rel_op_eol matched_expr
+      code = "1 < foo 3, 4"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "1 <\nfoo 3, 4"
+      assert Spitfire.parse(code) == s2q(code)
+      # arrow_op_eol matched_expr
+      code = "1 <~> foo 3, 4"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "1 <~>\nfoo 3, 4"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "matched_expr no_parens_op_expr - when_op_eol call_args_no_parens_kw" do
+      code = "1 when foo: 2"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "1 when\nfoo: 2"
       assert Spitfire.parse(code) == s2q(code)
     end
 
     test "unary_op_eol no_parens_expr" do
-      code = "! foo 1"
+      code = "!foo 1, 2"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "!\nfoo 1, 2"
       assert Spitfire.parse(code) == s2q(code)
     end
 
     test "at_op_eol no_parens_expr" do
-      code = "@foo 1"
+      code = "@foo 1, 2"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "@\nfoo 1, 2"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "capture_op_eol no_parens_expr" do
+      code = "&foo 1, 2"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "&\nfoo 1, 2"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "ellipsis_op_eol no_parens_expr" do
+      code = "...foo 1, 2"
       assert Spitfire.parse(code) == s2q(code)
     end
 
     test "no_parens_one_ambig_expr" do
-      code = "foo bar 1"
+      # TODO
+      code = "foo bar 1, 2"
       assert Spitfire.parse(code) == s2q(code)
     end
 
     test "no_parens_many_expr" do
+      # TODO
       code = "foo 1, 2"
       assert Spitfire.parse(code) == s2q(code)
     end
