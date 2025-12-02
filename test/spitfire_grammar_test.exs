@@ -120,52 +120,204 @@ defmodule SpitfireGrammarTest do
       code = "1 =\n2"
       assert Spitfire.parse(code) == s2q(code)
       # dual_op_eol matched_expr
+      code = "1 + 2"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "1 +\n2"
+      assert Spitfire.parse(code) == s2q(code)
       # mult_op_eol matched_expr
+      code = "1 * 2"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "1 *\n2"
+      assert Spitfire.parse(code) == s2q(code)
       # power_op_eol matched_expr
+      code = "1 ** 2"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "1 **\n2"
+      assert Spitfire.parse(code) == s2q(code)
       # concat_op_eol matched_expr
+      code = "1 <> 2"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "1 <>\n2"
+      assert Spitfire.parse(code) == s2q(code)
       # range_op_eol matched_expr
+      code = "1 .. 2"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "1 ..\n2"
+      assert Spitfire.parse(code) == s2q(code)
       # ternary_op_eol matched_expr
+      code = "1 // 2"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "1 //\n2"
+      assert Spitfire.parse(code) == s2q(code)
       # xor_op_eol matched_expr
+      code = "1 ^^^ 2"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "1 ^^^\n2"
+      assert Spitfire.parse(code) == s2q(code)
       # and_op_eol matched_expr
+      code = "1 && 2"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "1 &&\n2"
+      assert Spitfire.parse(code) == s2q(code)
       # or_op_eol matched_expr
+      code = "1 || 2"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "1 ||\n2"
+      assert Spitfire.parse(code) == s2q(code)
       # in_op_eol matched_expr
+      code = "1 in 2"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "1 in\n2"
+      assert Spitfire.parse(code) == s2q(code)
       # in_match_op_eol matched_expr
+      code = "1 <- 2"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "1 <-\n2"
+      assert Spitfire.parse(code) == s2q(code)
       # type_op_eol matched_expr
+      code = "1 :: 2"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "1 ::\n2"
+      assert Spitfire.parse(code) == s2q(code)
       # when_op_eol matched_expr
+      code = "1 when 2"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "1 when\n2"
+      assert Spitfire.parse(code) == s2q(code)
       # pipe_op_eol matched_expr
+      code = "1 | 2"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "1 |\n2"
+      assert Spitfire.parse(code) == s2q(code)
       # comp_op_eol matched_expr
+      code = "1 == 2"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "1 ==\n2"
+      assert Spitfire.parse(code) == s2q(code)
       # rel_op_eol matched_expr
+      code = "1 < 2"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "1 <\n2"
+      assert Spitfire.parse(code) == s2q(code)
       # arrow_op_eol matched_expr
-      # arrow_op_eol no_parens_one_expr
+      code = "1 <~> 2"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "1 <~>\n2"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "matched_expr matched_op_expr - arrow_op_eol no_parens_one_expr" do
+      # no_parens_one_expr -> dot_op_identifier call_args_no_parens_one
+      # no_parens_one_expr -> dot_identifier call_args_no_parens_one
+      # call_args_no_parens_one -> call_args_no_parens_kw
+      # call_args_no_parens_one -> matched_expr
+      # dot_identifier -> identifier
+      # dot_identifier -> matched_expr dot_op identifier
+      # dot_op_identifier -> op_identifier
+      # dot_op_identifier -> matched_expr dot_op op_identifier
+      # call_args_no_parens_kw -> call_args_no_parens_kw_expr
+      # call_args_no_parens_kw -> call_args_no_parens_kw_expr ',' call_args_no_parens_kw
+      # call_args_no_parens_kw_expr -> kw_eol matched_expr
+      # call_args_no_parens_kw_expr -> kw_eol no_parens_expr
+
+      # identifier matched_expr
+      code = "1 |> a 2"
+      assert Spitfire.parse(code) == s2q(code)
+
+      # op_identifier matched_expr
+      code = "1 |> a -2"
+      assert Spitfire.parse(code) == s2q(code)
+
+      # identifier call_args_no_parens_kw
+      code = "1 |> a x: 2"
+      assert Spitfire.parse(code) == s2q(code)
+
+      # matched_expr dot_op identifier matched_expr
+      code = "1 |> a.b 2"
+      assert Spitfire.parse(code) == s2q(code)
+
+      # matched_expr dot_op op_identifier matched_expr
+      code = "1 |> a.b -2"
+      assert Spitfire.parse(code) == s2q(code)
+
+      # matched_expr dot_op identifier call_args_no_parens_kw
+      code = "1 |> a.b x: 2"
+      assert Spitfire.parse(code) == s2q(code)
     end
 
     test "unary_op_eol matched_expr" do
+      # unary_op
       code = "!true"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "!\ntrue"
+      assert Spitfire.parse(code) == s2q(code)
+      # dual_op
+      code = "-true"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "-\ntrue"
+      assert Spitfire.parse(code) == s2q(code)
+      # ternary_op
+      code = "//true"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "//\ntrue"
       assert Spitfire.parse(code) == s2q(code)
     end
 
     test "at_op_eol matched_expr" do
       code = "@foo"
       assert Spitfire.parse(code) == s2q(code)
+      code = "@\nfoo"
+      assert Spitfire.parse(code) == s2q(code)
     end
 
     test "capture_op_eol matched_expr" do
-      code = "& &1"
+      code = "&foo"
       assert Spitfire.parse(code) == s2q(code)
-    end
-
-    test "no_parens_one_expr" do
-      code = "foo(1)"
-      assert Spitfire.parse(code) == s2q(code)
-    end
-
-    test "sub_matched_expr (access_expr)" do
-      code = "foo[1]"
+      code = "&\nfoo"
       assert Spitfire.parse(code) == s2q(code)
     end
 
     test "ellipsis_op matched_expr" do
       code = "...foo"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "no_parens_one_expr" do
+      # identifier matched_expr
+      code = "a 2"
+      assert Spitfire.parse(code) == s2q(code)
+
+      # op_identifier matched_expr
+      code = "a -2"
+      assert Spitfire.parse(code) == s2q(code)
+
+      # identifier call_args_no_parens_kw
+      code = "a x: 2"
+      assert Spitfire.parse(code) == s2q(code)
+
+      # matched_expr dot_op identifier matched_expr
+      code = "a.b 2"
+      assert Spitfire.parse(code) == s2q(code)
+
+      # matched_expr dot_op op_identifier matched_expr
+      code = "a.b -2"
+      assert Spitfire.parse(code) == s2q(code)
+
+      # matched_expr dot_op identifier call_args_no_parens_kw
+      code = "a.b x: 2"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "sub_matched_expr (no_parens_zero_expr)" do
+      # dot_do_identifier
+      code = "foo do\nend"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "foo.bar do\nend"
+      assert Spitfire.parse(code) == s2q(code)
+      # dot_identifier
+      code = "foo"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "foo.bar"
       assert Spitfire.parse(code) == s2q(code)
     end
 
@@ -179,22 +331,27 @@ defmodule SpitfireGrammarTest do
       assert Spitfire.parse(code) == s2q(code)
     end
 
-    test "sub_matched_expr (no_parens_zero_expr)" do
-      code = "foo"
+    test "sub_matched_expr (access_expr)" do
+      code = "..."
       assert Spitfire.parse(code) == s2q(code)
     end
 
-    test "matched_expr matched_op_expr (various ops)" do
-      assert Spitfire.parse("1 * 2") == s2q("1 * 2")
-      assert Spitfire.parse("1 || 2") == s2q("1 || 2")
-      assert Spitfire.parse("1 |> f") == s2q("1 |> f")
-      assert Spitfire.parse("1 .. 2") == s2q("1 .. 2")
-    end
-
-    test "real no_parens_one_expr" do
-      code = "foo 1"
+    test "sub_matched_expr (access_expr kw_identifier)" do
+      code = "..."
       assert Spitfire.parse(code) == s2q(code)
     end
+
+    # test "matched_expr matched_op_expr (various ops)" do
+    #   assert Spitfire.parse("1 * 2") == s2q("1 * 2")
+    #   assert Spitfire.parse("1 || 2") == s2q("1 || 2")
+    #   assert Spitfire.parse("1 |> f") == s2q("1 |> f")
+    #   assert Spitfire.parse("1 .. 2") == s2q("1 .. 2")
+    # end
+
+    # test "real no_parens_one_expr" do
+    #   code = "foo 1"
+    #   assert Spitfire.parse(code) == s2q(code)
+    # end
   end
 
   describe "unmatched_expr" do

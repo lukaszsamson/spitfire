@@ -214,10 +214,15 @@ defmodule Spitfire do
           |> normalize_ast()
           |> strip_ranges_if_needed(opts)
 
-        if errors == [] do
-          {:ok, ast}
-        else
-          {:error, ast, Enum.reverse(errors)}
+        cond do
+          parser_after.fatal_error ->
+            {:error, parser_after.fatal_error}
+
+          errors == [] ->
+            {:ok, ast}
+
+          true ->
+            {:error, ast, Enum.reverse(errors)}
         end
     end
   rescue
@@ -436,6 +441,7 @@ defmodule Spitfire do
           :unary_op -> &parse_prefix_expression/1
           :capture_op -> &parse_capture_expression/1
           :dual_op -> &parse_prefix_expression/1
+          :ternary_op -> &parse_prefix_expression/1
           :capture_int -> &parse_capture_int/1
           :stab_op -> &parse_stab_expression/1
           :range_op -> &parse_range_expression/1
@@ -1107,7 +1113,7 @@ defmodule Spitfire do
 
       precedence =
         cond do
-          token_type == :dual_op ->
+          token_type in [:dual_op, :ternary_op] ->
             # dual ops are treated as unary ops when being used as a prefix operator
             @unary_op
 
@@ -1135,7 +1141,26 @@ defmodule Spitfire do
       {rhs, parser} = parse_expression(parser, effective_precedence, false, false, false)
 
       ast =
-        {token, meta, [rhs]}
+        case {token_type, token} do
+          {:ternary_op, :"//"} ->
+            {outer_meta, inner_meta} =
+              case {Keyword.get(meta, :line), Keyword.get(meta, :column)} do
+                {line, col} when is_integer(line) and is_integer(col) ->
+                  {[line: line, column: col + 1], [line: line, column: col]}
+
+                _ ->
+                  {meta, meta}
+              end
+
+            rest_meta = Keyword.drop(meta, [:line, :column])
+            outer_meta = outer_meta ++ rest_meta
+            inner_meta = inner_meta ++ rest_meta
+
+            {:/, outer_meta, [{:/, inner_meta, nil}, rhs]}
+
+          _ ->
+            {token, meta, [rhs]}
+        end
         |> attach_op_range(op_range)
 
       {ast, parser}
@@ -1596,12 +1621,22 @@ defmodule Spitfire do
             {{:..//, range_meta, [start, stop, rhs]}, parser}
 
           _ ->
+            message =
+              "the range step operator (//) must immediately follow the range definition operator (..), for example: 1..9//2. If you wanted to define a default argument, use (\\\\) instead. Syntax error before: "
+
+            location_meta =
+              case Keyword.take(meta, [:line, :column]) do
+                [] -> meta
+                loc -> loc
+              end
+
             parser =
               put_error(
                 parser,
-                {meta,
-                 "the range step operator (//) must immediately follow the range definition operator (..), for example: 1..9//2. If you wanted to define a default argument, use (\\\\) instead. Syntax error before: '//'"}
+                {meta, message <> "'//'"}
               )
+
+            parser = Map.put(parser, :fatal_error, {location_meta, message, "'//'"})
 
             {{token, meta, [lhs, rhs]}, parser}
         end
@@ -1618,10 +1653,31 @@ defmodule Spitfire do
       meta = current_meta(parser)
       op_range = token_range(parser.current_token)
       precedence = current_precedence(parser)
-      parser = next_token(parser)
+      pre_parser = parser
+
+      newlines =
+        case current_newlines(parser) || peek_newlines(parser, :eol) do
+          nil -> []
+          nl -> [newlines: nl]
+        end
+
+      parser = parser |> next_token() |> eat_eol()
+
       {rhs, parser} = parse_expression(parser, precedence, false, false, false)
 
-      {ast, parser} = {{token, meta, [lhs, rhs]}, eat_eol(parser)}
+      {rhs, parser} =
+        case rhs do
+          {:__block__, [{:error, true} | _], []} ->
+            parser =
+              put_error(pre_parser, {meta, "malformed right-hand side of #{token} operator"})
+
+            {{:__block__, [{:error, true} | meta], []}, parser}
+
+          _ ->
+            {rhs, parser}
+        end
+
+      {ast, parser} = {{token, newlines ++ meta, [lhs, rhs]}, eat_eol(parser)}
 
       ast = attach_op_range(ast, op_range)
 
@@ -2021,11 +2077,18 @@ defmodule Spitfire do
 
           {ast, eat_eol(parser)}
 
-        type when type in [:identifier, :paren_identifier, :do_identifier] ->
+        type when type in [:identifier, :paren_identifier, :do_identifier, :op_identifier] ->
           parser = next_token(parser)
 
           {{rhs_form, rhs_meta, rhs_args} = rhs_ast, parser} =
             parse_expression(parser, precedence, false, false, false)
+
+          rhs_meta =
+            if type == :op_identifier do
+              Keyword.delete(rhs_meta, :ambiguous_op)
+            else
+              rhs_meta
+            end
 
           args =
             if rhs_args == nil do
@@ -4094,6 +4157,7 @@ defmodule Spitfire do
       saved_nesting_stack: [],
       produced_kw_pair: false,
       errors: [],
+      fatal_error: nil,
       last_span: nil,
       capture_name_context: 0
     }
