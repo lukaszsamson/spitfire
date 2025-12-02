@@ -209,7 +209,7 @@ defmodule Spitfire do
     # eat all the beginning eol tokens in case the file starts with a comment
     parser =
       while current_token(parser) in [:eol, :";"] <- parser do
-        next_token(parser)
+        skip_eoe(parser)
       end
 
     case parse_program(parser) do
@@ -325,7 +325,7 @@ defmodule Spitfire do
       {exprs, parser} =
         while2 current_token(parser) != :eof <- parser do
           if current_token(parser) in [:eol, :";"] do
-            {:filter, {nil, next_token(parser)}}
+            {:filter, {nil, skip_eoe(parser)}}
           else
             {ast, parser} = parse_expression(parser, @lowest, false, false, true)
 
@@ -442,7 +442,6 @@ defmodule Spitfire do
           :"[" -> &parse_list_literal/1
           :"(" -> &parse_grouped_expression/1
           :"{" -> &parse_tuple_literal/1
-          :";" -> raise "semicolon"
           :%{} -> &parse_map_literal/1
           :% -> &parse_struct_literal/1
           :ellipsis_op -> &parse_ellipsis_op/1
@@ -4141,6 +4140,14 @@ defmodule Spitfire do
 
   defp eat(edibles, parser) when is_map(edibles) do
     if is_map_key(edibles, current_token_type(parser)) do
+      next_token(parser)
+    else
+      parser
+    end
+  end
+
+  defp skip_eoe(parser) do
+    if current_token(parser) in [:eol, :";"] do
       next_token(parser)
     else
       parser
