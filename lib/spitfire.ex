@@ -208,7 +208,7 @@ defmodule Spitfire do
 
     # eat all the beginning eol tokens in case the file starts with a comment
     parser =
-      while current_token(parser) == :eol <- parser do
+      while current_token(parser) in [:eol, :";"] <- parser do
         next_token(parser)
       end
 
@@ -324,23 +324,27 @@ defmodule Spitfire do
     trace "parse_program", trace_meta(parser) do
       {exprs, parser} =
         while2 current_token(parser) != :eof <- parser do
-          {ast, parser} = parse_expression(parser, @lowest, false, false, true)
+          if current_token(parser) in [:eol, :";"] do
+            {:filter, {nil, next_token(parser)}}
+          else
+            {ast, parser} = parse_expression(parser, @lowest, false, false, true)
 
-          parser =
-            cond do
-              match?({:__block__, [{:error, true} | _], _}, ast) ->
-                next_token(parser)
+            parser =
+              cond do
+                match?({:__block__, [{:error, true} | _], _}, ast) ->
+                  next_token(parser)
 
-              peek_token(parser) in [:eol, :";", :eof] ->
-                next_token(parser)
+                peek_token(parser) in [:eol, :";", :eof] ->
+                  next_token(parser)
 
-              true ->
-                parser
-            end
+                true ->
+                  parser
+              end
 
-          ast = push_eoe(ast, current_eoe(parser))
+            ast = push_eoe(ast, current_eoe(parser))
 
-          {ast, eat_eol(parser)}
+            {ast, eat_eol(parser)}
+          end
         end
 
       exprs = build_block_nr(exprs, parser)
