@@ -2314,6 +2314,7 @@ defmodule Spitfire do
                       errors: [],
                       last_span: nil,
                       literal_encoder: parser.literal_encoder,
+                      unescape_literals: Map.get(parser, :unescape_literals, true),
                       interpolation_depth: 0,
                       saved_nesting_stack: []
                     }
@@ -2397,6 +2398,7 @@ defmodule Spitfire do
                       errors: [],
                       last_span: nil,
                       literal_encoder: parser.literal_encoder,
+                      unescape_literals: Map.get(parser, :unescape_literals, true),
                       interpolation_depth: 0,
                       saved_nesting_stack: []
                     }
@@ -3385,6 +3387,7 @@ defmodule Spitfire do
                       errors: [],
                       last_span: nil,
                       literal_encoder: parser.literal_encoder,
+                      unescape_literals: Map.get(parser, :unescape_literals, true),
                       interpolation_depth: 0,
                       saved_nesting_stack: []
                     }
@@ -3429,8 +3432,8 @@ defmodule Spitfire do
         {:string_fragment, _tok_meta, content} = parser.current_token
         meta = current_meta(parser)
 
-        # Unescape content unless it's a sigil
-        content = if opts[:no_unescape], do: content, else: unescape_fragment(content)
+        # Unescape content unless the caller or parser opts say otherwise
+        content = maybe_unescape_fragment(content, parser, opts)
 
         # For heredocs, trim whitespace using indent from end token (handled later)
         parser = next_token(parser)
@@ -3598,6 +3601,16 @@ defmodule Spitfire do
     Macro.unescape_string(content)
   end
 
+  defp parser_unescape?(parser), do: Map.get(parser, :unescape_literals, true)
+
+  defp maybe_unescape_fragment(content, parser, opts \\ []) do
+    cond do
+      Keyword.get(opts, :no_unescape, false) -> content
+      parser_unescape?(parser) -> unescape_fragment(content)
+      true -> content
+    end
+  end
+
   # Helper function to build string parts from scanned fragments and interpolations
   defp build_string_parts(parts, _kind) do
     for part <- parts do
@@ -3696,7 +3709,7 @@ defmodule Spitfire do
       :string_fragment ->
         {:string_fragment, _tok_meta, content} = parser.current_token
         meta = current_meta(parser)
-        content = unescape_fragment(content)
+        content = maybe_unescape_fragment(content, parser)
         parser = next_token(parser)
         scan_identifier_loop(parser, [{:fragment, meta, content} | accumulator])
 
@@ -3805,11 +3818,16 @@ defmodule Spitfire do
               _ -> false
             end)
 
+          line = Keyword.fetch!(start_meta, :line)
+          column = Keyword.fetch!(start_meta, :column)
+          delimiter_code = if kind == :binary, do: ?", else: ?'
+          literal_parser = %{parser | current_token: {:kw_identifier, {line, column, delimiter_code}, nil}}
+
           key_ast =
             if has_only_fragments do
               merged = parts |> Enum.map(fn {:fragment, _m, c} -> c end) |> IO.iodata_to_binary()
               atom_value = String.to_atom(merged)
-              encode_literal(parser, atom_value, container_range)
+              encode_literal(literal_parser, atom_value, container_range)
             else
               args = build_string_parts(parts, :atom)
               binary_ast = {:<<>>, start_meta, args}
@@ -3900,7 +3918,7 @@ defmodule Spitfire do
       # Unescape all binary fragments after trimming
       unescaped_parts =
         Enum.map(trimmed_parts, fn
-          {:fragment, m, c} -> {:fragment, m, unescape_fragment(c)}
+          {:fragment, m, c} -> {:fragment, m, maybe_unescape_fragment(c, parser)}
           other -> other
         end)
 
@@ -4066,6 +4084,7 @@ defmodule Spitfire do
       peek_token: nil,
       nesting: 0,
       literal_encoder: Keyword.get(opts, :literal_encoder),
+      unescape_literals: Keyword.get(opts, :unescape, true),
       # Track interpolation nesting level
       interpolation_depth: 0,
       # Stack to save/restore nesting during interpolations
@@ -4831,6 +4850,11 @@ defmodule Spitfire do
 
   defp additional_meta(_literal, %{current_token: {:list_string, _, _}}) do
     [delimiter: "'"]
+  end
+
+  defp additional_meta(_literal, %{current_token: {:kw_identifier, {_, _, delimiter}, _}})
+       when is_integer(delimiter) do
+    [delimiter: <<delimiter>>, format: :keyword]
   end
 
   defp additional_meta(_literal, %{current_token: {:kw_identifier, _, _}}) do
