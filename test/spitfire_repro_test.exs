@@ -1,6 +1,5 @@
 defmodule SpitfireReproTest do
   use ExUnit.Case, async: false
-  import Spitfire.TestHelpers, except: [==: 2]
 
   setup do
     original = Application.get_env(:spitfire, :tokenizer, :legacy)
