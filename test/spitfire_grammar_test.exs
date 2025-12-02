@@ -114,8 +114,29 @@ defmodule SpitfireGrammarTest do
 
   describe "matched_expr" do
     test "matched_expr matched_op_expr" do
-      code = "1 + 2"
+      # match_op_eol matched_expr
+      code = "1 = 2"
       assert Spitfire.parse(code) == s2q(code)
+      code = "1 =\n2"
+      assert Spitfire.parse(code) == s2q(code)
+      # dual_op_eol matched_expr
+      # mult_op_eol matched_expr
+      # power_op_eol matched_expr
+      # concat_op_eol matched_expr
+      # range_op_eol matched_expr
+      # ternary_op_eol matched_expr
+      # xor_op_eol matched_expr
+      # and_op_eol matched_expr
+      # or_op_eol matched_expr
+      # in_op_eol matched_expr
+      # in_match_op_eol matched_expr
+      # type_op_eol matched_expr
+      # when_op_eol matched_expr
+      # pipe_op_eol matched_expr
+      # comp_op_eol matched_expr
+      # rel_op_eol matched_expr
+      # arrow_op_eol matched_expr
+      # arrow_op_eol no_parens_one_expr
     end
 
     test "unary_op_eol matched_expr" do
@@ -140,6 +161,38 @@ defmodule SpitfireGrammarTest do
 
     test "sub_matched_expr (access_expr)" do
       code = "foo[1]"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "ellipsis_op matched_expr" do
+      code = "...foo"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "sub_matched_expr (range_op)" do
+      code = ".."
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "sub_matched_expr (ellipsis_op)" do
+      code = "..."
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "sub_matched_expr (no_parens_zero_expr)" do
+      code = "foo"
+      assert Spitfire.parse(code) == s2q(code)
+    end
+
+    test "matched_expr matched_op_expr (various ops)" do
+      assert Spitfire.parse("1 * 2") == s2q("1 * 2")
+      assert Spitfire.parse("1 || 2") == s2q("1 || 2")
+      assert Spitfire.parse("1 |> f") == s2q("1 |> f")
+      assert Spitfire.parse("1 .. 2") == s2q("1 .. 2")
+    end
+
+    test "real no_parens_one_expr" do
+      code = "foo 1"
       assert Spitfire.parse(code) == s2q(code)
     end
   end
