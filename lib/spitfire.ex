@@ -573,13 +573,17 @@ defmodule Spitfire do
 
   defp maybe_inject_leading_newlines(ast, 0), do: ast
 
-  defp maybe_inject_leading_newlines({:->, meta, args}, newlines) when newlines > 0 do
-    meta =
-      meta
-      |> inject_newlines(newlines: newlines)
-      |> reorder_parens_newlines()
+  defp maybe_inject_leading_newlines({:->, meta, [lhs, rhs]}, newlines) when newlines > 0 do
+    if lhs == [] do
+      meta =
+        meta
+        |> inject_newlines(newlines: newlines)
+        |> reorder_parens_newlines()
 
-    {:->, meta, args}
+      {:->, meta, [lhs, rhs]}
+    else
+      {:->, meta, [lhs, rhs]}
+    end
   end
 
   defp maybe_inject_leading_newlines(ast, _newlines), do: ast
@@ -1282,7 +1286,8 @@ defmodule Spitfire do
       token = current_token(parser)
       meta = current_meta(parser)
       op_range = token_range(parser.current_token)
-      newlines = get_newlines(parser)
+      {pending, parser} = Map.pop(parser, :pending_newlines)
+      newlines = stab_newlines(parser, meta, pending)
 
       parser = eat_at(parser, [:eol, :";"], 1)
       old_nesting = parser.nesting
@@ -1363,7 +1368,8 @@ defmodule Spitfire do
 
         :-> ->
           meta = current_meta(parser)
-          newlines = get_newlines(parser)
+          {pending, parser} = Map.pop(parser, :pending_newlines)
+          newlines = stab_newlines(parser, meta, pending)
 
           parser = eat_eol_at(parser, 1)
 
@@ -1396,7 +1402,12 @@ defmodule Spitfire do
               _ -> build_block_nr(exprs)
             end
 
-          parser = eat_eol_at(parser, 1)
+          parser =
+            if Map.has_key?(parser, :stab_state) do
+              parser
+            else
+              eat_eol_at(parser, 1)
+            end
 
           {lhs, meta} =
             case lhs do
@@ -1846,39 +1857,32 @@ defmodule Spitfire do
   defp parse_do_sections(parser, type, acc) do
     {exprs, parser} = parse_do_exprs(parser, [])
 
-    {acc, type, parser} =
-      case peek_token_eat_eol(parser) do
-        :block_identifier ->
-          parser =
-            parser
-            |> next_token()
-            |> eat_eol()
-            |> Map.delete(:pending_newlines)
+    case peek_token_eat_eol(parser) do
+      :block_identifier ->
+        parser =
+          parser
+          |> next_token()
+          |> eat_eol()
+          |> Map.delete(:pending_newlines)
 
-          {:block_identifier, _meta, token} = parser.current_token
+        {:block_identifier, _meta, token} = parser.current_token
 
-          {[
-             {type, exprs}
-             | acc
-           ], encode_literal(parser, token), parser}
+        parse_do_sections(parser, encode_literal(parser, token), [{type, exprs} | acc])
 
-        _ ->
-          {[
-             {type, exprs}
-             | acc
-           ], type, parser}
-      end
+      _ ->
+        acc = [{type, exprs} | acc]
 
-    if peek_token_eat_eol(parser) in [:end, :eof] do
-      {Enum.reverse(acc), type, Map.delete(parser, :pending_newlines)}
-    else
-      parse_do_sections(parser, type, acc)
+        if peek_token_eat_eol(parser) in [:end, :eof] do
+          {Enum.reverse(acc), type, Map.delete(parser, :pending_newlines)}
+        else
+          parse_do_sections(parser, type, acc)
+        end
     end
   end
 
   defp parse_do_exprs(parser, acc) do
     if peek_token_eat_eol(parser) in [:end, :block_identifier, :eof] do
-      {add_clause_newlines(Enum.reverse(acc)), parser}
+      {Enum.reverse(acc), parser}
     else
       {ast, parser} =
         case Map.get(parser, :stab_state) do
@@ -1890,58 +1894,26 @@ defmodule Spitfire do
             parse_expression(parser, @lowest, false, false, true)
         end
 
-      temp_parser = next_token(parser)
-      eoe = current_eoe(temp_parser)
+      eoe = peek_eoe(parser)
       ast = push_eoe(ast, eoe)
+
+      parser =
+        case eoe do
+          e when is_list(e) ->
+            case Keyword.get(e, :newlines) do
+              nl when is_integer(nl) and nl > 0 ->
+                Map.put(parser, :pending_newlines, nl)
+
+              _ ->
+                Map.delete(parser, :pending_newlines)
+            end
+
+          _ ->
+            Map.delete(parser, :pending_newlines)
+        end
 
       parse_do_exprs(parser, [ast | acc])
     end
-  end
-
-  defp add_clause_newlines(exprs) do
-    {rev, _} =
-      Enum.reduce(exprs, {[], 0}, fn
-        {:->, meta, args} = expr, {acc, pending} ->
-          meta =
-            if pending > 0 and not Keyword.has_key?(meta, :newlines) do
-              meta
-              |> inject_newlines(newlines: pending)
-              |> reorder_parens_newlines()
-            else
-              meta
-            end
-
-          new_pending = extract_eoe_newlines(args)
-
-          {[{:->, meta, args} | acc], new_pending}
-
-        other, {acc, _pending} ->
-          { [other | acc], 0}
-      end)
-
-    Enum.reverse(rev)
-  end
-
-  defp extract_eoe_newlines(ast) do
-    {_ast, found} =
-      Macro.prewalk(ast, nil, fn
-        {_, meta, _} = node, nil ->
-          case Keyword.get(meta, :end_of_expression) do
-            eoe when is_list(eoe) ->
-              case Keyword.get(eoe, :newlines) do
-                nl when is_integer(nl) -> {node, nl}
-                _ -> {node, nil}
-              end
-
-            _ ->
-              {node, nil}
-          end
-
-        node, acc ->
-          {node, acc}
-      end)
-
-    found || 0
   end
 
   defp parse_dot_expression(parser, lhs) do
@@ -2323,7 +2295,11 @@ defmodule Spitfire do
                 parse_expression(parser, @lowest, false, false, true)
             end
 
-          ast = maybe_inject_leading_newlines(ast, clause_newlines)
+          ast =
+            case ast do
+              {:->, _, _} -> ast
+              _ -> maybe_inject_leading_newlines(ast, clause_newlines)
+            end
           {ast, parser} = finalize_anon_function_clause(ast, parser)
 
           {rest, parser} =
@@ -5252,9 +5228,30 @@ defmodule Spitfire do
   #     )
   # will have 1 newling due to the newline after the opening paren
   defp get_newlines(parser) do
-    case current_newlines(parser) || peek_newlines(parser) do
+    case peek_newlines(parser) do
       nil -> []
       nl -> [newlines: nl]
+    end
+  end
+
+  defp stab_newlines(parser, meta, _pending) do
+    cond do
+      Keyword.has_key?(meta, :newlines) ->
+        []
+
+      match?({:stab_op, {_, _, nl}, _} when is_integer(nl) and nl > 0, parser.current_token) ->
+        {:stab_op, {_, _, nl}, _} = parser.current_token
+        [newlines: nl]
+
+      match?({:stab_op, {_, _, nl}} when is_integer(nl) and nl > 0, parser.current_token) ->
+        {:stab_op, {_, _, nl}} = parser.current_token
+        [newlines: nl]
+
+      is_integer(peek_newlines(parser)) ->
+        [newlines: peek_newlines(parser)]
+
+      true ->
+        []
     end
   end
 
