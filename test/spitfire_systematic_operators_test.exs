@@ -1,10 +1,43 @@
 defmodule SpitfireSystematicOperatorsTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
-  # Define operators by precedence group (roughly) or just a flat list
-  # We want to test combinations.
+  # =============================================================================
+  # Operator Classifications
+  # =============================================================================
+  #
+  # Based on Elixir operator precedence table (highest to lowest):
+  #
+  # Operator                                       | Associativity
+  # ---------------------------------------------- | -------------
+  # `@`                                            | Unary
+  # `.`                                            | Left
+  # `+` `-` `!` `^` `not`                          | Unary
+  # `**`                                           | Left
+  # `*` `/`                                        | Left
+  # `+` `-`                                        | Left
+  # `++` `--` `+++` `---` `..` `<>`                | Right
+  # `in` `not in`                                  | Left
+  # `|>` `<<<` `>>>` `<<~` `~>>` `<~` `~>` `<~>`   | Left
+  # `<` `>` `<=` `>=`                              | Left
+  # `==` `!=` `=~` `===` `!==`                     | Left
+  # `&&` `&&&` `and`                               | Left
+  # `||` `|||` `or`                                | Left
+  # `=`                                            | Right
+  # `&`, `...`                                     | Unary
+  # `=>` (valid only inside `%{}`)                 | Right
+  # `|`                                            | Right
+  # `::`                                           | Right
+  # `when`                                         | Right
+  # `<-` `\\`                                      | Left
+  # =============================================================================
 
+  # Unary operators (note: @ and & have special syntax requirements)
   @unary_ops ~w(@ + - ! ^ not & ...)a
+
+  # Unary operators that can be freely combined with binary operators
+  @simple_unary_ops ~w(+ - ! ^ not)a
+
+  # Binary operators organized by precedence level
   @binary_ops [
     :.,
     :**,
@@ -23,6 +56,42 @@ defmodule SpitfireSystematicOperatorsTest do
     :when,
     :<-, :\\
   ]
+
+  # Binary operators that work with simple variable operands
+  @simple_binary_ops [
+    :**,
+    :*, :/,
+    :+, :-,
+    :++, :--, :+++, :---, :.., :<>,
+    :in, :"not in",
+    :|>, :<<<, :>>>, :<<~, :~>>, :<~, :~>, :<~>,
+    :<, :>, :<=, :>=,
+    :==, :!=, :=~, :===, :!==,
+    :&&, :&&&, :and,
+    :||, :|||, :or,
+    :=,
+    :|,
+    :"::",
+    :when,
+    :<-, :\\
+  ]
+
+  # Right-associative binary operators
+  @right_assoc_ops ~w(++ -- +++ --- .. <> = | :: when)a
+
+  # Left-associative binary operators
+  @left_assoc_ops ~w(** * / + - in |> <<< >>> <<~ ~>> <~ ~> <~> < > <= >= == != =~ === !== && &&& and || ||| or <- \\)a
+
+  setup do
+    original = Application.get_env(:spitfire, :tokenizer, :legacy)
+    Application.put_env(:spitfire, :tokenizer, :toxic)
+    Application.put_env(:spitfire, :verify_range_order, true)
+
+    on_exit(fn ->
+      Application.put_env(:spitfire, :tokenizer, original)
+      Application.put_env(:spitfire, :verify_range_order, false)
+    end)
+  end
 
   # Helper to convert atom to string representation
   defp op_to_string(:"not in"), do: "not in"
@@ -45,8 +114,6 @@ defmodule SpitfireSystematicOperatorsTest do
     # Or just iterate in one test and print the failing one.
 
     test "binary - binary combinations (a op1 b op2 c)" do
-      vars = ["a", "b", "c"]
-
       # We pick a subset of operators to keep it reasonable if needed,
       # but 40*40 = 1600 is fast enough for Elixir.
 
@@ -236,6 +303,966 @@ defmodule SpitfireSystematicOperatorsTest do
           {:error, _} -> {code, expected, :error}
         end
       {:error, _} -> nil
+    end
+  end
+
+  # =============================================================================
+  # Operators with Literals
+  # =============================================================================
+  # The repro 34 case "not \"\" <> \"\"" shows that operators with literal
+  # operands can behave differently than with variables.
+
+  describe "operators with string literals" do
+    test "unary operators with string binary operators" do
+      failures =
+        for op1 <- @simple_unary_ops, op2 <- [:++, :--, :<>, :..] do
+          s_op1 = op_to_string(op1)
+          s_op2 = op_to_string(op2)
+
+          [
+            check(~s'#{s_op1} "" #{s_op2} ""'),
+            check(~s'#{s_op1} "foo" #{s_op2} "bar"'),
+            check(~s'#{s_op1} a #{s_op2} "bar"'),
+            check(~s'#{s_op1} "foo" #{s_op2} b')
+          ]
+        end
+        |> List.flatten()
+        |> Enum.reject(&is_nil/1)
+
+      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+    end
+
+    test "binary operators with mixed literals and variables" do
+      literals = [~s'""', ~s'"foo"', "1", "1.0", ":atom", "'c'", "[]", "{}"]
+
+      failures =
+        for lit <- literals, op <- @simple_binary_ops do
+          s_op = op_to_string(op)
+
+          [
+            check("a #{s_op} #{lit}"),
+            check("#{lit} #{s_op} a"),
+            check("#{lit} #{s_op} #{lit}")
+          ]
+        end
+        |> List.flatten()
+        |> Enum.reject(&is_nil/1)
+
+      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+    end
+  end
+
+  # =============================================================================
+  # Operators with do/end Blocks
+  # =============================================================================
+  # Many repro cases involve case/try/with/quote/fn expressions
+
+  describe "operators with do/end blocks" do
+    @do_blocks [
+      "case a do\n  _ -> b\nend",
+      "try do\n  a\nrescue\n  _ -> b\nend",
+      "with a <- b, do: c",
+      "for x <- xs, do: x",
+      "quote do\n  a\nend",
+      "fn -> a end",
+      "fn x -> x end",
+      "if a, do: b, else: c",
+      "cond do\n  true -> a\nend",
+      "receive do\n  _ -> a\nend"
+    ]
+
+    test "unary operators with do/end blocks followed by binary operator" do
+      failures =
+        for unary <- @simple_unary_ops, block <- @do_blocks, binary <- @simple_binary_ops do
+          s_unary = op_to_string(unary)
+          s_binary = op_to_string(binary)
+
+          code = "#{s_unary} #{block} #{s_binary} a"
+          check(code)
+        end
+        |> Enum.reject(&is_nil/1)
+
+      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+    end
+
+    test "do/end blocks followed by binary operators" do
+      failures =
+        for block <- @do_blocks, op <- @simple_binary_ops do
+          s_op = op_to_string(op)
+
+          [
+            check("#{block} #{s_op} a"),
+            check("a #{s_op} #{block}")
+          ]
+        end
+        |> List.flatten()
+        |> Enum.reject(&is_nil/1)
+
+      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+    end
+
+    test "do/end blocks with operators inside" do
+      failures =
+        for op <- @simple_binary_ops do
+          s_op = op_to_string(op)
+
+          [
+            check("case a #{s_op} b do\n  _ -> c\nend"),
+            check("case a do\n  x #{s_op} y -> z\nend"),
+            check("fn x -> x #{s_op} y end"),
+            check("quote do\n  a #{s_op} b\nend"),
+            check("for x <- a #{s_op} b, do: x")
+          ]
+        end
+        |> List.flatten()
+        |> Enum.reject(&is_nil/1)
+
+      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+    end
+  end
+
+  # =============================================================================
+  # Triple Operator Combinations (4 operands)
+  # =============================================================================
+  # Tests precedence when three binary operators interact
+
+  describe "triple binary operator combinations" do
+    # Use a representative subset to avoid combinatorial explosion
+    @precedence_representatives [
+      :**,        # highest among simple binary
+      :*,         # mult/div level
+      :+,         # add/sub level
+      :++,        # right-associative list ops
+      :<>,        # binary concat
+      :|>,        # pipe
+      :<,         # comparison
+      :==,        # equality
+      :&&,        # logical and
+      :||,        # logical or
+      :=          # match
+    ]
+
+    test "a op1 b op2 c op3 d" do
+      failures =
+        for op1 <- @precedence_representatives,
+            op2 <- @precedence_representatives,
+            op3 <- @precedence_representatives do
+          s1 = op_to_string(op1)
+          s2 = op_to_string(op2)
+          s3 = op_to_string(op3)
+
+          check("a #{s1} b #{s2} c #{s3} d")
+        end
+        |> Enum.reject(&is_nil/1)
+
+      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+    end
+
+    test "unary op1 a op2 b op3 c" do
+      failures =
+        for unary <- @simple_unary_ops,
+            op1 <- @precedence_representatives,
+            op2 <- @precedence_representatives do
+          s_unary = op_to_string(unary)
+          s1 = op_to_string(op1)
+          s2 = op_to_string(op2)
+
+          check("#{s_unary} a #{s1} b #{s2} c")
+        end
+        |> Enum.reject(&is_nil/1)
+
+      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+    end
+  end
+
+  # =============================================================================
+  # Chained Unary Operators
+  # =============================================================================
+
+  describe "chained unary operators" do
+    test "double unary operators" do
+      failures =
+        for op1 <- @simple_unary_ops, op2 <- @simple_unary_ops do
+          s1 = op_to_string(op1)
+          s2 = op_to_string(op2)
+
+          [
+            check("#{s1} #{s2} a"),
+            check("#{s1} #{s2} a + b")
+          ]
+        end
+        |> List.flatten()
+        |> Enum.reject(&is_nil/1)
+
+      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+    end
+
+    test "triple unary operators" do
+      failures =
+        for op1 <- @simple_unary_ops, op2 <- @simple_unary_ops, op3 <- @simple_unary_ops do
+          s1 = op_to_string(op1)
+          s2 = op_to_string(op2)
+          s3 = op_to_string(op3)
+
+          check("#{s1} #{s2} #{s3} a")
+        end
+        |> Enum.reject(&is_nil/1)
+
+      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+    end
+  end
+
+  # =============================================================================
+  # Associativity Tests
+  # =============================================================================
+  # Verify that chained same-operator expressions parse correctly
+
+  describe "associativity verification" do
+    test "right-associative operators chain correctly" do
+      failures =
+        for op <- @right_assoc_ops do
+          s_op = op_to_string(op)
+
+          [
+            check("a #{s_op} b #{s_op} c"),
+            check("a #{s_op} b #{s_op} c #{s_op} d")
+          ]
+        end
+        |> List.flatten()
+        |> Enum.reject(&is_nil/1)
+
+      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+    end
+
+    test "left-associative operators chain correctly" do
+      failures =
+        for op <- @left_assoc_ops, op not in [:"not in"] do
+          s_op = op_to_string(op)
+
+          [
+            check("a #{s_op} b #{s_op} c"),
+            check("a #{s_op} b #{s_op} c #{s_op} d")
+          ]
+        end
+        |> List.flatten()
+        |> Enum.reject(&is_nil/1)
+
+      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+    end
+  end
+
+  # =============================================================================
+  # String Interpolation with Operators
+  # =============================================================================
+
+  describe "string interpolation with operators" do
+    test "operators inside interpolation" do
+      failures =
+        for op <- @simple_binary_ops do
+          s_op = op_to_string(op)
+
+          [
+            check(~s'"foo\#{a #{s_op} b}bar"'),
+            check(~s'"foo\#{a}bar" #{s_op} "baz"'),
+            check(~s'a #{s_op} "foo\#{b}bar"')
+          ]
+        end
+        |> List.flatten()
+        |> Enum.reject(&is_nil/1)
+
+      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+    end
+
+    test "heredocs with operators" do
+      failures =
+        for op <- @simple_binary_ops do
+          s_op = op_to_string(op)
+
+          [
+            check(~s'"""\nfoo \#{a #{s_op} b}\n"""'),
+            check(~s'a #{s_op} """\nfoo\n"""')
+          ]
+        end
+        |> List.flatten()
+        |> Enum.reject(&is_nil/1)
+
+      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+    end
+
+    test "charlists with interpolation and operators" do
+      failures =
+        for op <- @simple_binary_ops do
+          s_op = op_to_string(op)
+
+          [
+            check(~s|'foo\#{a #{s_op} b}bar'|),
+            check(~s|'foo' #{s_op} a|)
+          ]
+        end
+        |> List.flatten()
+        |> Enum.reject(&is_nil/1)
+
+      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+    end
+  end
+
+  # =============================================================================
+  # Data Structures with Operators
+  # =============================================================================
+
+  describe "operators in data structures" do
+    test "operators in lists" do
+      failures =
+        for op <- @simple_binary_ops do
+          s_op = op_to_string(op)
+
+          [
+            check("[a #{s_op} b]"),
+            check("[a #{s_op} b, c #{s_op} d]"),
+            check("[a | b #{s_op} c]"),
+            check("[a #{s_op} b | c]")
+          ]
+        end
+        |> List.flatten()
+        |> Enum.reject(&is_nil/1)
+
+      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+    end
+
+    test "operators in tuples" do
+      failures =
+        for op <- @simple_binary_ops do
+          s_op = op_to_string(op)
+
+          [
+            check("{a #{s_op} b}"),
+            check("{a #{s_op} b, c #{s_op} d}"),
+            check("{a, b #{s_op} c}")
+          ]
+        end
+        |> List.flatten()
+        |> Enum.reject(&is_nil/1)
+
+      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+    end
+
+    test "operators in maps" do
+      failures =
+        for op <- @simple_binary_ops do
+          s_op = op_to_string(op)
+
+          [
+            check("%{a: b #{s_op} c}"),
+            check("%{a #{s_op} b => c}"),
+            check("%{a => b #{s_op} c}"),
+            check("%{a #{s_op} b => c #{s_op} d}")
+          ]
+        end
+        |> List.flatten()
+        |> Enum.reject(&is_nil/1)
+
+      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+    end
+
+    test "operators in structs" do
+      failures =
+        for op <- @simple_binary_ops do
+          s_op = op_to_string(op)
+
+          [
+            check("%Foo{a: b #{s_op} c}"),
+            check("%Foo{s | a: b #{s_op} c}"),
+            check("%Foo{a #{s_op} b | c: d}")
+          ]
+        end
+        |> List.flatten()
+        |> Enum.reject(&is_nil/1)
+
+      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+    end
+
+    test "operators in keyword lists" do
+      failures =
+        for op <- @simple_binary_ops do
+          s_op = op_to_string(op)
+
+          [
+            check("[a: b #{s_op} c]"),
+            check("[a: b #{s_op} c, d: e #{s_op} f]"),
+            check("foo(a: b #{s_op} c)")
+          ]
+        end
+        |> List.flatten()
+        |> Enum.reject(&is_nil/1)
+
+      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+    end
+  end
+
+  # =============================================================================
+  # Function Capture with Operators
+  # =============================================================================
+
+  describe "function capture with operators" do
+    test "capture with operator expressions" do
+      failures =
+        for op <- @simple_binary_ops do
+          s_op = op_to_string(op)
+
+          [
+            check("&(&1 #{s_op} a)"),
+            check("&(&1 #{s_op} &2)"),
+            check("&(a #{s_op} &1)"),
+            check("f = &(&1 #{s_op} 1)")
+          ]
+        end
+        |> List.flatten()
+        |> Enum.reject(&is_nil/1)
+
+      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+    end
+
+    test "capture followed by binary operator" do
+      failures =
+        for op <- @simple_binary_ops do
+          s_op = op_to_string(op)
+
+          [
+            check("&foo/1 #{s_op} a"),
+            check("a #{s_op} &foo/1"),
+            check("&Foo.bar/2 #{s_op} a")
+          ]
+        end
+        |> List.flatten()
+        |> Enum.reject(&is_nil/1)
+
+      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+    end
+  end
+
+  # =============================================================================
+  # Module Attribute with Operators
+  # =============================================================================
+
+  describe "module attribute with operators" do
+    test "@attr with binary operators" do
+      failures =
+        for op <- @simple_binary_ops do
+          s_op = op_to_string(op)
+
+          [
+            check("@foo #{s_op} a"),
+            check("a #{s_op} @foo"),
+            check("@foo a #{s_op} b")
+          ]
+        end
+        |> List.flatten()
+        |> Enum.reject(&is_nil/1)
+
+      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+    end
+
+    test "@attr with do/end blocks" do
+      failures =
+        for block <- @do_blocks do
+          [
+            check("@foo #{block}"),
+            check("@foo #{block}..1"),
+            check("@foo #{block}..1//2")
+          ]
+        end
+        |> List.flatten()
+        |> Enum.reject(&is_nil/1)
+
+      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+    end
+  end
+
+  # =============================================================================
+  # Bitstring with Type Operators
+  # =============================================================================
+
+  describe "bitstring with type operators" do
+    test "basic bitstring type specs" do
+      failures =
+        [
+          check("<<a::8>>"),
+          check("<<a::size(8)>>"),
+          check("<<a::binary>>"),
+          check("<<a::8, b::binary>>"),
+          check("<<a::size(n)>>"),
+          check("<<a::size(n)-binary>>"),
+          check("<<a::size(n)-unsigned-big>>")
+        ]
+        |> Enum.reject(&is_nil/1)
+
+      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+    end
+
+    test "bitstring with operators inside" do
+      failures =
+        for op <- @simple_binary_ops do
+          s_op = op_to_string(op)
+
+          [
+            check("<<a #{s_op} b>>"),
+            check("<<a::size(n #{s_op} m)>>"),
+            check("<<a #{s_op} b, c::8>>")
+          ]
+        end
+        |> List.flatten()
+        |> Enum.reject(&is_nil/1)
+
+      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+    end
+
+    test "bitstring with operators outside" do
+      failures =
+        for op <- @simple_binary_ops do
+          s_op = op_to_string(op)
+
+          [
+            check("<<a::8>> #{s_op} b"),
+            check("a #{s_op} <<b::8>>")
+          ]
+        end
+        |> List.flatten()
+        |> Enum.reject(&is_nil/1)
+
+      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+    end
+  end
+
+  # =============================================================================
+  # Guard Expressions (when)
+  # =============================================================================
+
+  describe "guard expressions" do
+    test "when with binary operators" do
+      failures =
+        for op <- @simple_binary_ops do
+          s_op = op_to_string(op)
+
+          [
+            check("def foo(a) when a #{s_op} b, do: a"),
+            check("fn a when a #{s_op} b -> a end"),
+            check("case a do\n  x when x #{s_op} y -> x\nend")
+          ]
+        end
+        |> List.flatten()
+        |> Enum.reject(&is_nil/1)
+
+      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+    end
+
+    test "when with multiple guards" do
+      failures =
+        for op1 <- [:and, :or, :&&, :||], op2 <- [:and, :or, :&&, :||] do
+          s1 = op_to_string(op1)
+          s2 = op_to_string(op2)
+
+          [
+            check("def foo(a) when a > 0 #{s1} a < 10 #{s2} a != 5, do: a"),
+            check("fn a when a > 0 #{s1} a < 10 -> a end")
+          ]
+        end
+        |> List.flatten()
+        |> Enum.reject(&is_nil/1)
+
+      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+    end
+  end
+
+  # =============================================================================
+  # Comprehension Generators
+  # =============================================================================
+
+  describe "comprehension generators" do
+    test "<- with binary operators" do
+      failures =
+        for op <- @simple_binary_ops do
+          s_op = op_to_string(op)
+
+          [
+            check("for x <- a #{s_op} b, do: x"),
+            check("for x <- xs, x #{s_op} y, do: x"),
+            check("with {:ok, x} <- a #{s_op} b, do: x")
+          ]
+        end
+        |> List.flatten()
+        |> Enum.reject(&is_nil/1)
+
+      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+    end
+  end
+
+  # =============================================================================
+  # Default Arguments
+  # =============================================================================
+
+  describe "default arguments" do
+    test "\\\\ with binary operators" do
+      failures =
+        for op <- @simple_binary_ops do
+          s_op = op_to_string(op)
+
+          [
+            check("def foo(a \\\\ b #{s_op} c), do: a"),
+            check("def foo(a \\\\ 1 #{s_op} 2 #{s_op} 3), do: a")
+          ]
+        end
+        |> List.flatten()
+        |> Enum.reject(&is_nil/1)
+
+      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+    end
+  end
+
+  # =============================================================================
+  # Sigils with Operators
+  # =============================================================================
+
+  describe "sigils with operators" do
+    test "sigils followed by binary operators" do
+      failures =
+        for op <- @simple_binary_ops do
+          s_op = op_to_string(op)
+
+          [
+            check("~r/foo/ #{s_op} a"),
+            check("a #{s_op} ~r/bar/"),
+            check("~s(foo) #{s_op} ~s(bar)"),
+            check("~w(a b c) #{s_op} list")
+          ]
+        end
+        |> List.flatten()
+        |> Enum.reject(&is_nil/1)
+
+      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+    end
+
+    test "sigils with interpolation and operators" do
+      failures =
+        for op <- @simple_binary_ops do
+          s_op = op_to_string(op)
+
+          [
+            check(~s|~s"foo\#{a #{s_op} b}bar"|),
+            check(~s|~s"foo" #{s_op} a|)
+          ]
+        end
+        |> List.flatten()
+        |> Enum.reject(&is_nil/1)
+
+      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+    end
+  end
+
+  # =============================================================================
+  # Dot Operator Combinations
+  # =============================================================================
+
+  describe "dot operator combinations" do
+    test "dot with binary operators" do
+      failures =
+        for op <- @simple_binary_ops do
+          s_op = op_to_string(op)
+
+          [
+            check("a.b #{s_op} c"),
+            check("a #{s_op} b.c"),
+            check("a.b #{s_op} c.d"),
+            check("Foo.bar #{s_op} Baz.qux"),
+            check("Foo.bar() #{s_op} a"),
+            check("a #{s_op} Foo.bar()"),
+            check("foo.bar(a #{s_op} b)")
+          ]
+        end
+        |> List.flatten()
+        |> Enum.reject(&is_nil/1)
+
+      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+    end
+
+    test "quoted function names with operators" do
+      failures =
+        for op <- @simple_binary_ops do
+          s_op = op_to_string(op)
+
+          [
+            check(~s|Foo."bar"() #{s_op} a|),
+            check(~s|a #{s_op} Foo."bar"()|),
+            check(~s|Foo."bar"(a #{s_op} b)|)
+          ]
+        end
+        |> List.flatten()
+        |> Enum.reject(&is_nil/1)
+
+      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+    end
+  end
+
+  # =============================================================================
+  # Access Syntax with Operators
+  # =============================================================================
+
+  describe "access syntax with operators" do
+    test "access with binary operators" do
+      failures =
+        for op <- @simple_binary_ops do
+          s_op = op_to_string(op)
+
+          [
+            check("a[b] #{s_op} c"),
+            check("a #{s_op} b[c]"),
+            check("a[b #{s_op} c]"),
+            check("a[b] #{s_op} c[d]")
+          ]
+        end
+        |> List.flatten()
+        |> Enum.reject(&is_nil/1)
+
+      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+    end
+  end
+
+  # =============================================================================
+  # Parenthesized Expressions with Operators
+  # =============================================================================
+
+  describe "parenthesized expressions with operators" do
+    test "parentheses override precedence" do
+      failures =
+        for op1 <- @precedence_representatives, op2 <- @precedence_representatives do
+          s1 = op_to_string(op1)
+          s2 = op_to_string(op2)
+
+          [
+            check("(a #{s1} b) #{s2} c"),
+            check("a #{s1} (b #{s2} c)"),
+            check("(a #{s1} b) #{s2} (c #{s1} d)")
+          ]
+        end
+        |> List.flatten()
+        |> Enum.reject(&is_nil/1)
+
+      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+    end
+  end
+
+  # =============================================================================
+  # Range with Two Ternary Operators
+  # =============================================================================
+
+  describe "two ternary operators (range..//step and map update)" do
+    test "range inside map" do
+      failures =
+        [
+          check("%{a => 1..10//2}"),
+          check("%{1..10//2 => a}"),
+          check("%{m | a => 1..10//2}"),
+          check("%{m | a: 1..10//2}")
+        ]
+        |> Enum.reject(&is_nil/1)
+
+      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+    end
+
+    test "map inside range" do
+      failures =
+        [
+          check("%{a: 1}..%{b: 2}"),
+          check("%{a: 1}..%{b: 2}//1"),
+          check("1..%{a: 2}//3")
+        ]
+        |> Enum.reject(&is_nil/1)
+
+      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+    end
+
+    test "complex range and map combinations" do
+      failures =
+        for op <- @precedence_representatives do
+          s_op = op_to_string(op)
+
+          [
+            check("1..10//2 #{s_op} %{a: b}"),
+            check("%{a: b} #{s_op} 1..10//2"),
+            check("%{1..2 => 3..4//5}"),
+            check("a..b//c #{s_op} %{d | e => f}")
+          ]
+        end
+        |> List.flatten()
+        |> Enum.reject(&is_nil/1)
+
+      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+    end
+  end
+
+  # =============================================================================
+  # Special Cases from Repro Tests
+  # =============================================================================
+
+  describe "special cases from repro tests" do
+    # These are patterns derived from the repro test file that expose edge cases
+
+    test "unary with right-associative operators" do
+      failures =
+        for unary <- @simple_unary_ops, op <- [:++, :--, :<>, :..] do
+          s_unary = op_to_string(unary)
+          s_op = op_to_string(op)
+
+          [
+            check("#{s_unary} a #{s_op} b"),
+            check("#{s_unary} a #{s_op} b #{s_op} c"),
+            check("a #{s_op} #{s_unary} b"),
+            check("a #{s_op} #{s_unary} b #{s_op} c")
+          ]
+        end
+        |> List.flatten()
+        |> Enum.reject(&is_nil/1)
+
+      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+    end
+
+    test "unary with pipe operators" do
+      failures =
+        for unary <- @simple_unary_ops do
+          s_unary = op_to_string(unary)
+
+          [
+            check("#{s_unary} a |> b"),
+            check("#{s_unary} a |> b |> c"),
+            check("a |> #{s_unary} b"),
+            check("#{s_unary} a |> b < c"),
+            check("#{s_unary} a |> b == c")
+          ]
+        end
+        |> List.flatten()
+        |> Enum.reject(&is_nil/1)
+
+      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+    end
+
+    test "unary with comparison and logical operators" do
+      failures =
+        for unary <- @simple_unary_ops,
+            comp <- [:<, :>, :<=, :>=, :==, :!=, :===, :!==],
+            logical <- [:&&, :||, :and, :or] do
+          s_unary = op_to_string(unary)
+          s_comp = op_to_string(comp)
+          s_logical = op_to_string(logical)
+
+          [
+            check("#{s_unary} a #{s_comp} b"),
+            check("#{s_unary} a #{s_comp} b #{s_logical} c"),
+            check("a #{s_comp} #{s_unary} b #{s_logical} c")
+          ]
+        end
+        |> List.flatten()
+        |> Enum.reject(&is_nil/1)
+
+      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+    end
+
+    test "range with step and other operators" do
+      failures =
+        for op <- @simple_binary_ops do
+          s_op = op_to_string(op)
+
+          [
+            check("a #{s_op} b..c//d"),
+            check("a..b//c #{s_op} d"),
+            check("a #{s_op} b..c #{s_op} d//e"),
+            check("a..b #{s_op} c//d")
+          ]
+        end
+        |> List.flatten()
+        |> Enum.reject(&is_nil/1)
+
+      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+    end
+
+    test "capture with do/end blocks" do
+      failures =
+        [
+          check("&case a do\n  _ -> b\nend"),
+          check("f = &case a do\n  _ -> b\nend"),
+          check("&fn -> a end"),
+          check("&quote do\n  a\nend")
+        ]
+        |> Enum.reject(&is_nil/1)
+
+      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+    end
+
+    test "@ with call and do/end blocks" do
+      failures =
+        [
+          check("@foo Foo.bar(case a do\n  _ -> b\nend)"),
+          check("@foo Foo.bar(try do\n  a\nend)"),
+          check("@foo Foo.bar(quote do\n  a\nend)"),
+          check("@foo case a do\n  _ -> b\nend..c"),
+          check("@foo try do\n  a\nend..b//c")
+        ]
+        |> Enum.reject(&is_nil/1)
+
+      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+    end
+  end
+
+  # =============================================================================
+  # Pipe into Data Structures
+  # =============================================================================
+
+  describe "pipe into data structures" do
+    test "|> with data structure destinations" do
+      failures =
+        [
+          check("a |> {b, c}"),
+          check("a |> [b, c]"),
+          check("a |> %{b: c}"),
+          check("a |> {b..c}"),
+          check("a |> {b, c..d//e}"),
+          check("Foo.bar() |> {a..b, c}")
+        ]
+        |> Enum.reject(&is_nil/1)
+
+      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+    end
+  end
+
+  # =============================================================================
+  # Complex Nested Expressions
+  # =============================================================================
+
+  describe "complex nested expressions" do
+    test "multiple levels of nesting" do
+      failures =
+        [
+          check("[[a + b, c * d], e | f]"),
+          check("{[a: b + c], {d, e * f}}"),
+          check("%{a: [b | c], d: {e, f + g}}"),
+          check("case a + b do\n  x when x > 0 -> [y | z]\nend"),
+          check("for x <- a..b//c, y <- d..e, do: {x + y, x * y}")
+        ]
+        |> Enum.reject(&is_nil/1)
+
+      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+    end
+
+    test "deeply nested operators" do
+      failures =
+        [
+          check("(a + (b * (c ** d)))"),
+          check("((a + b) * (c + d))"),
+          check("a || (b && (c || d))"),
+          check("a = b = c = d + e"),
+          check("[a | [b | [c | d]]]")
+        ]
+        |> Enum.reject(&is_nil/1)
+
+      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
   end
 end
