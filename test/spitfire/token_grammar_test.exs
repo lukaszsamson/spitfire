@@ -386,4 +386,145 @@ defmodule Spitfire.TokenGrammarTest do
       assert {{1, 2}, {2, 1}, 1} = eol_meta
     end
   end
+
+  describe "capture_int" do
+    test "capture &1" do
+      tree = {:grammar, [{:capture_int, 1}]}
+      assert_roundtrip(tree, "&1")
+    end
+
+    test "capture &10 (multi-digit with adhesion)" do
+      tree = {:grammar, [{:capture_int, 10}]}
+      assert_roundtrip(tree, "&10")
+    end
+
+    test "capture_int token structure (adhesion)" do
+      tree = {:grammar, [{:capture_int, 5}]}
+      tokens = TokenCompiler.to_tokens(tree)
+
+      # Should have capture_op followed by int with no space between
+      assert [{:capture_op, amp_meta, :&}, {:int, int_meta, ~c"5"}] = tokens
+
+      # Verify adhesion: int starts right after &
+      assert {{1, 1}, {1, 2}, nil} = amp_meta
+      assert {{1, 2}, {1, 3}, 5} = int_meta
+    end
+  end
+
+  describe "call_parens" do
+    test "simple call foo()" do
+      tree = {:grammar, [{:call_parens, {:paren_identifier, :foo}, []}]}
+      assert_roundtrip(tree, "foo()")
+    end
+
+    test "call with one argument foo(1)" do
+      tree = {:grammar, [{:call_parens, {:paren_identifier, :foo}, [{:int, 1, :dec, ~c"1"}]}]}
+      assert_roundtrip(tree, "foo(1)")
+    end
+
+    test "call with two arguments foo(1, 2)" do
+      tree =
+        {:grammar,
+         [
+           {:call_parens, {:paren_identifier, :foo},
+            [{:int, 1, :dec, ~c"1"}, {:int, 2, :dec, ~c"2"}]}
+         ]}
+
+      assert_roundtrip(tree, "foo(1, 2)")
+    end
+
+    test "call with three arguments foo(a, b, c)" do
+      tree =
+        {:grammar,
+         [
+           {:call_parens, {:paren_identifier, :foo},
+            [{:identifier, :a}, {:identifier, :b}, {:identifier, :c}]}
+         ]}
+
+      assert_roundtrip(tree, "foo(a, b, c)")
+    end
+
+    test "call_parens token structure (adhesion)" do
+      tree = {:grammar, [{:call_parens, {:paren_identifier, :foo}, [{:int, 1, :dec, ~c"1"}]}]}
+      tokens = TokenCompiler.to_tokens(tree)
+
+      # Should have: paren_identifier, (, int, )
+      assert [{:paren_identifier, id_meta, :foo}, {:"(", open_meta}, {:int, _, _}, {:")", _}] =
+               tokens
+
+      # Verify adhesion: ( starts right after foo
+      assert {{1, 1}, {1, 4}, ~c"foo"} = id_meta
+      assert {{1, 4}, {1, 5}, nil} = open_meta
+    end
+  end
+
+  describe "dot_call" do
+    test "dot call foo.(1)" do
+      tree =
+        {:grammar, [{:call_parens, {:dot_call, {:identifier, :foo}}, [{:int, 1, :dec, ~c"1"}]}]}
+
+      assert_roundtrip(tree, "foo.(1)")
+    end
+
+    test "dot call foo.()" do
+      tree = {:grammar, [{:call_parens, {:dot_call, {:identifier, :foo}}, []}]}
+      assert_roundtrip(tree, "foo.()")
+    end
+
+    test "dot call with multiple args foo.(a, b)" do
+      tree =
+        {:grammar,
+         [{:call_parens, {:dot_call, {:identifier, :foo}}, [{:identifier, :a}, {:identifier, :b}]}]}
+
+      assert_roundtrip(tree, "foo.(a, b)")
+    end
+
+    test "dot_call token structure (adhesion)" do
+      tree = {:grammar, [{:call_parens, {:dot_call, {:identifier, :foo}}, []}]}
+      tokens = TokenCompiler.to_tokens(tree)
+
+      # Should have: identifier, ., (, )
+      assert [{:identifier, id_meta, :foo}, {:., dot_meta}, {:"(", open_meta}, {:")", _}] = tokens
+
+      # Verify adhesion: . starts right after foo, ( starts right after .
+      assert {{1, 1}, {1, 4}, ~c"foo"} = id_meta
+      assert {{1, 4}, {1, 5}, nil} = dot_meta
+      assert {{1, 5}, {1, 6}, nil} = open_meta
+    end
+  end
+
+  describe "call_no_parens_one" do
+    test "simple no-parens call foo bar" do
+      tree = {:grammar, [{:call_no_parens_one, {:identifier, :foo}, {:identifier, :bar}}]}
+      assert_roundtrip(tree, "foo bar")
+    end
+
+    test "no-parens call with integer foo 42" do
+      tree = {:grammar, [{:call_no_parens_one, {:identifier, :foo}, {:int, 42, :dec, ~c"42"}}]}
+      assert_roundtrip(tree, "foo 42")
+    end
+
+    test "no-parens call with atom foo :bar" do
+      tree = {:grammar, [{:call_no_parens_one, {:identifier, :foo}, {:atom_lit, :bar}}]}
+      assert_roundtrip(tree, "foo :bar")
+    end
+  end
+
+  describe "mixed calls" do
+    test "capture in call foo(&1)" do
+      tree = {:grammar, [{:call_parens, {:paren_identifier, :foo}, [{:capture_int, 1}]}]}
+      assert_roundtrip(tree, "foo(&1)")
+    end
+
+    test "call as argument bar(foo(1))" do
+      tree =
+        {:grammar,
+         [
+           {:call_parens, {:paren_identifier, :bar},
+            [{:call_parens, {:paren_identifier, :foo}, [{:int, 1, :dec, ~c"1"}]}]}
+         ]}
+
+      assert_roundtrip(tree, "bar(foo(1))")
+    end
+  end
 end

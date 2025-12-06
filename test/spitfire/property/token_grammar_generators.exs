@@ -10,6 +10,7 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
   - **Increment 1**: Literals (integers, floats, chars, atoms, bools, nil),
     identifiers, and aliases.
   - **Increment 2**: Binary and unary operators with newline handling.
+  - **Increment 3**: Calls (call_parens, call_no_parens_one, capture_int).
   """
 
   use ExUnitProperties
@@ -121,13 +122,16 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
     if GrammarTree.budget_exhausted?(state) do
       gen_fallback_literal()
     else
-      # Increment 1 + 2: literals, identifiers, and operators
+      # Increment 1-3: literals, identifiers, operators, and calls
       StreamData.frequency([
         {5, gen_literal()},
         {3, gen_identifier()},
         {2, gen_alias()},
         {3, gen_binary_op(state)},
-        {2, gen_unary_op(state)}
+        {2, gen_unary_op(state)},
+        {3, gen_call_parens(state)},
+        {2, gen_call_no_parens_one(state)},
+        {2, gen_capture_int()}
       ])
     end
   end
@@ -336,6 +340,86 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
     StreamData.bind(StreamData.member_of(@unary_ops), fn {op_kind, op} ->
       StreamData.bind(operand_gen, fn operand ->
         StreamData.constant({:unary_op, {op_kind, op}, operand})
+      end)
+    end)
+  end
+
+  # ===========================================================================
+  # Generator: calls
+  # ===========================================================================
+
+  # Generate a call with parentheses: foo(a, b) or expr.(a)
+  defp gen_call_parens(state) do
+    child_state = GrammarTree.decr_depth(state)
+
+    # Generate target - either a paren_identifier or a dot_call
+    target_gen =
+      StreamData.frequency([
+        {4, gen_paren_identifier()},
+        {1, gen_dot_call_target(child_state)}
+      ])
+
+    # Generate arguments (0-3 arguments)
+    args_gen = gen_args(child_state, 3)
+
+    StreamData.bind(target_gen, fn target ->
+      StreamData.bind(args_gen, fn args ->
+        StreamData.constant({:call_parens, target, args})
+      end)
+    end)
+  end
+
+  # Generate a no-parens call with one argument: foo bar
+  defp gen_call_no_parens_one(_state) do
+    # Generate simple arg (no operators to avoid ambiguity)
+    arg_gen = gen_simple_expr()
+
+    StreamData.bind(StreamData.member_of(@identifiers), fn name ->
+      StreamData.bind(arg_gen, fn arg ->
+        StreamData.constant({:call_no_parens_one, {:identifier, name}, arg})
+      end)
+    end)
+  end
+
+  # Generate a capture integer: &1, &10
+  defp gen_capture_int do
+    StreamData.integer(1..10)
+    |> StreamData.map(fn n -> {:capture_int, n} end)
+  end
+
+  # Generate a paren_identifier: foo
+  defp gen_paren_identifier do
+    StreamData.member_of(@identifiers)
+    |> StreamData.map(fn atom -> {:paren_identifier, atom} end)
+  end
+
+  # Generate a dot_call target: expr.
+  defp gen_dot_call_target(_state) do
+    # Use simple expression for the target to avoid deep nesting
+    gen_simple_expr()
+    |> StreamData.map(fn expr -> {:dot_call, expr} end)
+  end
+
+  # Generate argument list (0 to max_args)
+  defp gen_args(state, max_args) do
+    StreamData.bind(StreamData.integer(0..max_args), fn count ->
+      gen_arg_list(state, count)
+    end)
+  end
+
+  defp gen_arg_list(_state, 0), do: StreamData.constant([])
+
+  defp gen_arg_list(state, count) when count > 0 do
+    arg_gen =
+      if state.budget.depth <= 1 do
+        gen_simple_expr()
+      else
+        gen_expr(state)
+      end
+
+    StreamData.bind(arg_gen, fn arg ->
+      StreamData.bind(gen_arg_list(GrammarTree.decr_nodes(state), count - 1), fn rest ->
+        StreamData.constant([arg | rest])
       end)
     end)
   end
