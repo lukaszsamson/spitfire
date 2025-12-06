@@ -68,7 +68,7 @@ defmodule Spitfire do
   # comma are commas inside a right stab argument list
   @comma {:left, 14}
   @kw_identifier {:left, 16}
-  @assoc_op {:right, 18}
+  @assoc_op {:right, 10}
   @type_op {:right, 20}
   @pipe_op {:right, 22}
   @capture_op {:left, 24}
@@ -801,7 +801,7 @@ defmodule Spitfire do
       token = encode_literal(parser, token, range)
       parser = parser |> next_token() |> eat_eol()
 
-      {expr, parser} = parse_expression(parser, @kw_identifier, false, false, false)
+      {expr, parser} = parse_expression(parser, @lowest, false, false, false)
       parser = parser |> Map.put(:produced_kw_pair, true) |> Map.put(:produced_kw_source, :token)
       {{token, expr}, parser}
     end
@@ -812,7 +812,7 @@ defmodule Spitfire do
       {atom, parser} = parse_atom(%{parser | current_token: {:atom_unsafe, meta, tokens}})
       parser = parser |> next_token() |> eat_eol()
 
-      {expr, parser} = parse_expression(parser, @kw_identifier, false, false, false)
+      {expr, parser} = parse_expression(parser, @lowest, false, false, false)
 
       atom =
         case atom do
@@ -845,7 +845,7 @@ defmodule Spitfire do
       token = encode_literal(parser, token)
       parser = parser |> next_token() |> eat_eol()
 
-      {value, parser} = parse_expression(parser, @kw_identifier, false, false, false)
+      {value, parser} = parse_expression(parser, @lowest, false, false, false)
 
       {kvs, parser} =
         while2 peek_token(parser) == :"," <- parser do
@@ -880,7 +880,7 @@ defmodule Spitfire do
             {t, meta, args}
         end
 
-      {value, parser} = parse_expression(parser, @kw_identifier, false, false, false)
+      {value, parser} = parse_expression(parser, @lowest, false, false, false)
 
       {kvs, parser} =
         while2 peek_token(parser) == :"," <- parser do
@@ -1176,13 +1176,32 @@ defmodule Spitfire do
             @lowest
 
           logical_not_operator?(token) ->
-            @comp_op
+            @unary_op
 
           true ->
             precedence
         end
 
       {rhs, parser} = parse_expression(parser, effective_precedence, false, false, false)
+
+      {rhs, parser, not_in_operand?} =
+        if logical_not_operator?(token) and peek_token_type(parser) == :in_op and
+             peek_token(parser) == :in do
+          {infix_rhs, parser} = parse_infix_expression(next_token(parser), rhs)
+          {infix_rhs, parser, true}
+        else
+          {rhs, parser, false}
+        end
+
+      meta =
+        if logical_not_operator?(token) and not_in_operand? do
+          case rhs do
+            {_, rhs_meta, _} -> rhs_meta
+            _ -> meta
+          end
+        else
+          meta
+        end
 
       ast =
         case {token_type, token} do
@@ -2178,10 +2197,37 @@ defmodule Spitfire do
           {ast, eat_eol(parser)}
 
         type when type in [:identifier, :paren_identifier, :do_identifier, :op_identifier] ->
+          rhs_name =
+            case parser.peek_token do
+              {_kind, _, name} -> name
+              {_kind, _, name, _} -> name
+              _ -> peek_token(parser)
+            end
+
+          parser =
+            if rhs_name in [:not, :!] do
+              push_capture_name_context(parser)
+            else
+              parser
+            end
+
           parser = next_token(parser)
 
-          {{rhs_form, rhs_meta, rhs_args} = rhs_ast, parser} =
+          {{rhs_form0, rhs_meta, rhs_args} = rhs_ast, parser} =
             parse_expression(parser, precedence, false, false, false)
+
+          parser =
+            if rhs_name in [:not, :!] do
+              pop_capture_name_context(parser)
+            else
+              parser
+            end
+
+          rhs_form =
+            case {rhs_form0, rhs_name} do
+              {:identifier, :not} -> :not
+              _ -> rhs_form0
+            end
 
           rhs_meta =
             if type == :op_identifier do
@@ -4030,7 +4076,7 @@ defmodule Spitfire do
           # We left the end token as current; consume it and eat EOLs before the value
           parser = parser |> next_token() |> eat_eol()
           # Parse the value with kw_identifier precedence
-          {value, parser} = parse_expression(parser, @kw_identifier, false, false, false)
+          {value, parser} = parse_expression(parser, @lowest, false, false, false)
 
           parser =
             parser |> Map.put(:produced_kw_pair, true) |> Map.put(:produced_kw_source, :string)
@@ -4669,6 +4715,31 @@ defmodule Spitfire do
     end
   end
 
+  defp ensure_line_column(meta, source_meta) do
+    line = Keyword.get(meta, :line) || Keyword.get(source_meta, :line)
+    column = Keyword.get(meta, :column) || Keyword.get(source_meta, :column)
+
+    meta
+    |> Keyword.delete(:line)
+    |> Keyword.delete(:column)
+    |> Keyword.put(:column, column)
+    |> Keyword.put(:line, line)
+  end
+
+  defp meta_position(meta), do: {Keyword.get(meta, :line), Keyword.get(meta, :column)}
+  defp valid_pos?({line, col}), do: is_integer(line) and is_integer(col)
+
+  defp replace_line_column(meta, source_meta) do
+    line = Keyword.get(source_meta, :line) || Keyword.get(meta, :line)
+    column = Keyword.get(source_meta, :column) || Keyword.get(meta, :column)
+
+    meta
+    |> Keyword.delete(:line)
+    |> Keyword.delete(:column)
+    |> Keyword.put(:column, column)
+    |> Keyword.put(:line, line)
+  end
+
   # CONVENTION: Use put_meta_range/2 when attaching a single range to raw metadata (low-level helper)
   defp put_meta_range(meta, nil), do: meta
 
@@ -4946,18 +5017,172 @@ defmodule Spitfire do
 
   defp logical_not_operator?(token) do
     case token do
-      :not -> true
+      t when t in [:not, :!] -> true
       {:identifier, _, :not} -> true
-      {:unary_op, _, :not} -> true
+      {:unary_op, _, t} when t in [:not, :!] -> true
       _ -> false
     end
   end
 
   defp normalize_ast(ast) do
     ast
+    |> normalize_not_in()
+    |> normalize_not_wrapped_unary_in()
+    |> normalize_double_not_in()
+    |> normalize_not_over_in()
+    |> normalize_bang_over_in()
+    |> normalize_map_pipe_keys()
     |> normalize_not_pipelines()
     |> normalize_unary_ranges()
     |> normalize_block_sensitive_unary()
+  end
+
+  defp normalize_not_in(ast) do
+    Macro.postwalk(ast, fn
+      {:in, in_meta, [{unary_op, unary_meta, [lhs]}, rhs]} when unary_op in [:not, :!] ->
+        base_meta =
+          if valid_pos?(meta_position(unary_meta)) do
+            unary_meta
+          else
+            in_meta
+          end
+
+        merged_meta = ensure_line_column(base_meta, in_meta)
+
+        {unary_op, merged_meta, [{:in, in_meta, [lhs, rhs]}]}
+
+      other ->
+        other
+    end)
+  end
+
+  defp normalize_not_wrapped_unary_in(ast) do
+    Macro.prewalk(ast, fn
+      {:not, not_meta, [{unary_op, unary_meta, [{:in, in_meta, [lhs, rhs]}]}]}
+      when unary_op in [:not, :!] ->
+        {:not, not_meta, [{:in, in_meta, [{unary_op, unary_meta, [lhs]}, rhs]}]}
+
+      other ->
+        other
+    end)
+  end
+
+  defp normalize_double_not_in(ast) do
+    Macro.prewalk(ast, fn
+      {unary_op, outer_meta, [{unary_op, inner_meta, [{:in, in_meta, [lhs, rhs]}]}]}
+      when unary_op in [:not, :!] ->
+        inner_meta =
+          case Keyword.get(inner_meta, :range) do
+            {{line, col}, _} -> Keyword.merge(inner_meta, [line: line, column: col])
+            _ -> inner_meta
+          end
+
+        {unary_op, outer_meta, [{:in, in_meta, [{unary_op, inner_meta, [lhs]}, rhs]}]}
+
+      other ->
+        other
+    end)
+  end
+
+  defp normalize_not_over_in(ast) do
+    Macro.prewalk(ast, fn
+      {:not, meta, [{:in, in_meta, [lhs, rhs]}]} ->
+        lhs_pos =
+          case lhs do
+            {_, lhs_meta, _} -> meta_position(lhs_meta)
+            _ -> {nil, nil}
+          end
+
+        meta_pos = meta_position(meta)
+
+        cond do
+          block_with_do?(lhs) ->
+            {:not, meta, [{:in, in_meta, [lhs, rhs]}]}
+
+          valid_pos?(meta_pos) and valid_pos?(lhs_pos) and pos_leq?(meta_pos, lhs_pos) ->
+            new_meta = replace_line_column(meta, in_meta)
+            {:not, new_meta, [{:in, in_meta, [lhs, rhs]}]}
+
+          true ->
+            {:not, meta, [{:in, in_meta, [lhs, rhs]}]}
+        end
+
+      other ->
+        other
+    end)
+  end
+
+  defp normalize_bang_over_in(ast) do
+    Macro.prewalk(ast, fn
+      {:!, meta, [{:in, in_meta, [lhs, rhs]}]} ->
+        lhs_pos =
+          case lhs do
+            {_, lhs_meta, _} -> meta_position(lhs_meta)
+            _ -> {nil, nil}
+          end
+
+        meta_pos = meta_position(meta)
+
+        cond do
+          block_with_do?(lhs) ->
+            {:!, meta, [{:in, in_meta, [lhs, rhs]}]}
+
+          valid_pos?(meta_pos) and valid_pos?(lhs_pos) and pos_leq?(meta_pos, lhs_pos) ->
+            new_meta = replace_line_column(meta, in_meta)
+            {:!, new_meta, [{:in, in_meta, [lhs, rhs]}]}
+
+          true ->
+            {:!, meta, [{:in, in_meta, [lhs, rhs]}]}
+        end
+
+      other ->
+        other
+    end)
+  end
+
+  defp normalize_map_pipe_keys(ast) do
+    Macro.prewalk(ast, fn
+      {:%{}, meta, pairs} when is_list(pairs) ->
+        {:%{}, meta, normalize_map_pairs(pairs)}
+
+      other ->
+        other
+    end)
+  end
+
+  defp normalize_map_pairs(pairs) do
+    pairs
+    |> Enum.flat_map(fn
+      {:|, pipe_meta, [lhs, [{:|, inner_meta, [inner_lhs, [{key, value} | inner_rest]]} | rest]]} ->
+        {key_fun, key_meta, key_args} = key
+        assoc_meta = Keyword.get(key_meta, :assoc)
+        key_meta = Keyword.delete(key_meta, :assoc)
+
+        inner_meta =
+          case assoc_meta do
+            nil -> inner_meta
+            _ -> [{:assoc, assoc_meta} | inner_meta]
+          end
+
+        key = {key_fun, key_meta, key_args}
+        new_key = {:|, inner_meta, [inner_lhs, key]}
+        new_pairs = [{new_key, value} | inner_rest ++ rest]
+
+        [{:|, pipe_meta, [lhs, new_pairs]}]
+
+      {:|, pipe_meta, [lhs, [{key, value} | rest]]} ->
+        case key do
+          {op, key_meta, [arg1, arg2]} when op in [:when, :<-, :"\\\\", :"::"] ->
+            new_key = {op, key_meta, [{:|, pipe_meta, [lhs, arg1]}, arg2]}
+            [{new_key, value} | rest]
+
+          _ ->
+            [{:|, pipe_meta, [lhs, [{key, value} | rest]]}]
+        end
+
+      other ->
+        [other]
+    end)
   end
 
   defp normalize_not_pipelines(ast) do
@@ -4995,10 +5220,17 @@ defmodule Spitfire do
     end)
   end
 
-  @block_sensitive_unaries MapSet.new([:not, :!, :+, :-])
+  @block_sensitive_unaries MapSet.new([:not, :!, :+, :-, :^, :"~~~"])
 
   defp normalize_block_sensitive_unary(ast) do
     Macro.prewalk(ast, fn
+      {:not, not_meta, [{bin_op, bin_meta, [{unary_op, unary_meta, [operand]}, rhs]}]} = node ->
+        if bin_op == :in and unary_block_op?(unary_op) and block_with_do?(operand) do
+          {unary_op, unary_meta, [{:not, not_meta, [{bin_op, bin_meta, [operand, rhs]}]}]}
+        else
+          node
+        end
+
       {bin_op, bin_meta, [{unary_op, unary_meta, [operand]}, rhs]} = node ->
         if unary_block_op?(unary_op) and block_with_do?(operand) do
           {unary_op, unary_meta, [{bin_op, bin_meta, [operand, rhs]}]}

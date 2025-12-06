@@ -234,7 +234,6 @@ defmodule SpitfireReproTest do
     assert Spitfire.parse(code) == s2q(code)
   end
 
-  @tag :skip
   test "repro 28" do
     code = "<<:'ok' + %{\"A\" => delta}>> |> not 0 |> [\"bar\": Foo] + ['bob': foo] + :ok"
     assert Spitfire.parse(code) == s2q(code)
@@ -246,7 +245,7 @@ defmodule SpitfireReproTest do
     assert Spitfire.parse(code) == s2q(code)
   end
 
-  @tag :skip
+  # @tag :skip
   test "repro 30" do
     code = "\"foo\#{[{:alice, :alice}]}bar\" + not %{'ok': -1} |> quote do: :ok"
     assert Spitfire.parse(code) == s2q(code)
@@ -270,8 +269,10 @@ defmodule SpitfireReproTest do
     assert Spitfire.parse(code) == s2q(code)
   end
 
-  @tag :skip
   test "repro 34" do
+    code = "not a <> b"
+    assert Spitfire.parse(code) == s2q(code)
+
     code = "not \"\" <> \"\""
     assert Spitfire.parse(code) == s2q(code)
   end
@@ -294,25 +295,21 @@ defmodule SpitfireReproTest do
     assert Spitfire.parse(code) == s2q(code)
   end
 
-  @tag :skip
   test "repro 38" do
     code = "not ~s'\#{?a}' |> %{\"k\" => 5} < @qux 0"
     assert Spitfire.parse(code) == s2q(code)
   end
 
-  @tag :skip
   test "repro 39" do
     code = "not foo |> foo |> foo < '''\nfoo \#{0.0 |> foo} bar\n'''"
     assert Spitfire.parse(code) == s2q(code)
   end
 
-  @tag :skip
   test "repro 40" do
     code = "0 |> not \"\"\"\nfoo \#{foo} bar\n\"\"\" + \"\"\"\nfoo \#{{foo, foo}} bar\n\"\"\""
     assert Spitfire.parse(code) == s2q(code)
   end
 
-  @tag :skip
   test "repro 41" do
     code = "case not \"foo\#{:do}bar\" <> \"foo\#{State}bar\" do\n  {alpha, ^alpha} -> \"\"\"\nfoo \#{baz} bar\n\"\"\"\n  _ -> foo()\nend |> \"\"\"\nfoo \#{foo + Foo |> +delta} bar\n\"\"\""
     assert Spitfire.parse(code) == s2q(code)
@@ -354,13 +351,11 @@ defmodule SpitfireReproTest do
     assert Spitfire.parse(code) == s2q(code)
   end
 
-  @tag :skip
   test "repro 48" do
     code = "not gamma |> :foo > [\"alice\": alpha] |> case &1 do\n  ^delta -> ?v\n  _ -> delta\nend"
     assert Spitfire.parse(code) == s2q(code)
   end
 
-  @tag :skip
   test "repro 49" do
     code = "&(not \"foo\#{-3}bar\" <> \"foo\#{eggs}bar\" + 1)"
     assert Spitfire.parse(code) == s2q(code)

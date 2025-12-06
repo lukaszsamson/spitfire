@@ -11,11 +11,12 @@ defmodule SpitfireSystematicOperatorsTest do
   # ---------------------------------------------- | -------------
   # `@`                                            | Unary
   # `.`                                            | Left
-  # `+` `-` `!` `^` `not`                          | Unary
+  # `+` `-` `!` `^` `not` `~~~`                    | Unary
   # `**`                                           | Left
   # `*` `/`                                        | Left
   # `+` `-`                                        | Left
   # `++` `--` `+++` `---` `..` `<>`                | Right
+  # `^^^`                                          | Left
   # `in` `not in`                                  | Left
   # `|>` `<<<` `>>>` `<<~` `~>>` `<~` `~>` `<~>`   | Left
   # `<` `>` `<=` `>=`                              | Left
@@ -32,10 +33,10 @@ defmodule SpitfireSystematicOperatorsTest do
   # =============================================================================
 
   # Unary operators (note: @ and & have special syntax requirements)
-  @unary_ops ~w(@ + - ! ^ not & ...)a
+  @unary_ops ~w(@ + - ! ^ not & ... ~~~)a
 
   # Unary operators that can be freely combined with binary operators
-  @simple_unary_ops ~w(+ - ! ^ not)a
+  @simple_unary_ops ~w(+ - ! ^ not ~~~)a
 
   # Binary operators organized by precedence level
   @binary_ops [
@@ -44,6 +45,7 @@ defmodule SpitfireSystematicOperatorsTest do
     :*, :/,
     :+, :-,
     :++, :--, :+++, :---, :.., :<>,
+    :^^^,
     :in, :"not in",
     :|>, :<<<, :>>>, :<<~, :~>>, :<~, :~>, :<~>,
     :<, :>, :<=, :>=,
@@ -63,6 +65,7 @@ defmodule SpitfireSystematicOperatorsTest do
     :*, :/,
     :+, :-,
     :++, :--, :+++, :---, :.., :<>,
+    :^^^,
     :in, :"not in",
     :|>, :<<<, :>>>, :<<~, :~>>, :<~, :~>, :<~>,
     :<, :>, :<=, :>=,
@@ -80,7 +83,7 @@ defmodule SpitfireSystematicOperatorsTest do
   @right_assoc_ops ~w(++ -- +++ --- .. <> = | :: when)a
 
   # Left-associative binary operators
-  @left_assoc_ops ~w(** * / + - in |> <<< >>> <<~ ~>> <~ ~> <~> < > <= >= == != =~ === !== && &&& and || ||| or <- \\)a
+  @left_assoc_ops ~w(** * / + - ^^^ in |> <<< >>> <<~ ~>> <~ ~> <~> < > <= >= == != =~ === !== && &&& and || ||| or <- \\)a
 
   setup do
     original = Application.get_env(:spitfire, :tokenizer, :legacy)
@@ -228,11 +231,11 @@ defmodule SpitfireSystematicOperatorsTest do
        # op a..b//c
        # a..op b//c
        # a..b//op c
-       
-       failures = 
+
+       failures =
         for op <- @unary_ops do
           s_op = op_to_string(op)
-          
+
           [
             check("#{s_op} a..b//c"),
             check("a..#{s_op} b//c"),
@@ -241,7 +244,7 @@ defmodule SpitfireSystematicOperatorsTest do
         end
         |> List.flatten()
         |> Enum.reject(&is_nil/1)
-        
+
        assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
 
@@ -255,7 +258,7 @@ defmodule SpitfireSystematicOperatorsTest do
        # e.g. %{a | b => c} + d
 
        # Base cases
-       base_failures = 
+       base_failures =
          [
            check("%{a | b => c}"),
            check("%{a | b :: c => d}"),
@@ -268,7 +271,7 @@ defmodule SpitfireSystematicOperatorsTest do
        failures =
         for op <- @binary_ops do
           s_op = op_to_string(op)
-          
+
           # Inside values
           code1 = "%{a | b => c #{s_op} d}"
           # Inside keys
@@ -277,7 +280,7 @@ defmodule SpitfireSystematicOperatorsTest do
           code3 = "%{a #{s_op} b | c => d}"
           # Outside
           code4 = "%{a | b => c} #{s_op} d"
-          
+
           [
             check(code1),
             check(code2),
@@ -287,7 +290,7 @@ defmodule SpitfireSystematicOperatorsTest do
         end
         |> List.flatten()
         |> Enum.reject(&is_nil/1)
-        
+
        all_failures = base_failures ++ failures
        assert all_failures == [], "Failed combinations: #{inspect(all_failures, pretty: true, limit: :infinity)}"
     end
