@@ -97,12 +97,66 @@ defmodule Spitfire.Property.TokenCompiler do
   end
 
   # ---------------------------------------------------------------------------
+  # Binary Operators
+  # ---------------------------------------------------------------------------
+
+  # Binary operator: left op right (with optional trailing newlines)
+  # Per V7 Section 2: operators never render newlines from extra,
+  # we emit :eol token if newlines > 0
+  defp do_to_tokens({:binary_op, left, {:op_eol, {op_kind, op}, newlines}, right}, layout, opts) do
+    # Compile left operand
+    {left_tokens, layout} = do_to_tokens(left, layout, opts)
+
+    # Compile operator
+    op_lexeme = op_to_lexeme(op)
+    {op_meta, layout} = TokenLayout.space_before(layout, op_lexeme, nil)
+    op_token = {op_kind, op_meta, op}
+
+    # Handle newlines after operator
+    {eol_tokens, layout} =
+      if newlines > 0 do
+        eol_meta = TokenLayout.meta(layout, "\n", newlines)
+        layout = TokenLayout.newlines(layout, newlines)
+        {[{:eol, eol_meta}], layout}
+      else
+        {[], layout}
+      end
+
+    # Compile right operand
+    {right_tokens, layout} = do_to_tokens(right, layout, opts)
+
+    {left_tokens ++ [op_token] ++ eol_tokens ++ right_tokens, layout}
+  end
+
+  # ---------------------------------------------------------------------------
+  # Unary Operators
+  # ---------------------------------------------------------------------------
+
+  # Unary operator: op operand
+  defp do_to_tokens({:unary_op, {op_kind, op}, operand}, layout, opts) do
+    op_lexeme = op_to_lexeme(op)
+    {op_meta, layout} = TokenLayout.space_before(layout, op_lexeme, nil)
+    op_token = {op_kind, op_meta, op}
+
+    # Compile operand (may need space depending on operator)
+    {operand_tokens, layout} = do_to_tokens(operand, layout, opts)
+
+    {[op_token] ++ operand_tokens, layout}
+  end
+
+  # ---------------------------------------------------------------------------
   # Catch-all for unimplemented nodes
   # ---------------------------------------------------------------------------
 
   defp do_to_tokens(node, _layout, _opts) do
     raise "Unimplemented grammar tree node: #{inspect(node)}"
   end
+
+  # ===========================================================================
+  # Helper: op_to_lexeme
+  # ===========================================================================
+
+  defp op_to_lexeme(op) when is_atom(op), do: Atom.to_string(op)
 
   # ===========================================================================
   # Helper: compile_forms

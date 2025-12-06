@@ -9,6 +9,7 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
 
   - **Increment 1**: Literals (integers, floats, chars, atoms, bools, nil),
     identifiers, and aliases.
+  - **Increment 2**: Binary and unary operators with newline handling.
   """
 
   use ExUnitProperties
@@ -23,12 +24,47 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
   @aliases ~w(Foo Bar Baz Qux Remote Mod State Schema Context Config Default)a
   @atoms ~w(ok error foo bar baz one two three alice bob)a
 
+  # Binary operators: {token_kind, operator_atom}
+  # These are safe operators that don't require special context
+  @binary_ops [
+    # Arithmetic (dual_op)
+    {:dual_op, :+},
+    {:dual_op, :-},
+    {:mult_op, :*},
+    {:mult_op, :/},
+    # Comparison (comp_op)
+    {:comp_op, :==},
+    {:comp_op, :!=},
+    {:comp_op, :===},
+    {:comp_op, :!==},
+    # Relational (rel_op)
+    {:rel_op, :<},
+    {:rel_op, :>},
+    {:rel_op, :<=},
+    {:rel_op, :>=},
+    # Boolean (and_op, or_op)
+    {:and_op, :and},
+    {:or_op, :or},
+    # Pipe
+    {:pipe_op, :|>}
+  ]
+
+  # Unary operators: {token_kind, operator_atom}
+  @unary_ops [
+    {:unary_op, :not},
+    {:unary_op, :!},
+    {:dual_op, :+},
+    {:dual_op, :-}
+  ]
+
   # Fallback literals when budget is exhausted
   @fallback_literals [nil, 0, :ok]
 
   def atom_pool, do: @atoms
   def identifier_pool, do: @identifiers
   def alias_pool, do: @aliases
+  def binary_op_pool, do: @binary_ops
+  def unary_op_pool, do: @unary_ops
 
   # ===========================================================================
   # Public API: grammar/1
@@ -85,13 +121,24 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
     if GrammarTree.budget_exhausted?(state) do
       gen_fallback_literal()
     else
-      # Increment 1: only literals and identifiers
+      # Increment 1 + 2: literals, identifiers, and operators
       StreamData.frequency([
         {5, gen_literal()},
         {3, gen_identifier()},
-        {2, gen_alias()}
+        {2, gen_alias()},
+        {3, gen_binary_op(state)},
+        {2, gen_unary_op(state)}
       ])
     end
+  end
+
+  # Generate a simple expression (no operators) for use as operands
+  defp gen_simple_expr do
+    StreamData.frequency([
+      {5, gen_literal()},
+      {3, gen_identifier()},
+      {2, gen_alias()}
+    ])
   end
 
   defp gen_fallback_literal do
@@ -225,5 +272,71 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
   defp gen_alias do
     StreamData.member_of(@aliases)
     |> StreamData.map(fn atom -> {:alias, atom} end)
+  end
+
+  # ===========================================================================
+  # Generator: binary operators
+  # ===========================================================================
+
+  defp gen_binary_op(state) do
+    # Decrement depth to prevent infinite recursion
+    child_state = GrammarTree.decr_depth(state)
+
+    # Generate operands (use simple exprs at low depth)
+    operand_gen =
+      if child_state.budget.depth <= 1 do
+        gen_simple_expr()
+      else
+        gen_expr(child_state)
+      end
+
+    StreamData.bind(operand_gen, fn left ->
+      StreamData.bind(gen_op_eol(), fn op_eol ->
+        StreamData.bind(operand_gen, fn right ->
+          StreamData.constant({:binary_op, left, op_eol, right})
+        end)
+      end)
+    end)
+  end
+
+  # Generate op_eol: {op_kind, op} with optional newlines
+  defp gen_op_eol do
+    StreamData.bind(StreamData.member_of(@binary_ops), fn {op_kind, op} ->
+      # Most of the time no newline, occasionally 1 newline
+      StreamData.bind(gen_newlines(), fn newlines ->
+        StreamData.constant({:op_eol, {op_kind, op}, newlines})
+      end)
+    end)
+  end
+
+  # Generate newline count (0 most of the time, occasionally 1)
+  defp gen_newlines do
+    StreamData.frequency([
+      {8, StreamData.constant(0)},
+      {2, StreamData.constant(1)}
+    ])
+  end
+
+  # ===========================================================================
+  # Generator: unary operators
+  # ===========================================================================
+
+  defp gen_unary_op(state) do
+    # Decrement depth to prevent infinite recursion
+    child_state = GrammarTree.decr_depth(state)
+
+    # Generate operand (use simple exprs at low depth)
+    operand_gen =
+      if child_state.budget.depth <= 1 do
+        gen_simple_expr()
+      else
+        gen_expr(child_state)
+      end
+
+    StreamData.bind(StreamData.member_of(@unary_ops), fn {op_kind, op} ->
+      StreamData.bind(operand_gen, fn operand ->
+        StreamData.constant({:unary_op, {op_kind, op}, operand})
+      end)
+    end)
   end
 end

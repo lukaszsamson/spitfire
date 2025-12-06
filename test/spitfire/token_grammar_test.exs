@@ -211,6 +211,138 @@ defmodule Spitfire.TokenGrammarTest do
     end
   end
 
+  describe "binary operators" do
+    test "simple addition" do
+      tree =
+        {:grammar,
+         [
+           {:binary_op, {:int, 1, :dec, ~c"1"}, {:op_eol, {:dual_op, :+}, 0}, {:int, 2, :dec, ~c"2"}}
+         ]}
+
+      assert_roundtrip(tree, "1 + 2")
+    end
+
+    test "simple subtraction" do
+      tree =
+        {:grammar,
+         [
+           {:binary_op, {:identifier, :a}, {:op_eol, {:dual_op, :-}, 0}, {:identifier, :b}}
+         ]}
+
+      assert_roundtrip(tree, "a - b")
+    end
+
+    test "multiplication" do
+      tree =
+        {:grammar,
+         [
+           {:binary_op, {:int, 3, :dec, ~c"3"}, {:op_eol, {:mult_op, :*}, 0}, {:int, 4, :dec, ~c"4"}}
+         ]}
+
+      assert_roundtrip(tree, "3 * 4")
+    end
+
+    test "comparison ==" do
+      tree =
+        {:grammar,
+         [
+           {:binary_op, {:identifier, :x}, {:op_eol, {:comp_op, :==}, 0}, {:int, 0, :dec, ~c"0"}}
+         ]}
+
+      assert_roundtrip(tree, "x == 0")
+    end
+
+    test "boolean and" do
+      tree =
+        {:grammar,
+         [
+           {:binary_op, {:bool_lit, true}, {:op_eol, {:and_op, :and}, 0}, {:bool_lit, false}}
+         ]}
+
+      assert_roundtrip(tree, "true and false")
+    end
+
+    test "pipe operator" do
+      tree =
+        {:grammar,
+         [
+           {:binary_op, {:identifier, :a}, {:op_eol, {:pipe_op, :|>}, 0}, {:identifier, :b}}
+         ]}
+
+      assert_roundtrip(tree, "a |> b")
+    end
+
+    test "binary operator with newline after (op_eol)" do
+      # a +\n b
+      tree =
+        {:grammar,
+         [
+           {:binary_op, {:identifier, :a}, {:op_eol, {:dual_op, :+}, 1}, {:identifier, :b}}
+         ]}
+
+      tokens = TokenCompiler.to_tokens(tree)
+      code = Toxic.ToString.to_string(tokens)
+
+      assert code == "a +\nb"
+      assert {:ok, _} = Code.string_to_quoted(code)
+    end
+
+    test "nested binary operators" do
+      # 1 + 2 * 3
+      tree =
+        {:grammar,
+         [
+           {:binary_op, {:int, 1, :dec, ~c"1"}, {:op_eol, {:dual_op, :+}, 0},
+            {:binary_op, {:int, 2, :dec, ~c"2"}, {:op_eol, {:mult_op, :*}, 0},
+             {:int, 3, :dec, ~c"3"}}}
+         ]}
+
+      tokens = TokenCompiler.to_tokens(tree)
+      code = Toxic.ToString.to_string(tokens)
+
+      assert code == "1 + 2 * 3"
+      assert {:ok, _} = Code.string_to_quoted(code)
+    end
+  end
+
+  describe "unary operators" do
+    test "not operator" do
+      tree = {:grammar, [{:unary_op, {:unary_op, :not}, {:bool_lit, true}}]}
+      assert_roundtrip(tree, "not true")
+    end
+
+    test "bang operator" do
+      tree = {:grammar, [{:unary_op, {:unary_op, :!}, {:identifier, :x}}]}
+      assert_roundtrip(tree, "! x")
+    end
+
+    test "unary plus" do
+      tree = {:grammar, [{:unary_op, {:dual_op, :+}, {:int, 5, :dec, ~c"5"}}]}
+      assert_roundtrip(tree, "+ 5")
+    end
+
+    test "unary minus" do
+      tree = {:grammar, [{:unary_op, {:dual_op, :-}, {:int, 5, :dec, ~c"5"}}]}
+      assert_roundtrip(tree, "- 5")
+    end
+
+    test "unary with binary operator" do
+      # not a and b
+      tree =
+        {:grammar,
+         [
+           {:binary_op, {:unary_op, {:unary_op, :not}, {:identifier, :a}},
+            {:op_eol, {:and_op, :and}, 0}, {:identifier, :b}}
+         ]}
+
+      tokens = TokenCompiler.to_tokens(tree)
+      code = Toxic.ToString.to_string(tokens)
+
+      assert code == "not a and b"
+      assert {:ok, _} = Code.string_to_quoted(code)
+    end
+  end
+
   describe "token structure verification" do
     test "integer token has correct structure" do
       tree = {:grammar, [{:int, 42, :dec, ~c"42"}]}
