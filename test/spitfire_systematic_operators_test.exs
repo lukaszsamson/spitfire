@@ -292,6 +292,49 @@ defmodule SpitfireSystematicOperatorsTest do
        assert all_failures == [], "Failed combinations: #{inspect(all_failures, pretty: true, limit: :infinity)}"
     end
 
+    test "ternary range between two binary operators (a op1 b..c//d op2 e)" do
+      failures =
+        for op1 <- @binary_ops, op2 <- @binary_ops do
+          s1 = op_to_string(op1)
+          s2 = op_to_string(op2)
+
+          check("a #{s1} b..c//d #{s2} e")
+        end
+        |> Enum.reject(&is_nil/1)
+
+      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+    end
+
+    test "map update between two binary operators (a op1 %{m | k => v} op2 b)" do
+      failures =
+        for op1 <- @binary_ops, op2 <- @binary_ops do
+          s1 = op_to_string(op1)
+          s2 = op_to_string(op2)
+
+          check("a #{s1} %{m | k => v} #{s2} b")
+        end
+        |> Enum.reject(&is_nil/1)
+
+      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+    end
+
+    test "map update with unary operators" do
+      failures =
+        for op <- @simple_unary_ops do
+          s_op = op_to_string(op)
+
+          [
+            check("#{s_op} %{m | k => v}"),
+            check("%{m | #{s_op} k => v}"),
+            check("%{m | k => #{s_op} v}")
+          ]
+        end
+        |> List.flatten()
+        |> Enum.reject(&is_nil/1)
+
+      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+    end
+
   end
 
   defp check(code) do
@@ -1090,6 +1133,24 @@ defmodule SpitfireSystematicOperatorsTest do
             check("%{a: b} #{s_op} 1..10//2"),
             check("%{1..2 => 3..4//5}"),
             check("a..b//c #{s_op} %{d | e => f}")
+          ]
+        end
+        |> List.flatten()
+        |> Enum.reject(&is_nil/1)
+
+      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+    end
+
+    test "binary operators between two ternaries" do
+      failures =
+        for op <- @binary_ops do
+          s_op = op_to_string(op)
+
+          [
+            check("a..b//c #{s_op} d..e//f"),
+            check("a..b//c #{s_op} %{m | k => v}"),
+            check("%{m | k => v} #{s_op} a..b//c"),
+            check("%{m | k => v} #{s_op} %{p | q => r}")
           ]
         end
         |> List.flatten()
