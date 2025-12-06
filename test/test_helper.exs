@@ -37,5 +37,6 @@ Application.put_env(:spitfire, :strip_ranges, true)
 
 Code.require_file("spitfire/property_generators.exs", __DIR__)
 Code.require_file("spitfire/property.exs", __DIR__)
+Code.require_file("spitfire/property/token_grammar_generators.exs", __DIR__)
 
 ExUnit.start(exclude: [:skip, :skip_errors, :skip_comments, :skip_cursor])
