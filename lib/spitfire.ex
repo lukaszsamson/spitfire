@@ -1310,6 +1310,8 @@ defmodule Spitfire do
 
       {rhs, parser} =
         if next_peek in [:end, :")", :eof] do
+          rhs = encode_literal(parser, nil, op_range)
+
           parser =
             case next_peek do
               :end -> parser |> next_token() |> eat_eol()
@@ -1317,7 +1319,7 @@ defmodule Spitfire do
               _ -> parser
             end
 
-          {nil, parser}
+          {rhs, parser}
         else
           {exprs, parser} =
             while2 peek_token(parser) not in [:end, :")"] <- parser do
@@ -2299,7 +2301,7 @@ defmodule Spitfire do
       current_token(parser) == :-> ->
         {ast, parser}
 
-      current_token(parser) == :end and peek_token(parser) == :eof ->
+      current_token(parser) == :end and peek_token_eat_eol(parser) == :eof ->
         {ast, parser}
 
       peek_token(parser) == :end ->

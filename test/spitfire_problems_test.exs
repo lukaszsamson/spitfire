@@ -54,7 +54,6 @@ defmodule SpitfireProblemsTest do
     end
   end
 
-  @tag :skip
   test "Spitfire empty function" do
       code = ~S"""
       fn -> end
