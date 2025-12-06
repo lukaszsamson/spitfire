@@ -1329,4 +1329,451 @@ defmodule SpitfireSystematicOperatorsTest do
       assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
   end
+
+  # =============================================================================
+  # Capture Operator followed by Binary Operators
+  # =============================================================================
+  # Patterns from repro 27, 29, 32, 43, 50: &(...) op ...
+
+  describe "capture followed by binary operators" do
+    test "&(expr) followed by all binary operators" do
+      failures =
+        for op <- @simple_binary_ops do
+          s_op = op_to_string(op)
+
+          [
+            check("&(a + 1) #{s_op} b"),
+            check("&foo/1 #{s_op} b"),
+            check("&Foo.bar/2 #{s_op} b"),
+            check("b #{s_op} &(a + 1)"),
+            check("b #{s_op} &foo/1")
+          ]
+        end
+        |> List.flatten()
+        |> Enum.reject(&is_nil/1)
+
+      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+    end
+
+    test "&(expr) followed by range operators" do
+      failures =
+        [
+          check("&(a + 1)..b"),
+          check("&(a + 1)..b//c"),
+          check("a..&(b + 1)"),
+          check("a..&(b + 1)//c"),
+          check("&foo/1..b..c"),
+          check("&foo/1..b//c")
+        ]
+        |> Enum.reject(&is_nil/1)
+
+      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+    end
+
+    test "&(expr) with keyword list followed by binary operators" do
+      failures =
+        for op <- [:++, :--, :|>, :in, :<>, :==, :&&, :||] do
+          s_op = op_to_string(op)
+
+          [
+            check("&([a: 1] + 1) #{s_op} b"),
+            check("&(['one': :ok] + 1) #{s_op} b")
+          ]
+        end
+        |> List.flatten()
+        |> Enum.reject(&is_nil/1)
+
+      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+    end
+
+    test "&(expr) with struct/map followed by binary operators" do
+      failures =
+        for op <- [:++, :--, :|>, :in, :<>, :==, :&&, :||] do
+          s_op = op_to_string(op)
+
+          [
+            check("&(%{a: 1} + 1) #{s_op} b"),
+            check("&(%Foo{a: 1} + 1) #{s_op} b"),
+            check("&({a, b} + 1) #{s_op} c")
+          ]
+        end
+        |> List.flatten()
+        |> Enum.reject(&is_nil/1)
+
+      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+    end
+  end
+
+  # =============================================================================
+  # Nested Captures
+  # =============================================================================
+  # Pattern from repro 35, 37: &(&(... + 1) + 1)
+
+  describe "nested captures" do
+    test "double nested capture" do
+      failures =
+        [
+          check("&(&(a + 1) + 1)"),
+          check("&(&(0 + 1) + 1)"),
+          check("&(&1 + &(&2 + 1))"),
+          check("&(&(&1 + 1) + 1)")
+        ]
+        |> Enum.reject(&is_nil/1)
+
+      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+    end
+
+    test "nested capture with struct" do
+      failures =
+        [
+          check("&(&(%Foo{a: b} + 1) + 1)"),
+          check("&(&(%{a: 1} + 1) + 1)"),
+          check("&(&([a: 1] + 1) + 1)")
+        ]
+        |> Enum.reject(&is_nil/1)
+
+      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+    end
+
+    test "nested capture inside interpolation" do
+      failures =
+        [
+          check(~s'"foo\#{&(&(0 + 1) + 1)}bar"'),
+          check(~s'~s"""\\nfoo \#{&(&(0 + 1) + 1)} bar\\n"""')
+        ]
+        |> Enum.reject(&is_nil/1)
+
+      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+    end
+  end
+
+  # =============================================================================
+  # Capture with Char Literals
+  # =============================================================================
+  # Pattern from repro 45: &(?h + 1)
+
+  describe "capture with char literals" do
+    test "&(?x + n) patterns" do
+      failures =
+        for op <- @simple_binary_ops do
+          s_op = op_to_string(op)
+
+          [
+            check("&(?a + 1)"),
+            check("&(?a + 1) #{s_op} b"),
+            check("b #{s_op} &(?a + 1)"),
+            check("&(?a #{s_op} ?b)")
+          ]
+        end
+        |> List.flatten()
+        |> Enum.reject(&is_nil/1)
+
+      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+    end
+
+    test "capture with char literal in map" do
+      failures =
+        [
+          check("%{a => &(?h + 1)}"),
+          check("%{&(?h + 1) => a}"),
+          check("%{a => &(?h + 1) !== b}"),
+          check("foo(%{a => &(?h + 1) !== b})")
+        ]
+        |> Enum.reject(&is_nil/1)
+
+      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+    end
+  end
+
+  # =============================================================================
+  # fn Expressions followed by Binary Operators
+  # =============================================================================
+  # Pattern from repro 47: fn -> x end &&& y
+
+  describe "fn expressions followed by binary operators" do
+    test "fn -> expr end followed by all binary operators" do
+      failures =
+        for op <- @simple_binary_ops do
+          s_op = op_to_string(op)
+
+          [
+            check("fn -> a end #{s_op} b"),
+            check("fn x -> x end #{s_op} b"),
+            check("fn x, y -> x + y end #{s_op} b"),
+            check("a #{s_op} fn -> b end")
+          ]
+        end
+        |> List.flatten()
+        |> Enum.reject(&is_nil/1)
+
+      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+    end
+
+    test "fn followed by &&& and then capture with pipe" do
+      failures =
+        [
+          check("fn a -> a end &&& b"),
+          check("fn a -> a end &&& &(a + 1)"),
+          check("fn a -> a end &&& &(a + 1) |> b"),
+          check("fn a -> a end &&& &(a + 1) |> b |> c")
+        ]
+        |> Enum.reject(&is_nil/1)
+
+      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+    end
+  end
+
+  # =============================================================================
+  # Unary + do/end Blocks followed by Range with Step
+  # =============================================================================
+  # Pattern from repro 44, 46: +case...end..x//y, +with...end..x//y
+
+  describe "unary with do/end blocks followed by range" do
+    test "unary op do/end block followed by range" do
+      failures =
+        for unary <- @simple_unary_ops do
+          s_unary = op_to_string(unary)
+
+          [
+            check("#{s_unary} case a do\n  _ -> b\nend..c"),
+            check("#{s_unary} case a do\n  _ -> b\nend..c//d"),
+            check("#{s_unary} try do\n  a\nend..b"),
+            check("#{s_unary} try do\n  a\nend..b//c"),
+            check("#{s_unary} with a <- b, do: c end..d//e"),
+            check("#{s_unary} quote do\n  a\nend..b//c")
+          ]
+        end
+        |> List.flatten()
+        |> Enum.reject(&is_nil/1)
+
+      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+    end
+
+    test "unary + case followed by pipe and power operators" do
+      failures =
+        [
+          check("+case a do\n  _ -> b\nend |> c"),
+          check("+case a do\n  _ -> b\nend |> c ** d"),
+          check("+case a do\n  _ -> b\nend |> c ** d >>> e"),
+          check("-case a do\n  _ -> b\nend |> c ** d")
+        ]
+        |> Enum.reject(&is_nil/1)
+
+      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+    end
+  end
+
+  # =============================================================================
+  # Char Literals Piped to Data Structures
+  # =============================================================================
+  # Pattern from repro 36: 'M' |> %Struct{}
+
+  describe "char literals with pipe to data structures" do
+    test "char literal piped to struct/map" do
+      failures =
+        [
+          check("?a |> %Foo{}"),
+          check("?a |> %Foo{b: c}"),
+          check("?a |> %{b: c}"),
+          check("'M' |> %Foo{}"),
+          check("'M' |> %Foo{a: b}")
+        ]
+        |> Enum.reject(&is_nil/1)
+
+      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+    end
+
+    test "charlist piped to struct in function call" do
+      failures =
+        [
+          check("foo('M' |> %Baz{})"),
+          check("Foo.bar('M' |> %Baz{a: b})"),
+          check("Foo.bar('M' |> %Baz{a: b, c: d})")
+        ]
+        |> Enum.reject(&is_nil/1)
+
+      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+    end
+  end
+
+  # =============================================================================
+  # Range inside Bitstring
+  # =============================================================================
+  # Pattern from repro 31: <<?a..foo>>
+
+  describe "range inside bitstring" do
+    test "char literal range in bitstring" do
+      failures =
+        [
+          check("<<?a..b>>"),
+          check("<<?a..foo>>"),
+          check("<<a..?b>>"),
+          check("<<?a..:ok>>"),
+          check("<<a..b, c::8>>")
+        ]
+        |> Enum.reject(&is_nil/1)
+
+      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+    end
+
+    test "complex expressions in bitstring" do
+      failures =
+        [
+          check("<<a + b>>"),
+          check("<<a + b, c::binary>>"),
+          check("<<a |> b>>"),
+          check("<<a..b//c>>")
+        ]
+        |> Enum.reject(&is_nil/1)
+
+      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+    end
+  end
+
+  # =============================================================================
+  # Unary Operators inside Bitstring
+  # =============================================================================
+  # Pattern from repro 33: <<+quote do...end, ...>>
+
+  describe "unary operators inside bitstring" do
+    test "unary with do/end block inside bitstring" do
+      failures =
+        for unary <- @simple_unary_ops do
+          s_unary = op_to_string(unary)
+
+          [
+            check("<<#{s_unary} a>>"),
+            check("<<#{s_unary} a, b::8>>"),
+            check("<<a, #{s_unary} b>>")
+          ]
+        end
+        |> List.flatten()
+        |> Enum.reject(&is_nil/1)
+
+      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+    end
+
+    test "unary + do/end blocks inside bitstring" do
+      failures =
+        [
+          check("<<+quote do\n  a\nend>>"),
+          check("<<-case a do\n  _ -> b\nend>>"),
+          check("<<+quote do\n  a\nend, b::8>>"),
+          check("{:ok, <<+quote do\n  a\nend>>}")
+        ]
+        |> Enum.reject(&is_nil/1)
+
+      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+    end
+  end
+
+  # =============================================================================
+  # Complex Interpolation with Capture and Pipe
+  # =============================================================================
+  # Pattern from repro 42: 'foo#{&(0 |> Foo + 1) |> %{...}}bar'
+
+  describe "complex interpolation with capture and pipe" do
+    test "capture with pipe inside interpolation" do
+      failures =
+        [
+          check(~s'"foo\#{&(a |> b)}bar"'),
+          check(~s'"foo\#{&(a |> b + 1)}bar"'),
+          check(~s'"foo\#{&(a |> b + 1) |> c}bar"'),
+          check("'foo\#{&(a |> b + 1)}bar'"),
+          check("'foo\#{&(0 |> Foo + 1) |> %{a: b}}bar'")
+        ]
+        |> Enum.reject(&is_nil/1)
+
+      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+    end
+
+    test "capture followed by in and fn with pipe" do
+      failures =
+        [
+          check("&(a + 1) in b"),
+          check("&(a + 1) in fn -> b end"),
+          check("&(a + 1) in fn -> b end |> c"),
+          check("&(a + 1) in fn -> b end |> quote do\n  c\nend")
+        ]
+        |> Enum.reject(&is_nil/1)
+
+      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+    end
+  end
+
+  # =============================================================================
+  # Heredoc Charlists with Complex Interpolation
+  # =============================================================================
+  # Pattern from repro 29: &('''...''' + 1)..0.0
+
+  describe "heredoc charlists with operators" do
+    test "capture with heredoc charlist followed by range" do
+      failures =
+        [
+          check("&('''\nfoo\n''' + 1)"),
+          check("&('''\nfoo\n''' + 1)..b"),
+          check("&('''\nfoo\n''' + 1)..b//c"),
+          check("a..&('''\nfoo\n''' + 1)")
+        ]
+        |> Enum.reject(&is_nil/1)
+
+      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+    end
+
+    test "heredoc charlist with interpolation containing operators" do
+      failures =
+        [
+          check("'''\nfoo \#{a + b}\n'''"),
+          check("'''\nfoo \#{a |> b}\n'''"),
+          check("'''\nfoo \#{&(a + 1)}\n'''"),
+          check("'''\nfoo \#{%{a: b}}\n'''")
+        ]
+        |> Enum.reject(&is_nil/1)
+
+      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+    end
+  end
+
+  # =============================================================================
+  # Combination of Multiple Complex Patterns
+  # =============================================================================
+
+  describe "combination of multiple complex patterns" do
+    test "fn in capture with operators" do
+      failures =
+        [
+          check("&({a, b} + 1) in fn -> c end"),
+          check("fn a -> &(b + 1) end"),
+          check("fn a -> &(b + 1) in c end")
+        ]
+        |> Enum.reject(&is_nil/1)
+
+      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+    end
+
+    test "atoms as quoted keys with operators" do
+      failures =
+        [
+          check("%{:'ok' => a + b}"),
+          check("%{:'ok' + a => b}"),
+          check("<<:'ok' + a>>"),
+          check("[:'ok': a + b]")
+        ]
+        |> Enum.reject(&is_nil/1)
+
+      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+    end
+
+    test "with expression inside capture" do
+      failures =
+        [
+          check("&(with a <- b, do: c)"),
+          check("&(with a <- b, do: c + d)"),
+          check("&(with a <- b, do: c) |> d")
+        ]
+        |> Enum.reject(&is_nil/1)
+
+      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+    end
+  end
 end

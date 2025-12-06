@@ -1238,15 +1238,9 @@ defmodule Spitfire do
 
       parser = parser |> next_token() |> eat_eol()
 
-      {rhs, parser} =
-        if current_token(parser) == :"(" do
-          parse_grouped_expression(parser)
-        else
-          parser = push_capture_name_context(parser)
-          {expr, parser} = parse_expression(parser, @capture_op, false, false, false)
-          parser = pop_capture_name_context(parser)
-          {expr, parser}
-        end
+      parser = push_capture_name_context(parser)
+      {rhs, parser} = parse_expression(parser, @capture_op, false, false, false)
+      parser = pop_capture_name_context(parser)
 
       ast =
         {token, meta, [rhs]}
@@ -5223,7 +5217,7 @@ defmodule Spitfire do
   @block_sensitive_unaries MapSet.new([:not, :!, :+, :-, :^, :"~~~"])
 
   defp normalize_block_sensitive_unary(ast) do
-    Macro.prewalk(ast, fn
+    Macro.postwalk(ast, fn
       {:not, not_meta, [{bin_op, bin_meta, [{unary_op, unary_meta, [operand]}, rhs]}]} = node ->
         if bin_op == :in and unary_block_op?(unary_op) and block_with_do?(operand) do
           {unary_op, unary_meta, [{:not, not_meta, [{bin_op, bin_meta, [operand, rhs]}]}]}
@@ -5231,9 +5225,28 @@ defmodule Spitfire do
           node
         end
 
-      {bin_op, bin_meta, [{unary_op, unary_meta, [operand]}, rhs]} = node ->
-        if unary_block_op?(unary_op) and block_with_do?(operand) do
-          {unary_op, unary_meta, [{bin_op, bin_meta, [operand, rhs]}]}
+      {:not, not_meta, [{unary_op, unary_meta, [operand]}]} = node ->
+        if unary_block_op?(unary_op) and leftmost_block_with_do?(operand) do
+          {unary_op, unary_meta, [{:not, not_meta, [operand]}]}
+        else
+          node
+        end
+
+      {bin_op, bin_meta, [{unary_op, unary_meta, [operand]} | rest]} = node
+      when rest != [] and bin_op != :<<>> ->
+        if unary_block_op?(unary_op) and leftmost_block_with_do?(operand) do
+          {unary_op, unary_meta, [{bin_op, bin_meta, [operand | rest]}]}
+        else
+          node
+        end
+
+      {unary_op, unary_meta, [{:<<>>, bs_meta, [first | rest]}]} = node ->
+        bs_pos = meta_position(bs_meta)
+        unary_pos = meta_position(unary_meta)
+
+        if unary_block_op?(unary_op) and valid_pos?(bs_pos) and valid_pos?(unary_pos) and
+             pos_geq?(unary_pos, bs_pos) do
+          {:<<>>, bs_meta, [{unary_op, unary_meta, [first]} | rest]}
         else
           node
         end
@@ -5250,6 +5263,12 @@ defmodule Spitfire do
   end
 
   defp block_with_do?(_), do: false
+
+  defp leftmost_block_with_do?({op, _meta, [lhs | _]} = node) when is_atom(op) do
+    block_with_do?(node) or leftmost_block_with_do?(lhs)
+  end
+
+  defp leftmost_block_with_do?(expr), do: block_with_do?(expr)
 
   defp encode_literal(parser, literal, range_override \\ nil)
 

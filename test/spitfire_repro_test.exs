@@ -228,7 +228,6 @@ defmodule SpitfireReproTest do
     assert Spitfire.parse(code) == s2q(code)
   end
 
-  @tag :skip
   test "repro 27" do
     code = "fn ['end': baz], ^qux -> &({-5, foo} + 1) in Remote.\"three\"(\"foo\#{foo}bar\", not spam) end"
     assert Spitfire.parse(code) == s2q(code)
@@ -239,13 +238,11 @@ defmodule SpitfireReproTest do
     assert Spitfire.parse(code) == s2q(code)
   end
 
-  @tag :skip
   test "repro 29" do
     code = "&('''\nfoo \#{%{'ok': alpha}} bar\n''' + 1)..0.0"
     assert Spitfire.parse(code) == s2q(code)
   end
 
-  # @tag :skip
   test "repro 30" do
     code = "\"foo\#{[{:alice, :alice}]}bar\" + not %{'ok': -1} |> quote do: :ok"
     assert Spitfire.parse(code) == s2q(code)
@@ -257,13 +254,11 @@ defmodule SpitfireReproTest do
     assert Spitfire.parse(code) == s2q(code)
   end
 
-  @tag :skip
   test "repro 32" do
     code = "&(['one': :ok] + 1) |> Foo.foo()"
     assert Spitfire.parse(code) == s2q(code)
   end
 
-  @tag :skip
   test "repro 33" do
     code = "{:ok, <<+quote do\n  spam\nend, with ^eggs <- :bob do\n  ?p\nelse\n  _ -> 0\nend>>}"
     assert Spitfire.parse(code) == s2q(code)
@@ -277,7 +272,6 @@ defmodule SpitfireReproTest do
     assert Spitfire.parse(code) == s2q(code)
   end
 
-  @tag :skip
   test "repro 35" do
     code = "&(&(%Qux{label: ['alice': foo]} + 1) + 1)"
     assert Spitfire.parse(code) == s2q(code)
@@ -289,7 +283,6 @@ defmodule SpitfireReproTest do
     assert Spitfire.parse(code) == s2q(code)
   end
 
-  @tag :skip
   test "repro 37" do
     code = "~s\"\"\"\nfoo \#{&(&(0 + 1) + 1)} bar\n\"\"\""
     assert Spitfire.parse(code) == s2q(code)
@@ -315,37 +308,31 @@ defmodule SpitfireReproTest do
     assert Spitfire.parse(code) == s2q(code)
   end
 
-  @tag :skip
   test "repro 42" do
     code = "'foo\#{&(0 |> Foo + 1) |> %{label: [Config, ?o, Qux]}}bar'"
     assert Spitfire.parse(code) == s2q(code)
   end
 
-  @tag :skip
   test "repro 43" do
     code = "&('foo\#{Context |> 22.0}bar' + 1) in fn -> with ^spam <- bar do\n  Bar\nelse\n  _ -> gamma\nend end |> quote do\n  20.0\nend"
     assert Spitfire.parse(code) == s2q(code)
   end
 
-  @tag :skip
   test "repro 44" do
     code = "+case {delta, -4} do\n  foo -> gamma\n  _ -> :error\nend |> :alice ** foo >>> %Default{\"bar\": alpha}"
     assert Spitfire.parse(code) == s2q(code)
   end
 
-  @tag :skip
   test "repro 45" do
     code = "Context.foo(%{\"v\" => &(?h + 1) !== \"Tsyh\"})"
     assert Spitfire.parse(code) == s2q(code)
   end
 
-  @tag :skip
   test "repro 46" do
     code = "+with ?p <- :three do\n  beta\nelse\n  _ -> foo\nend..Schema//2"
     assert Spitfire.parse(code) == s2q(code)
   end
 
-  @tag :skip
   test "repro 47" do
     code = "fn gamma -> Context end &&& &(gamma + 1) |> %Baz{metadata: :'alice'} |> Config"
     assert Spitfire.parse(code) == s2q(code)
@@ -361,7 +348,6 @@ defmodule SpitfireReproTest do
     assert Spitfire.parse(code) == s2q(code)
   end
 
-  @tag :skip
   test "repro 50" do
     code = "&(%{\"three\": beta |> 0} + 1) ++ State.\"foo\"(bar)"
     assert Spitfire.parse(code) == s2q(code)
