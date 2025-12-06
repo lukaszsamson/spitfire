@@ -236,6 +236,59 @@ defmodule Spitfire.Property.TokenCompiler do
     {[fn_token] ++ clause_tokens ++ [end_token], layout}
   end
 
+  # fn_multi: fn clause1; clause2; ... end
+  defp do_to_tokens({:fn_multi, clauses}, layout, opts) when length(clauses) >= 2 do
+    # Compile 'fn' keyword
+    {fn_meta, layout} = TokenLayout.space_before(layout, "fn", nil)
+    fn_token = {:fn, fn_meta}
+
+    # Compile stab clauses with semicolon separators
+    {clauses_tokens, layout} = compile_stab_clauses(clauses, layout, opts)
+
+    # Compile 'end' keyword
+    {end_meta, layout} = TokenLayout.space_before(layout, "end", nil)
+    end_token = {:end, end_meta}
+
+    {[fn_token] ++ clauses_tokens ++ [end_token], layout}
+  end
+
+  # ---------------------------------------------------------------------------
+  # do_block expressions (Phase 2)
+  # ---------------------------------------------------------------------------
+
+  # call_do: identifier do body end (e.g., if true do :yes end)
+  defp do_to_tokens({:call_do, {:identifier, name}, args, {:do_block, body, extras}}, layout, opts) do
+    # Compile identifier as do_identifier
+    name_str = Atom.to_string(name)
+    chars = String.to_charlist(name_str)
+    {id_meta, layout} = TokenLayout.space_before(layout, name_str, chars)
+    id_token = {:do_identifier, id_meta, name}
+
+    # Compile arguments (if any)
+    {args_tokens, layout} = compile_do_args(args, layout, opts)
+
+    # Compile 'do' keyword
+    {do_meta, layout} = TokenLayout.space_before(layout, "do", nil)
+    do_token = {:do, do_meta}
+
+    # Newline after do
+    eol_meta = TokenLayout.meta(layout, "\n", 1)
+    eol_token = {:eol, eol_meta}
+    layout = TokenLayout.newline(layout)
+
+    # Compile body expressions
+    {body_tokens, layout} = compile_do_body(body, layout, opts)
+
+    # Compile extras (else, rescue, etc.)
+    {extras_tokens, layout} = compile_block_items(extras, layout, opts)
+
+    # Compile 'end' keyword
+    {end_meta, layout} = TokenLayout.space_before(layout, "end", nil)
+    end_token = {:end, end_meta}
+
+    {[id_token] ++ args_tokens ++ [do_token, eol_token] ++ body_tokens ++ extras_tokens ++ [end_token], layout}
+  end
+
   # ---------------------------------------------------------------------------
   # Catch-all for unimplemented nodes
   # ---------------------------------------------------------------------------
@@ -494,9 +547,33 @@ defmodule Spitfire.Property.TokenCompiler do
   # Helper: compile_stab_clause
   # ===========================================================================
 
-  # Compile a stab clause: pattern -> body
+  # Compile a stab clause: pattern -> body (or pattern when guard -> body)
   # Pattern can be :empty, {:single, expr}, or {:many, [expr]}
-  # Guard must be nil in Phase 1
+  # Guard can be nil or an expression
+
+  # Stab clause with guard: pattern when guard -> body
+  defp compile_stab_clause({:stab_clause, pattern, guard, body}, layout, opts) when guard != nil do
+    # Compile pattern (if any)
+    {pattern_tokens, layout} = compile_pattern(pattern, layout, opts)
+
+    # Compile 'when' keyword
+    {when_meta, layout} = TokenLayout.space_before(layout, "when", nil)
+    when_token = {:when_op, when_meta, :when}
+
+    # Compile guard expression
+    {guard_tokens, layout} = do_to_tokens(guard, layout, opts)
+
+    # Compile stab operator ->
+    {stab_meta, layout} = TokenLayout.space_before(layout, "->", nil)
+    stab_token = {:stab_op, stab_meta, :->}
+
+    # Compile body
+    {body_tokens, layout} = do_to_tokens(body, layout, opts)
+
+    {pattern_tokens ++ [when_token] ++ guard_tokens ++ [stab_token] ++ body_tokens, layout}
+  end
+
+  # Stab clause without guard: pattern -> body
   defp compile_stab_clause({:stab_clause, pattern, nil, body}, layout, opts) do
     # Compile pattern (if any)
     {pattern_tokens, layout} = compile_pattern(pattern, layout, opts)
@@ -546,5 +623,193 @@ defmodule Spitfire.Property.TokenCompiler do
     {rest_tokens, layout} = compile_pattern_list(rest, layout, opts)
 
     {expr_tokens ++ [comma_token] ++ rest_tokens, layout}
+  end
+
+  # ===========================================================================
+  # Helper: compile_stab_clauses (multiple clauses with semicolon separators)
+  # ===========================================================================
+
+  # Compile multiple stab clauses with semicolon separators
+  defp compile_stab_clauses([], layout, _opts), do: {[], layout}
+
+  defp compile_stab_clauses([clause], layout, opts) do
+    compile_stab_clause(clause, layout, opts)
+  end
+
+  defp compile_stab_clauses([clause | rest], layout, opts) do
+    # Compile first clause
+    {clause_tokens, layout} = compile_stab_clause(clause, layout, opts)
+
+    # Add semicolon separator
+    {semi_meta, layout} = TokenLayout.stick_right(layout, ";", nil)
+    semi_token = {:";", semi_meta}
+
+    # Compile remaining clauses
+    {rest_tokens, layout} = compile_stab_clauses(rest, layout, opts)
+
+    {clause_tokens ++ [semi_token] ++ rest_tokens, layout}
+  end
+
+  # ===========================================================================
+  # Helper: compile_do_args (arguments for do blocks)
+  # ===========================================================================
+
+  # Compile arguments for do block (if/unless take one arg, case takes an expression)
+  defp compile_do_args([], layout, _opts), do: {[], layout}
+
+  defp compile_do_args([arg], layout, opts) do
+    do_to_tokens(arg, layout, opts)
+  end
+
+  defp compile_do_args([arg | rest], layout, opts) do
+    {arg_tokens, layout} = do_to_tokens(arg, layout, opts)
+    {rest_tokens, layout} = compile_do_args(rest, layout, opts)
+    {arg_tokens ++ rest_tokens, layout}
+  end
+
+  # ===========================================================================
+  # Helper: compile_do_body (body of do block)
+  # ===========================================================================
+
+  # Compile do block body - can be a list of expressions or stab clauses
+  defp compile_do_body([], layout, _opts), do: {[], layout}
+
+  # Handle stab clauses (for case expressions)
+  defp compile_do_body([{:stab_clause, _, _, _} = clause | rest], layout, opts) do
+    compile_stab_body([clause | rest], layout, opts)
+  end
+
+  defp compile_do_body([expr], layout, opts) do
+    {expr_tokens, layout} = do_to_tokens(expr, layout, opts)
+
+    # Add trailing newline
+    eol_meta = TokenLayout.meta(layout, "\n", 1)
+    eol_token = {:eol, eol_meta}
+    layout = TokenLayout.newline(layout)
+
+    {expr_tokens ++ [eol_token], layout}
+  end
+
+  defp compile_do_body([expr | rest], layout, opts) do
+    {expr_tokens, layout} = do_to_tokens(expr, layout, opts)
+
+    # Add EOL between expressions
+    eol_meta = TokenLayout.meta(layout, "\n", 1)
+    eol_token = {:eol, eol_meta}
+    layout = TokenLayout.newline(layout)
+
+    {rest_tokens, layout} = compile_do_body(rest, layout, opts)
+
+    {expr_tokens ++ [eol_token] ++ rest_tokens, layout}
+  end
+
+  # Compile stab clauses in do block body (for case expressions)
+  defp compile_stab_body([], layout, _opts), do: {[], layout}
+
+  defp compile_stab_body([clause], layout, opts) do
+    {clause_tokens, layout} = compile_stab_clause(clause, layout, opts)
+
+    # Add trailing newline
+    eol_meta = TokenLayout.meta(layout, "\n", 1)
+    eol_token = {:eol, eol_meta}
+    layout = TokenLayout.newline(layout)
+
+    {clause_tokens ++ [eol_token], layout}
+  end
+
+  defp compile_stab_body([clause | rest], layout, opts) do
+    {clause_tokens, layout} = compile_stab_clause(clause, layout, opts)
+
+    # Add newline between clauses
+    eol_meta = TokenLayout.meta(layout, "\n", 1)
+    eol_token = {:eol, eol_meta}
+    layout = TokenLayout.newline(layout)
+
+    {rest_tokens, layout} = compile_stab_body(rest, layout, opts)
+
+    {clause_tokens ++ [eol_token] ++ rest_tokens, layout}
+  end
+
+  # ===========================================================================
+  # Helper: compile_block_items (else, rescue, catch, after)
+  # ===========================================================================
+
+  # Compile block items (empty for basic do blocks)
+  defp compile_block_items([], layout, _opts), do: {[], layout}
+
+  defp compile_block_items([{:block_item, :else, body} | rest], layout, opts) do
+    # Compile 'else' keyword
+    {else_meta, layout} = TokenLayout.space_before(layout, "else", nil)
+    else_token = {:block_identifier, else_meta, :else}
+
+    # Newline after else
+    eol_meta = TokenLayout.meta(layout, "\n", 1)
+    eol_token = {:eol, eol_meta}
+    layout = TokenLayout.newline(layout)
+
+    # Compile else body
+    {body_tokens, layout} = compile_do_body(body, layout, opts)
+
+    # Continue with remaining block items
+    {rest_tokens, layout} = compile_block_items(rest, layout, opts)
+
+    {[else_token, eol_token] ++ body_tokens ++ rest_tokens, layout}
+  end
+
+  defp compile_block_items([{:block_item, :rescue, body} | rest], layout, opts) do
+    # Compile 'rescue' keyword
+    {rescue_meta, layout} = TokenLayout.space_before(layout, "rescue", nil)
+    rescue_token = {:block_identifier, rescue_meta, :rescue}
+
+    # Newline after rescue
+    eol_meta = TokenLayout.meta(layout, "\n", 1)
+    eol_token = {:eol, eol_meta}
+    layout = TokenLayout.newline(layout)
+
+    # Compile rescue body (stab clauses)
+    {body_tokens, layout} = compile_do_body(body, layout, opts)
+
+    # Continue with remaining block items
+    {rest_tokens, layout} = compile_block_items(rest, layout, opts)
+
+    {[rescue_token, eol_token] ++ body_tokens ++ rest_tokens, layout}
+  end
+
+  defp compile_block_items([{:block_item, :catch, body} | rest], layout, opts) do
+    # Compile 'catch' keyword
+    {catch_meta, layout} = TokenLayout.space_before(layout, "catch", nil)
+    catch_token = {:block_identifier, catch_meta, :catch}
+
+    # Newline after catch
+    eol_meta = TokenLayout.meta(layout, "\n", 1)
+    eol_token = {:eol, eol_meta}
+    layout = TokenLayout.newline(layout)
+
+    # Compile catch body (stab clauses)
+    {body_tokens, layout} = compile_do_body(body, layout, opts)
+
+    # Continue with remaining block items
+    {rest_tokens, layout} = compile_block_items(rest, layout, opts)
+
+    {[catch_token, eol_token] ++ body_tokens ++ rest_tokens, layout}
+  end
+
+  defp compile_block_items([{:block_item, :after, body} | rest], layout, opts) do
+    # Compile 'after' keyword
+    {after_meta, layout} = TokenLayout.space_before(layout, "after", nil)
+    after_token = {:block_identifier, after_meta, :after}
+
+    # Newline after after
+    eol_meta = TokenLayout.meta(layout, "\n", 1)
+    eol_token = {:eol, eol_meta}
+    layout = TokenLayout.newline(layout)
+
+    # Compile after body (expressions)
+    {body_tokens, layout} = compile_do_body(body, layout, opts)
+
+    # Continue with remaining block items
+    {rest_tokens, layout} = compile_block_items(rest, layout, opts)
+
+    {[after_token, eol_token] ++ body_tokens ++ rest_tokens, layout}
   end
 end

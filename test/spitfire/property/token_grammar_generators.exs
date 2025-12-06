@@ -123,7 +123,7 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
     if GrammarTree.budget_exhausted?(state) do
       gen_fallback_literal()
     else
-      # Increment 1-4: literals, identifiers, operators, calls, and fn_single
+      # Phase 1-2: literals, identifiers, operators, calls, fn_single, fn_multi, call_do
       StreamData.frequency([
         {5, gen_literal()},
         {3, gen_identifier()},
@@ -133,7 +133,9 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
         {3, gen_call_parens(state)},
         {2, gen_call_no_parens_one(state)},
         {2, gen_capture_int()},
-        {2, gen_fn_single(state)}
+        {2, gen_fn_single(state)},
+        {2, gen_fn_multi(state)},
+        {2, gen_call_do(state)}
       ])
     end
   end
@@ -439,15 +441,204 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
     end)
   end
 
-  # Generate a stab clause: pattern -> body
-  # Phase 1: guard is always nil, pattern is :empty or {:single, expr}
-  defp gen_stab_clause(state) do
-    # Generate pattern (mostly :empty or {:single, identifier})
+  # Generate a multi-clause fn expression: fn clause1; clause2; ... end
+  defp gen_fn_multi(state) do
+    child_state = GrammarTree.decr_depth(state)
+
+    # Generate 2-4 clauses
+    StreamData.bind(StreamData.integer(2..4), fn count ->
+      gen_stab_clause_list(child_state, count)
+    end)
+    |> StreamData.map(fn clauses -> {:fn_multi, clauses} end)
+  end
+
+  # Generate a list of stab clauses for fn_multi
+  defp gen_stab_clause_list(_state, 0), do: StreamData.constant([])
+
+  defp gen_stab_clause_list(state, count) when count > 0 do
+    StreamData.bind(gen_stab_clause_varied(state), fn clause ->
+      StreamData.bind(gen_stab_clause_list(state, count - 1), fn rest ->
+        StreamData.constant([clause | rest])
+      end)
+    end)
+  end
+
+  # Generate a stab clause with varied patterns (literals, identifiers, atoms)
+  # for better pattern matching diversity in fn_multi
+  defp gen_stab_clause_varied(state) do
+    # Generate pattern - use varied patterns for multi-clause fns
     pattern_gen =
       StreamData.frequency([
-        {3, StreamData.constant(:empty)},
-        {4, gen_single_pattern()}
+        {3, gen_single_pattern()},
+        {2, gen_single_literal_pattern()},
+        {1, gen_single_atom_pattern()}
       ])
+
+    # No guards for simplicity in multi-clause (guards added separately)
+    guard_gen = StreamData.constant(nil)
+
+    # Generate simple body
+    body_gen = gen_simple_expr()
+
+    StreamData.bind(pattern_gen, fn pattern ->
+      StreamData.bind(guard_gen, fn guard ->
+        StreamData.bind(body_gen, fn body ->
+          StreamData.constant({:stab_clause, pattern, guard, body})
+        end)
+      end)
+    end)
+  end
+
+  # Generate a single literal pattern for fn clauses: {:single, literal}
+  defp gen_single_literal_pattern do
+    StreamData.frequency([
+      {3, StreamData.integer(0..10) |> StreamData.map(fn n -> {:single, {:int, n, :dec, Integer.to_charlist(n)}} end)},
+      {2, StreamData.member_of(@atoms) |> StreamData.map(fn a -> {:single, {:atom_lit, a}} end)}
+    ])
+  end
+
+  # Generate a single atom pattern: {:single, {:atom_lit, atom}}
+  defp gen_single_atom_pattern do
+    StreamData.member_of(@atoms)
+    |> StreamData.map(fn atom -> {:single, {:atom_lit, atom}} end)
+  end
+
+  # ===========================================================================
+  # Generator: call_do (if/unless/case with do blocks)
+  # ===========================================================================
+
+  @do_identifiers ~w(if unless)a
+
+  # Generate a call with do block: if cond do body end
+  defp gen_call_do(state) do
+    child_state = GrammarTree.decr_depth(state)
+
+    StreamData.frequency([
+      {4, gen_if_unless(child_state)},
+      {2, gen_case(child_state)}
+    ])
+  end
+
+  # Generate if/unless with do block
+  defp gen_if_unless(state) do
+    StreamData.bind(StreamData.member_of(@do_identifiers), fn name ->
+      StreamData.bind(gen_do_condition(), fn cond_expr ->
+        StreamData.bind(gen_do_block(state), fn do_block ->
+          StreamData.constant({:call_do, {:identifier, name}, [cond_expr], do_block})
+        end)
+      end)
+    end)
+  end
+
+  # Generate case expression with stab clauses
+  defp gen_case(state) do
+    StreamData.bind(gen_simple_expr(), fn match_expr ->
+      StreamData.bind(gen_case_block(state), fn do_block ->
+        StreamData.constant({:call_do, {:identifier, :case}, [match_expr], do_block})
+      end)
+    end)
+  end
+
+  # Generate case block with stab clauses
+  defp gen_case_block(_state) do
+    # Generate 2-3 stab clauses for case
+    StreamData.bind(StreamData.integer(2..3), fn count ->
+      gen_case_clause_list(count)
+    end)
+    |> StreamData.map(fn clauses -> {:do_block, clauses, []} end)
+  end
+
+  # Generate a list of case clauses
+  defp gen_case_clause_list(0), do: StreamData.constant([])
+
+  defp gen_case_clause_list(count) when count > 0 do
+    StreamData.bind(gen_case_clause(), fn clause ->
+      StreamData.bind(gen_case_clause_list(count - 1), fn rest ->
+        StreamData.constant([clause | rest])
+      end)
+    end)
+  end
+
+  # Generate a single case clause (stab clause with pattern)
+  defp gen_case_clause do
+    pattern_gen =
+      StreamData.frequency([
+        {3, StreamData.member_of(@atoms) |> StreamData.map(fn a -> {:single, {:atom_lit, a}} end)},
+        {2, StreamData.member_of(@identifiers) |> StreamData.map(fn i -> {:single, {:identifier, i}} end)},
+        {1, StreamData.constant({:single, {:identifier, :_}})}
+      ])
+
+    body_gen = gen_simple_expr()
+
+    StreamData.bind(pattern_gen, fn pattern ->
+      StreamData.bind(body_gen, fn body ->
+        StreamData.constant({:stab_clause, pattern, nil, body})
+      end)
+    end)
+  end
+
+  # Generate condition for if/unless (simple expressions)
+  defp gen_do_condition do
+    StreamData.frequency([
+      {3, StreamData.member_of([true, false]) |> StreamData.map(&{:bool_lit, &1})},
+      {2, StreamData.member_of(@identifiers) |> StreamData.map(&{:identifier, &1})}
+    ])
+  end
+
+  # Generate do block: {:do_block, body, extras}
+  defp gen_do_block(state) do
+    body_gen = gen_do_body(state)
+    extras_gen = gen_block_extras()
+
+    StreamData.bind(body_gen, fn body ->
+      StreamData.bind(extras_gen, fn extras ->
+        StreamData.constant({:do_block, body, extras})
+      end)
+    end)
+  end
+
+  # Generate body for do block (1-2 simple expressions)
+  defp gen_do_body(_state) do
+    StreamData.bind(StreamData.integer(1..2), fn count ->
+      gen_simple_expr_list(count)
+    end)
+  end
+
+  # Generate a list of simple expressions
+  defp gen_simple_expr_list(0), do: StreamData.constant([])
+
+  defp gen_simple_expr_list(count) when count > 0 do
+    StreamData.bind(gen_simple_expr(), fn expr ->
+      StreamData.bind(gen_simple_expr_list(count - 1), fn rest ->
+        StreamData.constant([expr | rest])
+      end)
+    end)
+  end
+
+  # Generate block extras (empty or else)
+  defp gen_block_extras do
+    StreamData.frequency([
+      {6, StreamData.constant([])},
+      {4, gen_else_block()}
+    ])
+  end
+
+  # Generate else block: [{:block_item, :else, body}]
+  defp gen_else_block do
+    StreamData.bind(StreamData.integer(1..1), fn count ->
+      gen_simple_expr_list(count)
+    end)
+    |> StreamData.map(fn body -> [{:block_item, :else, body}] end)
+  end
+
+  # Generate a stab clause: pattern -> body (or pattern when guard -> body)
+  # Phase 2: optionally generates guards and multiple patterns
+  defp gen_stab_clause(state) do
+    # Generate pattern (:empty, {:single, expr}, or {:many, [expr]})
+    pattern_gen = gen_pattern()
+
+    # Generate guard (nil most of the time, occasionally a guard expression)
+    guard_gen = gen_optional_guard(state)
 
     # Generate body (simple expression to avoid deep nesting)
     body_gen =
@@ -458,11 +649,25 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
       end
 
     StreamData.bind(pattern_gen, fn pattern ->
-      StreamData.bind(body_gen, fn body ->
-        # Guard is nil in Phase 1
-        StreamData.constant({:stab_clause, pattern, nil, body})
+      StreamData.bind(guard_gen, fn guard ->
+        StreamData.bind(body_gen, fn body ->
+          StreamData.constant({:stab_clause, pattern, guard, body})
+        end)
       end)
     end)
+  end
+
+  # ===========================================================================
+  # Generator: patterns (Phase 2)
+  # ===========================================================================
+
+  # Generate a pattern: :empty, {:single, expr}, or {:many, [expr]}
+  defp gen_pattern do
+    StreamData.frequency([
+      {2, StreamData.constant(:empty)},
+      {4, gen_single_pattern()},
+      {3, gen_many_pattern()}
+    ])
   end
 
   # Generate a single pattern for fn: {:single, expr}
@@ -470,5 +675,97 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
     # Use identifiers for patterns (most common)
     StreamData.member_of(@identifiers)
     |> StreamData.map(fn atom -> {:single, {:identifier, atom}} end)
+  end
+
+  # Generate multiple patterns: {:many, [expr1, expr2, ...]}
+  defp gen_many_pattern do
+    # Generate 2-4 pattern expressions (identifiers only for simplicity)
+    StreamData.bind(StreamData.integer(2..4), fn count ->
+      gen_pattern_identifier_list(count)
+    end)
+    |> StreamData.map(fn exprs -> {:many, exprs} end)
+  end
+
+  # Generate a list of unique identifiers for patterns
+  defp gen_pattern_identifier_list(count) do
+    # Pick `count` distinct identifiers to avoid duplicate patterns
+    StreamData.uniq_list_of(
+      StreamData.member_of(@identifiers),
+      length: count
+    )
+    |> StreamData.map(fn atoms ->
+      Enum.map(atoms, fn atom -> {:identifier, atom} end)
+    end)
+  end
+
+  # ===========================================================================
+  # Generator: guards (Phase 2)
+  # ===========================================================================
+
+  # Generate optional guard (nil most of the time)
+  defp gen_optional_guard(state) do
+    StreamData.frequency([
+      {7, StreamData.constant(nil)},
+      {3, gen_guard(state)}
+    ])
+  end
+
+  # Generate a guard expression
+  # Guards are restricted: comparisons, type checks, boolean ops
+  defp gen_guard(_state) do
+    StreamData.frequency([
+      {4, gen_guard_comparison()},
+      {3, gen_guard_type_check()},
+      {2, gen_guard_boolean()}
+    ])
+  end
+
+  # Generate comparison guard: x > 0, x == :ok, etc.
+  defp gen_guard_comparison do
+    comp_ops = [{:rel_op, :>}, {:rel_op, :<}, {:rel_op, :>=}, {:rel_op, :<=}, {:comp_op, :==}]
+
+    StreamData.bind(StreamData.member_of(@identifiers), fn var ->
+      StreamData.bind(StreamData.member_of(comp_ops), fn {op_kind, op} ->
+        StreamData.bind(gen_simple_literal_value(), fn rhs ->
+          guard = {:binary_op, {:identifier, var}, {:op_eol, {op_kind, op}, 0}, rhs}
+          StreamData.constant(guard)
+        end)
+      end)
+    end)
+  end
+
+  # Generate type check guard: is_integer(x), is_atom(x), etc.
+  @type_checks ~w(is_integer is_atom is_binary is_list is_map is_nil is_boolean)a
+
+  defp gen_guard_type_check do
+    StreamData.bind(StreamData.member_of(@type_checks), fn check ->
+      StreamData.bind(StreamData.member_of(@identifiers), fn var ->
+        guard = {:call_parens, {:paren_identifier, check}, [{:identifier, var}]}
+        StreamData.constant(guard)
+      end)
+    end)
+  end
+
+  # Generate simple boolean guard: x and true, not x
+  defp gen_guard_boolean do
+    StreamData.bind(StreamData.member_of(@identifiers), fn var ->
+      StreamData.frequency([
+        {2,
+         StreamData.constant(
+           {:binary_op, {:identifier, var}, {:op_eol, {:and_op, :and}, 0}, {:bool_lit, true}}
+         )},
+        {1, StreamData.constant({:unary_op, {:unary_op, :not}, {:identifier, var}})}
+      ])
+    end)
+  end
+
+  # Generate a simple literal value for guard RHS
+  defp gen_simple_literal_value do
+    StreamData.frequency([
+      {3, StreamData.integer(0..100) |> StreamData.map(fn n -> {:int, n, :dec, Integer.to_charlist(n)} end)},
+      {2, StreamData.member_of(@atoms) |> StreamData.map(fn a -> {:atom_lit, a} end)},
+      {1, StreamData.constant({:bool_lit, true})},
+      {1, StreamData.constant({:bool_lit, false})}
+    ])
   end
 end

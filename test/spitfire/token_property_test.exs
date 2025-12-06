@@ -81,12 +81,13 @@ defmodule Spitfire.TokenPropertyTest do
     @tag timeout: 120_000
     property "grammar trees round-trip through Spitfire" do
       check all(
-              tree <- Gen.grammar(phase: 1, max_depth: 3, max_forms: 2),
+              tree <- Gen.grammar(phase: 1, max_depth: 3, max_forms: 5),
               max_runs: 50,
               max_shrinks: 25
             ) do
         tokens = TokenCompiler.to_tokens(tree, phase: 1)
         code = Toxic.ToString.to_string(tokens)
+        IO.puts(code)
 
         case Code.string_to_quoted(code, @oracle_opts) do
           {:ok, oracle_ast} ->

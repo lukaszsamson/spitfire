@@ -650,4 +650,549 @@ defmodule Spitfire.TokenGrammarTest do
       assert_roundtrip(tree, "fn x -> foo(x) end")
     end
   end
+
+  # ===========================================================================
+  # Phase 2: Guards, Multiple Patterns, fn_multi, do_blocks
+  # ===========================================================================
+
+  describe "guards in stab clauses" do
+    test "fn with simple guard: fn x when x > 0 -> x end" do
+      tree =
+        {:grammar,
+         [
+           {:fn_single,
+            [
+              {:stab_clause, {:single, {:identifier, :x}},
+               {:binary_op, {:identifier, :x}, {:op_eol, {:rel_op, :>}, 0},
+                {:int, 0, :dec, ~c"0"}}, {:identifier, :x}}
+            ]}
+         ]}
+
+      assert_roundtrip(tree, "fn x when x > 0 -> x end")
+    end
+
+    test "fn with call guard: fn x when is_integer(x) -> x end" do
+      tree =
+        {:grammar,
+         [
+           {:fn_single,
+            [
+              {:stab_clause, {:single, {:identifier, :x}},
+               {:call_parens, {:paren_identifier, :is_integer}, [{:identifier, :x}]},
+               {:identifier, :x}}
+            ]}
+         ]}
+
+      assert_roundtrip(tree, "fn x when is_integer(x) -> x end")
+    end
+
+    test "fn with boolean guard: fn x when x and true -> x end" do
+      tree =
+        {:grammar,
+         [
+           {:fn_single,
+            [
+              {:stab_clause, {:single, {:identifier, :x}},
+               {:binary_op, {:identifier, :x}, {:op_eol, {:and_op, :and}, 0}, {:bool_lit, true}},
+               {:identifier, :x}}
+            ]}
+         ]}
+
+      assert_roundtrip(tree, "fn x when x and true -> x end")
+    end
+
+    test "guard token structure" do
+      tree =
+        {:grammar,
+         [
+           {:fn_single,
+            [
+              {:stab_clause, {:single, {:identifier, :x}},
+               {:binary_op, {:identifier, :x}, {:op_eol, {:rel_op, :>}, 0},
+                {:int, 0, :dec, ~c"0"}}, {:identifier, :x}}
+            ]}
+         ]}
+
+      tokens = TokenCompiler.to_tokens(tree)
+
+      # Should have: fn, x, when, x, >, 0, ->, x, end
+      assert [
+               {:fn, _},
+               {:identifier, _, :x},
+               {:when_op, _, :when},
+               {:identifier, _, :x},
+               {:rel_op, _, :>},
+               {:int, _, _},
+               {:stab_op, _, :->},
+               {:identifier, _, :x},
+               {:end, _}
+             ] = tokens
+    end
+  end
+
+  describe "fn_multi (multi-clause functions)" do
+    test "fn with two clauses: fn 0 -> :zero; n -> n end" do
+      tree =
+        {:grammar,
+         [
+           {:fn_multi,
+            [
+              {:stab_clause, {:single, {:int, 0, :dec, ~c"0"}}, nil, {:atom_lit, :zero}},
+              {:stab_clause, {:single, {:identifier, :n}}, nil, {:identifier, :n}}
+            ]}
+         ]}
+
+      assert_roundtrip(tree, "fn 0 -> :zero; n -> n end")
+    end
+
+    test "fn with atom patterns: fn :ok -> 1; :error -> 0 end" do
+      tree =
+        {:grammar,
+         [
+           {:fn_multi,
+            [
+              {:stab_clause, {:single, {:atom_lit, :ok}}, nil, {:int, 1, :dec, ~c"1"}},
+              {:stab_clause, {:single, {:atom_lit, :error}}, nil, {:int, 0, :dec, ~c"0"}}
+            ]}
+         ]}
+
+      assert_roundtrip(tree, "fn :ok -> 1; :error -> 0 end")
+    end
+
+    test "fn with guard and fallback: fn x when x > 0 -> :pos; x -> :neg end" do
+      tree =
+        {:grammar,
+         [
+           {:fn_multi,
+            [
+              {:stab_clause, {:single, {:identifier, :x}},
+               {:binary_op, {:identifier, :x}, {:op_eol, {:rel_op, :>}, 0},
+                {:int, 0, :dec, ~c"0"}}, {:atom_lit, :pos}},
+              {:stab_clause, {:single, {:identifier, :x}}, nil, {:atom_lit, :neg}}
+            ]}
+         ]}
+
+      assert_roundtrip(tree, "fn x when x > 0 -> :pos; x -> :neg end")
+    end
+
+    test "fn with three clauses: fn :a -> 1; :b -> 2; _ -> 0 end" do
+      tree =
+        {:grammar,
+         [
+           {:fn_multi,
+            [
+              {:stab_clause, {:single, {:atom_lit, :a}}, nil, {:int, 1, :dec, ~c"1"}},
+              {:stab_clause, {:single, {:atom_lit, :b}}, nil, {:int, 2, :dec, ~c"2"}},
+              {:stab_clause, {:single, {:identifier, :_}}, nil, {:int, 0, :dec, ~c"0"}}
+            ]}
+         ]}
+
+      assert_roundtrip(tree, "fn :a -> 1; :b -> 2; _ -> 0 end")
+    end
+
+    test "fn_multi token structure" do
+      tree =
+        {:grammar,
+         [
+           {:fn_multi,
+            [
+              {:stab_clause, {:single, {:int, 0, :dec, ~c"0"}}, nil, {:atom_lit, :zero}},
+              {:stab_clause, {:single, {:identifier, :n}}, nil, {:identifier, :n}}
+            ]}
+         ]}
+
+      tokens = TokenCompiler.to_tokens(tree)
+
+      # Should have: fn, 0, ->, :zero, ;, n, ->, n, end
+      assert [
+               {:fn, _},
+               {:int, _, _},
+               {:stab_op, _, :->},
+               {:atom, _, :zero},
+               {:";", _},
+               {:identifier, _, :n},
+               {:stab_op, _, :->},
+               {:identifier, _, :n},
+               {:end, _}
+             ] = tokens
+    end
+  end
+
+  describe "do_block basics" do
+    test "if true do :yes end" do
+      tree =
+        {:grammar,
+         [
+           {:call_do, {:identifier, :if}, [{:bool_lit, true}],
+            {:do_block, [{:atom_lit, :yes}], []}}
+         ]}
+
+      assert_roundtrip(tree, "if true do\n:yes\nend")
+    end
+
+    test "unless false do :no end" do
+      tree =
+        {:grammar,
+         [
+           {:call_do, {:identifier, :unless}, [{:bool_lit, false}],
+            {:do_block, [{:atom_lit, :no}], []}}
+         ]}
+
+      assert_roundtrip(tree, "unless false do\n:no\nend")
+    end
+
+    test "if x do y end (with identifiers)" do
+      tree =
+        {:grammar,
+         [
+           {:call_do, {:identifier, :if}, [{:identifier, :x}],
+            {:do_block, [{:identifier, :y}], []}}
+         ]}
+
+      assert_roundtrip(tree, "if x do\ny\nend")
+    end
+
+    test "if with multiple body expressions" do
+      tree =
+        {:grammar,
+         [
+           {:call_do, {:identifier, :if}, [{:bool_lit, true}],
+            {:do_block, [{:identifier, :a}, {:identifier, :b}], []}}
+         ]}
+
+      assert_roundtrip(tree, "if true do\na\nb\nend")
+    end
+
+    test "do_block token structure" do
+      tree =
+        {:grammar,
+         [
+           {:call_do, {:identifier, :if}, [{:bool_lit, true}],
+            {:do_block, [{:atom_lit, :yes}], []}}
+         ]}
+
+      tokens = TokenCompiler.to_tokens(tree)
+
+      # Should have: do_identifier, true, do, eol, :yes, eol, end
+      assert [
+               {:do_identifier, _, :if},
+               {true, _},
+               {:do, _},
+               {:eol, _},
+               {:atom, _, :yes},
+               {:eol, _},
+               {:end, _}
+             ] = tokens
+    end
+  end
+
+  describe "do_block with else" do
+    test "if true do :yes else :no end" do
+      tree =
+        {:grammar,
+         [
+           {:call_do, {:identifier, :if}, [{:bool_lit, true}],
+            {:do_block, [{:atom_lit, :yes}], [{:block_item, :else, [{:atom_lit, :no}]}]}}
+         ]}
+
+      assert_roundtrip(tree, "if true do\n:yes\nelse\n:no\nend")
+    end
+
+    test "if x do y else z end (with identifiers)" do
+      tree =
+        {:grammar,
+         [
+           {:call_do, {:identifier, :if}, [{:identifier, :x}],
+            {:do_block, [{:identifier, :y}], [{:block_item, :else, [{:identifier, :z}]}]}}
+         ]}
+
+      assert_roundtrip(tree, "if x do\ny\nelse\nz\nend")
+    end
+
+    test "unless with else" do
+      tree =
+        {:grammar,
+         [
+           {:call_do, {:identifier, :unless}, [{:bool_lit, false}],
+            {:do_block, [{:atom_lit, :yes}], [{:block_item, :else, [{:atom_lit, :no}]}]}}
+         ]}
+
+      assert_roundtrip(tree, "unless false do\n:yes\nelse\n:no\nend")
+    end
+
+    test "if else token structure" do
+      tree =
+        {:grammar,
+         [
+           {:call_do, {:identifier, :if}, [{:bool_lit, true}],
+            {:do_block, [{:atom_lit, :yes}], [{:block_item, :else, [{:atom_lit, :no}]}]}}
+         ]}
+
+      tokens = TokenCompiler.to_tokens(tree)
+
+      # Should have: do_identifier, true, do, eol, :yes, eol, else, eol, :no, eol, end
+      assert [
+               {:do_identifier, _, :if},
+               {true, _},
+               {:do, _},
+               {:eol, _},
+               {:atom, _, :yes},
+               {:eol, _},
+               {:block_identifier, _, :else},
+               {:eol, _},
+               {:atom, _, :no},
+               {:eol, _},
+               {:end, _}
+             ] = tokens
+    end
+  end
+
+  describe "try with rescue/catch/after" do
+    test "try do x rescue _ -> :error end" do
+      tree =
+        {:grammar,
+         [
+           {:call_do, {:identifier, :try}, [],
+            {:do_block, [{:identifier, :x}],
+             [{:block_item, :rescue, [{:stab_clause, {:single, {:identifier, :_}}, nil, {:atom_lit, :error}}]}]}}
+         ]}
+
+      assert_roundtrip(tree, "try do\nx\nrescue\n_ -> :error\nend")
+    end
+
+    test "try do x after cleanup() end" do
+      tree =
+        {:grammar,
+         [
+           {:call_do, {:identifier, :try}, [],
+            {:do_block, [{:identifier, :x}],
+             [{:block_item, :after, [{:call_parens, {:paren_identifier, :cleanup}, []}]}]}}
+         ]}
+
+      assert_roundtrip(tree, "try do\nx\nafter\ncleanup()\nend")
+    end
+
+    test "try do x catch :exit, _ -> :caught end" do
+      tree =
+        {:grammar,
+         [
+           {:call_do, {:identifier, :try}, [],
+            {:do_block, [{:identifier, :x}],
+             [{:block_item, :catch,
+               [{:stab_clause, {:many, [{:atom_lit, :exit}, {:identifier, :_}]}, nil, {:atom_lit, :caught}}]}]}}
+         ]}
+
+      assert_roundtrip(tree, "try do\nx\ncatch\n:exit, _ -> :caught\nend")
+    end
+
+    test "try with rescue and after" do
+      tree =
+        {:grammar,
+         [
+           {:call_do, {:identifier, :try}, [],
+            {:do_block, [{:identifier, :x}],
+             [
+               {:block_item, :rescue, [{:stab_clause, {:single, {:identifier, :_}}, nil, {:atom_lit, :error}}]},
+               {:block_item, :after, [{:identifier, :cleanup}]}
+             ]}}
+         ]}
+
+      assert_roundtrip(tree, "try do\nx\nrescue\n_ -> :error\nafter\ncleanup\nend")
+    end
+
+    test "try rescue token structure" do
+      tree =
+        {:grammar,
+         [
+           {:call_do, {:identifier, :try}, [],
+            {:do_block, [{:identifier, :x}],
+             [{:block_item, :rescue, [{:stab_clause, {:single, {:identifier, :_}}, nil, {:atom_lit, :error}}]}]}}
+         ]}
+
+      tokens = TokenCompiler.to_tokens(tree)
+
+      # Should have: do_identifier, do, eol, x, eol, rescue, eol, _ -> :error, eol, end
+      assert [
+               {:do_identifier, _, :try},
+               {:do, _},
+               {:eol, _},
+               {:identifier, _, :x},
+               {:eol, _},
+               {:block_identifier, _, :rescue},
+               {:eol, _},
+               {:identifier, _, :_},
+               {:stab_op, _, :->},
+               {:atom, _, :error},
+               {:eol, _},
+               {:end, _}
+             ] = tokens
+    end
+  end
+
+  describe "case with pattern matching" do
+    test "case x do :ok -> 1; :error -> 0 end" do
+      tree =
+        {:grammar,
+         [
+           {:call_do, {:identifier, :case}, [{:identifier, :x}],
+            {:do_block,
+             [
+               {:stab_clause, {:single, {:atom_lit, :ok}}, nil, {:int, 1, :dec, ~c"1"}},
+               {:stab_clause, {:single, {:atom_lit, :error}}, nil, {:int, 0, :dec, ~c"0"}}
+             ], []}}
+         ]}
+
+      assert_roundtrip(tree, "case x do\n:ok -> 1\n:error -> 0\nend")
+    end
+
+    test "case with guard: case n do x when x > 0 -> :pos; _ -> :neg end" do
+      tree =
+        {:grammar,
+         [
+           {:call_do, {:identifier, :case}, [{:identifier, :n}],
+            {:do_block,
+             [
+               {:stab_clause, {:single, {:identifier, :x}},
+                {:binary_op, {:identifier, :x}, {:op_eol, {:rel_op, :>}, 0},
+                 {:int, 0, :dec, ~c"0"}}, {:atom_lit, :pos}},
+               {:stab_clause, {:single, {:identifier, :_}}, nil, {:atom_lit, :neg}}
+             ], []}}
+         ]}
+
+      assert_roundtrip(tree, "case n do\nx when x > 0 -> :pos\n_ -> :neg\nend")
+    end
+
+    test "case with three clauses" do
+      tree =
+        {:grammar,
+         [
+           {:call_do, {:identifier, :case}, [{:identifier, :x}],
+            {:do_block,
+             [
+               {:stab_clause, {:single, {:atom_lit, :a}}, nil, {:int, 1, :dec, ~c"1"}},
+               {:stab_clause, {:single, {:atom_lit, :b}}, nil, {:int, 2, :dec, ~c"2"}},
+               {:stab_clause, {:single, {:identifier, :_}}, nil, {:int, 0, :dec, ~c"0"}}
+             ], []}}
+         ]}
+
+      assert_roundtrip(tree, "case x do\n:a -> 1\n:b -> 2\n_ -> 0\nend")
+    end
+
+    test "case token structure" do
+      tree =
+        {:grammar,
+         [
+           {:call_do, {:identifier, :case}, [{:identifier, :x}],
+            {:do_block,
+             [
+               {:stab_clause, {:single, {:atom_lit, :ok}}, nil, {:int, 1, :dec, ~c"1"}},
+               {:stab_clause, {:single, {:atom_lit, :error}}, nil, {:int, 0, :dec, ~c"0"}}
+             ], []}}
+         ]}
+
+      tokens = TokenCompiler.to_tokens(tree)
+
+      # Should have: do_identifier, x, do, eol, :ok, ->, 1, eol, :error, ->, 0, eol, end
+      assert [
+               {:do_identifier, _, :case},
+               {:identifier, _, :x},
+               {:do, _},
+               {:eol, _},
+               {:atom, _, :ok},
+               {:stab_op, _, :->},
+               {:int, _, _},
+               {:eol, _},
+               {:atom, _, :error},
+               {:stab_op, _, :->},
+               {:int, _, _},
+               {:eol, _},
+               {:end, _}
+             ] = tokens
+    end
+  end
+
+  describe "multiple patterns (:many)" do
+    test "fn with two arguments: fn x, y -> x end" do
+      tree =
+        {:grammar,
+         [
+           {:fn_single,
+            [
+              {:stab_clause, {:many, [{:identifier, :x}, {:identifier, :y}]}, nil,
+               {:identifier, :x}}
+            ]}
+         ]}
+
+      assert_roundtrip(tree, "fn x, y -> x end")
+    end
+
+    test "fn with three arguments: fn a, b, c -> a end" do
+      tree =
+        {:grammar,
+         [
+           {:fn_single,
+            [
+              {:stab_clause,
+               {:many, [{:identifier, :a}, {:identifier, :b}, {:identifier, :c}]}, nil,
+               {:identifier, :a}}
+            ]}
+         ]}
+
+      assert_roundtrip(tree, "fn a, b, c -> a end")
+    end
+
+    test "fn with two arguments and binary op body: fn x, y -> x + y end" do
+      tree =
+        {:grammar,
+         [
+           {:fn_single,
+            [
+              {:stab_clause, {:many, [{:identifier, :x}, {:identifier, :y}]}, nil,
+               {:binary_op, {:identifier, :x}, {:op_eol, {:dual_op, :+}, 0}, {:identifier, :y}}}
+            ]}
+         ]}
+
+      assert_roundtrip(tree, "fn x, y -> x + y end")
+    end
+
+    test "fn with two arguments and guard: fn x, y when x > y -> x end" do
+      tree =
+        {:grammar,
+         [
+           {:fn_single,
+            [
+              {:stab_clause, {:many, [{:identifier, :x}, {:identifier, :y}]},
+               {:binary_op, {:identifier, :x}, {:op_eol, {:rel_op, :>}, 0}, {:identifier, :y}},
+               {:identifier, :x}}
+            ]}
+         ]}
+
+      assert_roundtrip(tree, "fn x, y when x > y -> x end")
+    end
+
+    test "multiple patterns token structure" do
+      tree =
+        {:grammar,
+         [
+           {:fn_single,
+            [
+              {:stab_clause, {:many, [{:identifier, :x}, {:identifier, :y}]}, nil,
+               {:identifier, :x}}
+            ]}
+         ]}
+
+      tokens = TokenCompiler.to_tokens(tree)
+
+      # Should have: fn, x, ,, y, ->, x, end
+      assert [
+               {:fn, _},
+               {:identifier, _, :x},
+               {:",", _},
+               {:identifier, _, :y},
+               {:stab_op, _, :->},
+               {:identifier, _, :x},
+               {:end, _}
+             ] = tokens
+    end
+  end
 end
