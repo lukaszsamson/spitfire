@@ -1776,4 +1776,186 @@ defmodule SpitfireSystematicOperatorsTest do
       assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
   end
+
+  # =============================================================================
+  # Range with Keyword List as Operand
+  # =============================================================================
+  # Pattern from repro 31, 31a: a..['key': value]
+
+  describe "range with keyword list operand" do
+    test "range with keyword list as right operand" do
+      failures =
+        [
+          check("a..['key': b]"),
+          check("a..b..['key': c]"),
+          check("a..['key': b]//c"),
+          check("a..['do': b, 'else': c]"),
+          check("\"\" <> \"foo\"..['do': bar]")
+        ]
+        |> Enum.reject(&is_nil/1)
+
+      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+    end
+
+    test "range with keyword list in case expression" do
+      failures =
+        [
+          check("case a..['key': b] do\n  _ -> c\nend"),
+          check("case \"\" <> \"foo\"..['do': bar] do\n  _ -> c\nend"),
+          check("case a..b..['key': c]//d do\n  _ -> e\nend")
+        ]
+        |> Enum.reject(&is_nil/1)
+
+      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+    end
+
+    test "range with heredoc in keyword list" do
+      failures =
+        [
+          check("a..['key': \"\"\"\nfoo\n\"\"\"]"),
+          check("case a..['do': \"\"\"\nfoo\n\"\"\"] do\n  _ -> b\nend")
+        ]
+        |> Enum.reject(&is_nil/1)
+
+      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+    end
+  end
+
+  # =============================================================================
+  # Pipe Inside Function Call Arguments
+  # =============================================================================
+  # Pattern from repro 36, 36a: foo('M' |> %{...})
+
+  describe "pipe inside function call arguments" do
+    test "charlist piped to struct/map in function call" do
+      failures =
+        [
+          check("foo('M' |> a)"),
+          check("foo('M' |> %{a: b})"),
+          check("foo('M' |> %Foo{a: b})"),
+          check("foo('abc' |> %{\"ok\": :err})"),
+          check("Foo.bar('M' |> %{a: b})")
+        ]
+        |> Enum.reject(&is_nil/1)
+
+      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+    end
+
+    test "pipe with heredoc in struct inside function call" do
+      failures =
+        [
+          check("foo(a |> %{b: \"\"\"\nfoo\n\"\"\"})"),
+          check("foo('M' |> %Baz{\"ok\": \"\"\"\nfoo\n\"\"\"})"),
+          check("Foo.bar('M' |> %{a: \"\"\"\nfoo \#{b} bar\n\"\"\"})")
+        ]
+        |> Enum.reject(&is_nil/1)
+
+      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+    end
+
+    test "multiple pipes in function call arguments" do
+      failures =
+        [
+          check("foo(a |> b |> c)"),
+          check("foo(a |> b, c |> d)"),
+          check("foo('M' |> a |> b)"),
+          check("Foo.bar(a |> %{b: c}, d |> e)")
+        ]
+        |> Enum.reject(&is_nil/1)
+
+      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+    end
+
+    test "pipe with operators in function call" do
+      failures =
+        for op <- @simple_binary_ops do
+          s_op = op_to_string(op)
+
+          [
+            check("foo(a |> b #{s_op} c)"),
+            check("foo(a #{s_op} b |> c)")
+          ]
+        end
+        |> List.flatten()
+        |> Enum.reject(&is_nil/1)
+
+      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+    end
+  end
+
+  # =============================================================================
+  # Struct/Map with Quoted String Keys and Heredoc Values
+  # =============================================================================
+  # Patterns involving quoted string keys like "ok": value
+
+  describe "struct/map with quoted string keys" do
+    test "struct with quoted string key and heredoc value" do
+      failures =
+        [
+          check("%Foo{\"ok\": a}"),
+          check("%Foo{\"ok\": \"\"\"\nfoo\n\"\"\"}"),
+          check("%{\"ok\": \"\"\"\nfoo \#{a} bar\n\"\"\"}"),
+          check("foo(%Baz{\"ok\": \"\"\"\nfoo\n\"\"\"})")
+        ]
+        |> Enum.reject(&is_nil/1)
+
+      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+    end
+
+    test "pipe into struct with heredoc" do
+      failures =
+        [
+          check("a |> %Foo{b: \"\"\"\nfoo\n\"\"\"}"),
+          check("a |> %{\"ok\": \"\"\"\nfoo\n\"\"\"}"),
+          check("'M' |> %Baz{\"ok\": \"\"\"\nfoo \#{a} bar\n\"\"\"})")
+        ]
+        |> Enum.reject(&is_nil/1)
+
+      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+    end
+  end
+
+  # =============================================================================
+  # Case Expression with Complex First Argument
+  # =============================================================================
+  # Pattern where case expression's first argument involves operators
+
+  describe "case with complex first argument" do
+    test "case with binary operator expression" do
+      failures =
+        for op <- @simple_binary_ops do
+          s_op = op_to_string(op)
+
+          check("case a #{s_op} b do\n  _ -> c\nend")
+        end
+        |> Enum.reject(&is_nil/1)
+
+      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+    end
+
+    test "case with string concatenation and range" do
+      failures =
+        [
+          check("case \"\" <> \"foo\" do\n  _ -> a\nend"),
+          check("case a..b do\n  _ -> c\nend"),
+          check("case \"\" <> \"foo\"..a do\n  _ -> b\nend"),
+          check("case a..b//c do\n  _ -> d\nend")
+        ]
+        |> Enum.reject(&is_nil/1)
+
+      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+    end
+
+    test "case with range and keyword list" do
+      failures =
+        [
+          check("case a..[b: c] do\n  _ -> d\nend"),
+          check("case \"\" <> \"foo\"..[do: a] do\n  _ -> b\nend"),
+          check("case a..['key': \"\"\"\nfoo\n\"\"\"] do\n  _ -> b\nend")
+        ]
+        |> Enum.reject(&is_nil/1)
+
+      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+    end
+  end
 end

@@ -2839,7 +2839,15 @@ defmodule Spitfire do
 
         {{:%{}, put_meta_range(extra ++ meta, container_range), []}, parser}
       else
+        saved_kw_pair = Map.get(parser, :produced_kw_pair)
+        saved_kw_source = Map.get(parser, :produced_kw_source)
+
         {pairs, parser} = parse_comma_list(parser, @list_comma, false, true)
+
+        parser =
+          parser
+          |> Map.put(:produced_kw_pair, saved_kw_pair)
+          |> Map.put(:produced_kw_source, saved_kw_source)
 
         parser = eat_eol_at(parser, 1)
 
@@ -3059,7 +3067,15 @@ defmodule Spitfire do
           parser = Map.put(parser, :nesting, old_nesting)
           {ast, parser}
         else
+          saved_kw_pair = Map.get(parser, :produced_kw_pair)
+          saved_kw_source = Map.get(parser, :produced_kw_source)
+
           {pairs, parser} = parse_comma_list(parser, @list_comma, false, true)
+
+          parser =
+            parser
+            |> Map.put(:produced_kw_pair, saved_kw_pair)
+            |> Map.put(:produced_kw_source, saved_kw_source)
 
           parser = eat_eol_at(parser, 1)
 
@@ -3140,7 +3156,15 @@ defmodule Spitfire do
 
         true ->
           old_comma_list_parsers = Process.get(:comma_list_parsers)
+          saved_kw_pair = Map.get(parser, :produced_kw_pair)
+          saved_kw_source = Map.get(parser, :produced_kw_source)
+
           {pairs, parser} = parse_tuple_args_comma_list(parser)
+
+          parser =
+            parser
+            |> Map.put(:produced_kw_pair, saved_kw_pair)
+            |> Map.put(:produced_kw_source, saved_kw_source)
 
           {pairs, parser} =
             case peek_token_eat_eol(parser) do
@@ -3263,7 +3287,15 @@ defmodule Spitfire do
 
         true ->
           old_comma_list_parsers = Process.get(:comma_list_parsers)
+          saved_kw_pair = Map.get(parser, :produced_kw_pair)
+          saved_kw_source = Map.get(parser, :produced_kw_source)
+
           {pairs, parser} = parse_comma_list(parser, @list_comma, true, false)
+
+          parser =
+            parser
+            |> Map.put(:produced_kw_pair, saved_kw_pair)
+            |> Map.put(:produced_kw_source, saved_kw_source)
 
           case peek_token_eat_eol(parser) do
             :"]" ->

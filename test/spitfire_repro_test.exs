@@ -248,9 +248,13 @@ defmodule SpitfireReproTest do
     assert Spitfire.parse(code) == s2q(code)
   end
 
-  @tag :skip
   test "repro 31" do
     code = "case \"\" <> \"foo\#{9.0}bar\"..['do': \"\"\"\nfoo \#{spam} bar\n\"\"\"] do\n  <<:\"bar\">> -> ~S/\#{spam}/i\n  _ -> <<?a..foo>>\nend"
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
+  test "repro 31a" do
+    code = "case \"\" <> \"foobar\"..['dos': \"\"\"\nfoo  bar\n\"\"\"] do\n  :ok\nend"
     assert Spitfire.parse(code) == s2q(code)
   end
 
@@ -277,9 +281,13 @@ defmodule SpitfireReproTest do
     assert Spitfire.parse(code) == s2q(code)
   end
 
-  @tag :skip
   test "repro 36" do
     code = "Foo.foo('M' |> %Baz{\"ok\": \"\"\"\nfoo \#{alpha} bar\n\"\"\"})"
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
+  test "repro 36a" do
+    code = "foo('M' |> %{\"ok\": :err})"
     assert Spitfire.parse(code) == s2q(code)
   end
 
