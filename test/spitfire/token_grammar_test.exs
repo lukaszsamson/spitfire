@@ -527,4 +527,127 @@ defmodule Spitfire.TokenGrammarTest do
       assert_roundtrip(tree, "bar(foo(1))")
     end
   end
+
+  describe "fn_single" do
+    test "fn with no arguments -> nil end" do
+      tree =
+        {:grammar,
+         [
+           {:fn_single, [{:stab_clause, :empty, nil, :nil_lit}]}
+         ]}
+
+      assert_roundtrip(tree, "fn -> nil end")
+    end
+
+    test "fn with single identifier pattern -> body end" do
+      tree =
+        {:grammar,
+         [
+           {:fn_single, [{:stab_clause, {:single, {:identifier, :x}}, nil, {:identifier, :x}}]}
+         ]}
+
+      assert_roundtrip(tree, "fn x -> x end")
+    end
+
+    test "fn with literal body" do
+      tree =
+        {:grammar,
+         [
+           {:fn_single, [{:stab_clause, :empty, nil, {:int, 42, :dec, ~c"42"}}]}
+         ]}
+
+      assert_roundtrip(tree, "fn -> 42 end")
+    end
+
+    test "fn with atom body" do
+      tree =
+        {:grammar,
+         [
+           {:fn_single, [{:stab_clause, :empty, nil, {:atom_lit, :ok}}]}
+         ]}
+
+      assert_roundtrip(tree, "fn -> :ok end")
+    end
+
+    test "fn with single pattern and expression body" do
+      tree =
+        {:grammar,
+         [
+           {:fn_single,
+            [
+              {:stab_clause, {:single, {:identifier, :a}}, nil,
+               {:binary_op, {:identifier, :a}, {:op_eol, {:dual_op, :+}, 0},
+                {:int, 1, :dec, ~c"1"}}}
+            ]}
+         ]}
+
+      assert_roundtrip(tree, "fn a -> a + 1 end")
+    end
+
+    test "fn_single token structure" do
+      tree =
+        {:grammar,
+         [
+           {:fn_single, [{:stab_clause, :empty, nil, :nil_lit}]}
+         ]}
+
+      tokens = TokenCompiler.to_tokens(tree)
+
+      # Should have: fn, ->, nil, end
+      assert [{:fn, fn_meta}, {:stab_op, stab_meta, :->}, {nil, nil_meta}, {:end, end_meta}] =
+               tokens
+
+      # Verify positions
+      assert {{1, 1}, {1, 3}, nil} = fn_meta
+      assert {{1, 4}, {1, 6}, nil} = stab_meta
+      assert {{1, 7}, {1, 10}, nil} = nil_meta
+      assert {{1, 11}, {1, 14}, nil} = end_meta
+    end
+
+    test "fn with pattern token structure" do
+      tree =
+        {:grammar,
+         [
+           {:fn_single, [{:stab_clause, {:single, {:identifier, :x}}, nil, {:identifier, :x}}]}
+         ]}
+
+      tokens = TokenCompiler.to_tokens(tree)
+
+      # Should have: fn, x, ->, x, end
+      assert [
+               {:fn, _},
+               {:identifier, _, :x},
+               {:stab_op, _, :->},
+               {:identifier, _, :x},
+               {:end, _}
+             ] = tokens
+    end
+  end
+
+  describe "fn_single in expressions" do
+    test "fn as call argument" do
+      tree =
+        {:grammar,
+         [
+           {:call_parens, {:paren_identifier, :foo},
+            [{:fn_single, [{:stab_clause, :empty, nil, :nil_lit}]}]}
+         ]}
+
+      assert_roundtrip(tree, "foo(fn -> nil end)")
+    end
+
+    test "fn with call in body" do
+      tree =
+        {:grammar,
+         [
+           {:fn_single,
+            [
+              {:stab_clause, {:single, {:identifier, :x}}, nil,
+               {:call_parens, {:paren_identifier, :foo}, [{:identifier, :x}]}}
+            ]}
+         ]}
+
+      assert_roundtrip(tree, "fn x -> foo(x) end")
+    end
+  end
 end

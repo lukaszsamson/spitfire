@@ -11,6 +11,7 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
     identifiers, and aliases.
   - **Increment 2**: Binary and unary operators with newline handling.
   - **Increment 3**: Calls (call_parens, call_no_parens_one, capture_int).
+  - **Increment 4**: fn_single with stab clauses.
   """
 
   use ExUnitProperties
@@ -122,7 +123,7 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
     if GrammarTree.budget_exhausted?(state) do
       gen_fallback_literal()
     else
-      # Increment 1-3: literals, identifiers, operators, and calls
+      # Increment 1-4: literals, identifiers, operators, calls, and fn_single
       StreamData.frequency([
         {5, gen_literal()},
         {3, gen_identifier()},
@@ -131,7 +132,8 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
         {2, gen_unary_op(state)},
         {3, gen_call_parens(state)},
         {2, gen_call_no_parens_one(state)},
-        {2, gen_capture_int()}
+        {2, gen_capture_int()},
+        {2, gen_fn_single(state)}
       ])
     end
   end
@@ -422,5 +424,51 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
         StreamData.constant([arg | rest])
       end)
     end)
+  end
+
+  # ===========================================================================
+  # Generator: fn_single
+  # ===========================================================================
+
+  # Generate a single-clause fn expression: fn pattern -> body end
+  defp gen_fn_single(state) do
+    child_state = GrammarTree.decr_depth(state)
+
+    StreamData.bind(gen_stab_clause(child_state), fn clause ->
+      StreamData.constant({:fn_single, [clause]})
+    end)
+  end
+
+  # Generate a stab clause: pattern -> body
+  # Phase 1: guard is always nil, pattern is :empty or {:single, expr}
+  defp gen_stab_clause(state) do
+    # Generate pattern (mostly :empty or {:single, identifier})
+    pattern_gen =
+      StreamData.frequency([
+        {3, StreamData.constant(:empty)},
+        {4, gen_single_pattern()}
+      ])
+
+    # Generate body (simple expression to avoid deep nesting)
+    body_gen =
+      if state.budget.depth <= 1 do
+        gen_simple_expr()
+      else
+        gen_expr(state)
+      end
+
+    StreamData.bind(pattern_gen, fn pattern ->
+      StreamData.bind(body_gen, fn body ->
+        # Guard is nil in Phase 1
+        StreamData.constant({:stab_clause, pattern, nil, body})
+      end)
+    end)
+  end
+
+  # Generate a single pattern for fn: {:single, expr}
+  defp gen_single_pattern do
+    # Use identifiers for patterns (most common)
+    StreamData.member_of(@identifiers)
+    |> StreamData.map(fn atom -> {:single, {:identifier, atom}} end)
   end
 end

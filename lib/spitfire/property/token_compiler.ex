@@ -217,6 +217,26 @@ defmodule Spitfire.Property.TokenCompiler do
   end
 
   # ---------------------------------------------------------------------------
+  # fn expressions (Phase 1: single clause only)
+  # ---------------------------------------------------------------------------
+
+  # fn_single: fn clause end
+  defp do_to_tokens({:fn_single, [clause]}, layout, opts) do
+    # Compile 'fn' keyword
+    {fn_meta, layout} = TokenLayout.space_before(layout, "fn", nil)
+    fn_token = {:fn, fn_meta}
+
+    # Compile the stab clause
+    {clause_tokens, layout} = compile_stab_clause(clause, layout, opts)
+
+    # Compile 'end' keyword
+    {end_meta, layout} = TokenLayout.space_before(layout, "end", nil)
+    end_token = {:end, end_meta}
+
+    {[fn_token] ++ clause_tokens ++ [end_token], layout}
+  end
+
+  # ---------------------------------------------------------------------------
   # Catch-all for unimplemented nodes
   # ---------------------------------------------------------------------------
 
@@ -391,6 +411,22 @@ defmodule Spitfire.Property.TokenCompiler do
     {[{:paren_identifier, meta, atom}], layout}
   end
 
+  # fn_single stuck to previous token
+  defp compile_arg_with_adhesion({:fn_single, [clause]}, layout, opts) do
+    # Compile 'fn' keyword stuck to previous
+    {fn_meta, layout} = TokenLayout.stick_right(layout, "fn", nil)
+    fn_token = {:fn, fn_meta}
+
+    # Compile the stab clause
+    {clause_tokens, layout} = compile_stab_clause(clause, layout, opts)
+
+    # Compile 'end' keyword
+    {end_meta, layout} = TokenLayout.space_before(layout, "end", nil)
+    end_token = {:end, end_meta}
+
+    {[fn_token] ++ clause_tokens ++ [end_token], layout}
+  end
+
   defp compile_arg_with_adhesion(other, layout, opts) do
     # Fallback: use do_to_tokens (may add unwanted space in some cases)
     do_to_tokens(other, layout, opts)
@@ -452,5 +488,63 @@ defmodule Spitfire.Property.TokenCompiler do
     {rest_tokens, layout} = compile_forms(rest, layout, opts)
 
     {form_tokens ++ [eol_token] ++ rest_tokens, layout}
+  end
+
+  # ===========================================================================
+  # Helper: compile_stab_clause
+  # ===========================================================================
+
+  # Compile a stab clause: pattern -> body
+  # Pattern can be :empty, {:single, expr}, or {:many, [expr]}
+  # Guard must be nil in Phase 1
+  defp compile_stab_clause({:stab_clause, pattern, nil, body}, layout, opts) do
+    # Compile pattern (if any)
+    {pattern_tokens, layout} = compile_pattern(pattern, layout, opts)
+
+    # Compile stab operator ->
+    {stab_meta, layout} = TokenLayout.space_before(layout, "->", nil)
+    stab_token = {:stab_op, stab_meta, :->}
+
+    # Compile body
+    {body_tokens, layout} = do_to_tokens(body, layout, opts)
+
+    {pattern_tokens ++ [stab_token] ++ body_tokens, layout}
+  end
+
+  # ===========================================================================
+  # Helper: compile_pattern
+  # ===========================================================================
+
+  # Empty pattern (no arguments): fn -> ... end
+  defp compile_pattern(:empty, layout, _opts), do: {[], layout}
+
+  # Single pattern: fn x -> ... end
+  defp compile_pattern({:single, expr}, layout, opts) do
+    do_to_tokens(expr, layout, opts)
+  end
+
+  # Multiple patterns: fn x, y -> ... end (Phase 2+)
+  defp compile_pattern({:many, exprs}, layout, opts) do
+    compile_pattern_list(exprs, layout, opts)
+  end
+
+  # Compile a list of patterns with comma separators
+  defp compile_pattern_list([], layout, _opts), do: {[], layout}
+
+  defp compile_pattern_list([expr], layout, opts) do
+    do_to_tokens(expr, layout, opts)
+  end
+
+  defp compile_pattern_list([expr | rest], layout, opts) do
+    {expr_tokens, layout} = do_to_tokens(expr, layout, opts)
+
+    # Add comma token
+    {comma_meta, layout} = TokenLayout.stick_right(layout, ",", nil)
+    comma_token = {:",", comma_meta}
+
+    # Compile remaining patterns
+    {rest_tokens, layout} = compile_pattern_list(rest, layout, opts)
+
+    {expr_tokens ++ [comma_token] ++ rest_tokens, layout}
   end
 end
