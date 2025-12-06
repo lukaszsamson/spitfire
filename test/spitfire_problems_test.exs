@@ -65,6 +65,17 @@ defmodule SpitfireProblemsTest do
       assert spitfire_ast == code_ast
   end
 
+  test "Spitfire empty function 1" do
+      code = ~S"""
+      fn x -> end
+      """
+
+      {:ok, spitfire_ast, _comments} = Spitfire.parse_with_comments(code, spitfire_opts())
+      {code_ast, _comments} = Code.string_to_quoted_with_comments!(code, code_opts())
+
+      assert spitfire_ast == code_ast
+  end
+
 #   describe "problem 2 – range invariants" do
 #     test "Heredoc ranges start at column 1 regardless of indentation" do
 #       code = ~S'''

@@ -1413,7 +1413,7 @@ defmodule Spitfire do
 
           rhs =
             case exprs do
-              [] -> nil
+              [] -> encode_literal(parser, nil, op_range)
               _ -> build_block_nr(exprs)
             end
 
