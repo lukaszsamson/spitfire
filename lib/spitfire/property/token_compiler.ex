@@ -220,6 +220,73 @@ defmodule Spitfire.Property.TokenCompiler do
   end
 
   # ---------------------------------------------------------------------------
+  # At operator (@expr)
+  # ---------------------------------------------------------------------------
+
+  # At operator with optional newline: @\n expr
+  # Per grammar: at_op_eol -> at_op | at_op eol
+  defp do_to_tokens({:at_op, newlines, operand}, layout, opts) when is_integer(newlines) do
+    {at_meta, layout} = TokenLayout.space_before(layout, "@", nil)
+    at_token = {:at_op, at_meta, :@}
+
+    # Emit newlines if any (per at_op_eol -> at_op eol)
+    {eol_tokens, layout} =
+      if newlines > 0 do
+        eol_meta = TokenLayout.meta(layout, "\n", newlines)
+        layout = TokenLayout.newlines(layout, newlines)
+        {[{:eol, eol_meta}], layout}
+      else
+        {[], layout}
+      end
+
+    # Compile operand
+    {operand_tokens, layout} = compile_arg_with_adhesion(operand, layout, opts)
+
+    {[at_token] ++ eol_tokens ++ operand_tokens, layout}
+  end
+
+  # ---------------------------------------------------------------------------
+  # Capture operator (&expr)
+  # ---------------------------------------------------------------------------
+
+  # Capture operator with optional newline: &\n expr
+  # Per grammar: capture_op_eol -> capture_op | capture_op eol
+  defp do_to_tokens({:capture_op, newlines, operand}, layout, opts) when is_integer(newlines) do
+    {amp_meta, layout} = TokenLayout.space_before(layout, "&", nil)
+    amp_token = {:capture_op, amp_meta, :&}
+
+    # Emit newlines if any (per capture_op_eol -> capture_op eol)
+    {eol_tokens, layout} =
+      if newlines > 0 do
+        eol_meta = TokenLayout.meta(layout, "\n", newlines)
+        layout = TokenLayout.newlines(layout, newlines)
+        {[{:eol, eol_meta}], layout}
+      else
+        {[], layout}
+      end
+
+    # Compile operand with adhesion
+    {operand_tokens, layout} = compile_arg_with_adhesion(operand, layout, opts)
+
+    {[amp_token] ++ eol_tokens ++ operand_tokens, layout}
+  end
+
+  # ---------------------------------------------------------------------------
+  # Ellipsis prefix operator (...expr)
+  # ---------------------------------------------------------------------------
+
+  # Ellipsis as prefix operator: ...expr
+  defp do_to_tokens({:ellipsis_prefix, expr}, layout, opts) do
+    {ellipsis_meta, layout} = TokenLayout.space_before(layout, "...", nil)
+    ellipsis_token = {:ellipsis_op, ellipsis_meta, :...}
+
+    # Compile expression with adhesion
+    {expr_tokens, layout} = compile_arg_with_adhesion(expr, layout, opts)
+
+    {[ellipsis_token] ++ expr_tokens, layout}
+  end
+
+  # ---------------------------------------------------------------------------
   # Parenthesized Expressions
   # ---------------------------------------------------------------------------
 

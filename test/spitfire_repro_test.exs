@@ -360,4 +360,58 @@ defmodule SpitfireReproTest do
     code = "&(%{\"three\": beta |> 0} + 1) ++ State.\"foo\"(bar)"
     assert Spitfire.parse(code) == s2q(code)
   end
+
+  @tag :skip
+  test "repro 51" do
+    code = """
+    -not delta 27.51 + if false do
+    false
+    148
+    end; !:alice
+    ; gamma Mod and ... - -755 <=
+    eggs(delta, true) > gamma == if true do
+    :ok
+    end
+    unless true do
+    baz
+    Remote
+    else
+    :bob
+    end
+    unless baz do
+    State
+    else
+    ?u
+    end
+    ; 42.72 and 0b1001
+    unless true do
+    -136
+    else
+    Foo
+    end
+    """
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
+  @tag :skip
+  test "repro 52" do
+    code = """
+    not ... - unless true do
+    false
+    end
+    State !== 180 === case Config do
+    eggs -> nil
+    :error -> alpha
+    :foo -> 46.34
+    end
+    if true do
+    delta
+    delta
+    end
+    0
+    """
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
+
 end

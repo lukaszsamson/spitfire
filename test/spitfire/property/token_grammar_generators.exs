@@ -935,10 +935,13 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
   Generate a matched expression (safe as operands).
 
   Per grammar lines 155-161, matched expressions include:
-  - matched_op (binary ops with matched operands)
-  - matched_unary (unary ops with matched operands)
-  - call_no_parens_one
-  - sub_matched_expr (access_expr, nullary ops)
+  - matched_expr matched_op_expr (binary ops)
+  - unary_op_eol matched_expr (unary ops)
+  - at_op_eol matched_expr (@foo)
+  - capture_op_eol matched_expr (&expr)
+  - ellipsis_op matched_expr (...expr)
+  - no_parens_one_expr
+  - sub_matched_expr
   """
   def gen_matched_expr(state) do
     if GrammarTree.budget_exhausted?(state) do
@@ -948,6 +951,9 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
         {4, gen_sub_matched_expr(state)},
         {3, gen_matched_op(state)},
         {2, gen_matched_unary(state)},
+        {1, gen_at_op(state)},
+        {1, gen_capture_op(state)},
+        {1, gen_ellipsis_prefix(state)},
         {1, gen_call_no_parens_one(state)}
       ])
     end
@@ -1020,9 +1026,9 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
   # ===========================================================================
 
   # Generate matched binary operator: left op right (both matched)
+  # Per grammar: matched_expr -> matched_expr matched_op_expr
   defp gen_matched_op(state) do
     child_state = GrammarTree.decr_depth(state)
-    # Set context to disallow unmatched in operands
     restricted_state = restrict_unmatched(child_state)
 
     operand_gen =
@@ -1042,6 +1048,7 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
   end
 
   # Generate matched unary operator: op operand (operand matched)
+  # Per grammar: matched_expr -> unary_op_eol matched_expr
   defp gen_matched_unary(state) do
     child_state = GrammarTree.decr_depth(state)
     restricted_state = restrict_unmatched(child_state)
@@ -1060,11 +1067,72 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
     end)
   end
 
+  # Generate at_op expression: @foo, @spec, etc.
+  # Per grammar: matched_expr -> at_op_eol matched_expr
+  # at_op_eol -> at_op | at_op eol
+  defp gen_at_op(state) do
+    child_state = GrammarTree.decr_depth(state)
+    restricted_state = restrict_unmatched(child_state)
+
+    operand_gen =
+      if child_state.budget.depth <= 1 do
+        gen_sub_matched_expr(restricted_state)
+      else
+        gen_matched_expr(restricted_state)
+      end
+
+    StreamData.bind(gen_newlines(), fn newlines ->
+      StreamData.bind(operand_gen, fn operand ->
+        StreamData.constant({:at_op, newlines, operand})
+      end)
+    end)
+  end
+
+  # Generate capture_op expression: &expr, &Mod.fun/1, &(&1 + &2)
+  # Per grammar: matched_expr -> capture_op_eol matched_expr
+  # capture_op_eol -> capture_op | capture_op eol
+  defp gen_capture_op(state) do
+    child_state = GrammarTree.decr_depth(state)
+    restricted_state = restrict_unmatched(child_state)
+
+    operand_gen =
+      if child_state.budget.depth <= 1 do
+        gen_sub_matched_expr(restricted_state)
+      else
+        gen_matched_expr(restricted_state)
+      end
+
+    StreamData.bind(gen_newlines(), fn newlines ->
+      StreamData.bind(operand_gen, fn operand ->
+        StreamData.constant({:capture_op, newlines, operand})
+      end)
+    end)
+  end
+
+  # Generate ellipsis as prefix operator: ...expr
+  # Per grammar: matched_expr -> ellipsis_op matched_expr
+  defp gen_ellipsis_prefix(state) do
+    child_state = GrammarTree.decr_depth(state)
+    restricted_state = restrict_unmatched(child_state)
+
+    operand_gen =
+      if child_state.budget.depth <= 1 do
+        gen_sub_matched_expr(restricted_state)
+      else
+        gen_matched_expr(restricted_state)
+      end
+
+    StreamData.bind(operand_gen, fn operand ->
+      StreamData.constant({:ellipsis_prefix, operand})
+    end)
+  end
+
   # ===========================================================================
   # Category-Aware: Unmatched Operators
   # ===========================================================================
 
   # Generate unmatched binary operator: left op right (right is unmatched)
+  # Per grammar: unmatched_expr -> matched_expr unmatched_op_expr
   defp gen_unmatched_op(state) do
     child_state = GrammarTree.decr_depth(state)
     restricted_state = restrict_unmatched(child_state)

@@ -182,6 +182,27 @@ defmodule Spitfire.Property.GrammarTree do
   @typedoc "Nullary ellipsis operator (...)"
   @type nullary_ellipsis_t :: {:nullary_ellipsis, nil}
 
+  @typedoc """
+  At operator expression (@expr for module attributes).
+
+  Per grammar: matched_expr -> at_op_eol matched_expr
+  - `newlines`: number of newlines after `@` (0 = no newline)
+  - `operand`: the matched expression following `@`
+  """
+  @type at_op_t :: {:at_op, non_neg_integer(), matched_expr_t()}
+
+  @typedoc """
+  Capture operator expression (&expr).
+
+  Per grammar: matched_expr -> capture_op_eol matched_expr
+  - `newlines`: number of newlines after `&` (0 = no newline)
+  - `operand`: the matched expression following `&`
+  """
+  @type capture_op_t :: {:capture_op, non_neg_integer(), matched_expr_t()}
+
+  @typedoc "Ellipsis prefix operator (...expr)"
+  @type ellipsis_prefix_t :: {:ellipsis_prefix, matched_expr_t()}
+
   # ===========================================================================
   # Expression Categories (per elixir_parser.yrl)
   # ===========================================================================
