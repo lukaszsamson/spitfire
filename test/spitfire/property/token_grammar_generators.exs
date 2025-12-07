@@ -1025,17 +1025,58 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
   @doc """
   Generate a sub-matched expression (atomic/access expressions).
 
-  Per grammar lines 263-267, includes:
-  - access_expr (literals, identifiers, fn, calls, etc.)
-  - Nullary range_op (..)
-  - Nullary ellipsis_op (...)
+  Per grammar lines 263-267:
+  - sub_matched_expr -> no_parens_zero_expr (bare identifiers)
+  - sub_matched_expr -> range_op (nullary ..)
+  - sub_matched_expr -> ellipsis_op (nullary ...)
+  - sub_matched_expr -> access_expr (literals, fn, calls, etc.)
   """
   def gen_sub_matched_expr(state) do
     StreamData.frequency([
       {10, gen_access_expr(state)},
+      {5, gen_no_parens_zero_expr()},
       {1, gen_nullary_range()},
       {1, gen_nullary_ellipsis()}
     ])
+  end
+
+  @doc """
+  Generate a no_parens_zero_expr (bare identifier or dotted identifier).
+
+  Per grammar lines 260-261:
+  - no_parens_zero_expr -> dot_do_identifier
+  - no_parens_zero_expr -> dot_identifier
+
+  And per grammar lines 477-478 (dot_identifier):
+  - dot_identifier -> identifier
+  - dot_identifier -> matched_expr dot_op identifier
+
+  This is where identifiers belong in the grammar (not access_expr).
+  """
+  def gen_no_parens_zero_expr do
+    StreamData.frequency([
+      # Simple identifier (most common)
+      {6, gen_identifier()},
+      # Dotted identifier: expr.identifier (e.g., foo.bar, Mod.func)
+      {2, gen_dot_identifier()}
+    ])
+  end
+
+  # Generate a dotted identifier: expr.identifier
+  # Per grammar: dot_identifier -> matched_expr dot_op identifier
+  defp gen_dot_identifier do
+    # Left side can be a simple expression (to avoid deep nesting)
+    left_gen =
+      StreamData.frequency([
+        {3, gen_identifier()},
+        {2, gen_alias()}
+      ])
+
+    StreamData.bind(left_gen, fn left ->
+      StreamData.bind(StreamData.member_of(@identifiers), fn right_name ->
+        StreamData.constant({:dot_identifier, left, right_name})
+      end)
+    end)
   end
 
   @doc """
@@ -1043,11 +1084,28 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
 
   Per grammar lines 273-301, includes:
   - Literals (int, float, char, atom, bool, nil)
-  - Identifiers and aliases
+  - Aliases (dot_alias)
   - fn expressions
-  - Parenthesized calls
-  - Captures
+  - Parenthesized calls (parens_call)
+  - Capture integers (capture_int int)
   - Parenthesized expressions
+  - Empty parentheses (empty_paren)
+  - Lists ([a, b, c])
+  - Tuples ({a, b})
+  - Maps (%{a: 1})
+  - Binary strings ("hello")
+
+  NOTE: Identifiers are NOT in access_expr per grammar.
+  They belong to no_parens_zero_expr (sub_matched_expr).
+
+  TODO (later phases):
+  - bracket_at_expr (@foo[bar])
+  - bracket_expr (foo[bar])
+  - list_string / list_heredoc ('hello')
+  - bin_heredoc
+  - bitstring (<<1, 2, 3>>)
+  - sigil (~r/regex/)
+  - atom_quoted / atom_safe / atom_unsafe
   """
   def gen_access_expr(state) do
     if GrammarTree.budget_exhausted?(state) do
@@ -1055,12 +1113,19 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
     else
       StreamData.frequency([
         {5, gen_literal()},
-        {3, gen_identifier()},
         {2, gen_alias()},
         {2, gen_fn_single(state)},
         {2, gen_call_parens(state)},
         {1, gen_capture_int()},
-        {1, gen_paren_expr(state)}
+        {1, gen_paren_expr(state)},
+        {1, gen_empty_paren()},
+        # Container types
+        {2, gen_list(state)},
+        {2, gen_tuple(state)}
+        # NOTE: map disabled - Toxic doesn't render %{} token correctly
+        # {2, gen_map(state)}
+        # NOTE: bin_string disabled - Toxic doesn't support this token format yet
+        # {2, gen_bin_string()}
       ])
     end
   end
@@ -1251,6 +1316,166 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
   @doc "Generate empty parentheses: ()"
   def gen_empty_paren do
     StreamData.constant({:empty_paren, nil})
+  end
+
+  # ===========================================================================
+  # Container Generators: Lists, Tuples, Maps
+  # ===========================================================================
+
+  @doc """
+  Generate a list: [elem1, elem2, ...]
+
+  Per grammar lines 598-599:
+  - list -> open_bracket ']'
+  - list -> open_bracket list_args close_bracket
+  """
+  def gen_list(state) do
+    child_state = GrammarTree.decr_depth(state)
+
+    StreamData.frequency([
+      # Empty list
+      {1, StreamData.constant({:list, []})},
+      # List with 1-3 elements
+      {4, gen_list_with_elements(child_state, 1, 3)}
+    ])
+  end
+
+  defp gen_list_with_elements(state, min, max) do
+    StreamData.bind(StreamData.integer(min..max), fn count ->
+      gen_container_args(state, count)
+    end)
+    |> StreamData.map(fn args -> {:list, args} end)
+  end
+
+  @doc """
+  Generate a tuple: {elem1, elem2, ...}
+
+  Per grammar lines 603-605:
+  - tuple -> open_curly '}'
+  - tuple -> open_curly container_args close_curly
+  """
+  def gen_tuple(state) do
+    child_state = GrammarTree.decr_depth(state)
+
+    StreamData.frequency([
+      # Empty tuple
+      {1, StreamData.constant({:tuple, []})},
+      # Tuple with 1-3 elements
+      {4, gen_tuple_with_elements(child_state, 1, 3)}
+    ])
+  end
+
+  defp gen_tuple_with_elements(state, min, max) do
+    StreamData.bind(StreamData.integer(min..max), fn count ->
+      gen_container_args(state, count)
+    end)
+    |> StreamData.map(fn args -> {:tuple, args} end)
+  end
+
+  @doc """
+  Generate a map: %{key => value, ...} or %{key: value, ...}
+
+  Per grammar lines 648-656:
+  - map -> map_op map_args
+  """
+  def gen_map(state) do
+    child_state = GrammarTree.decr_depth(state)
+
+    StreamData.frequency([
+      # Empty map
+      {1, StreamData.constant({:map, []})},
+      # Map with keyword syntax (key: value)
+      {3, gen_map_keyword(child_state, 1, 3)},
+      # Map with arrow syntax (key => value)
+      {2, gen_map_arrow(child_state, 1, 3)}
+    ])
+  end
+
+  # Generate map with keyword syntax: %{foo: 1, bar: 2}
+  defp gen_map_keyword(state, min, max) do
+    StreamData.bind(StreamData.integer(min..max), fn count ->
+      gen_kw_pairs(state, count)
+    end)
+    |> StreamData.map(fn pairs -> {:map, {:kw, pairs}} end)
+  end
+
+  # Generate map with arrow syntax: %{:foo => 1, :bar => 2}
+  defp gen_map_arrow(state, min, max) do
+    StreamData.bind(StreamData.integer(min..max), fn count ->
+      gen_assoc_pairs(state, count)
+    end)
+    |> StreamData.map(fn pairs -> {:map, {:assoc, pairs}} end)
+  end
+
+  # Generate keyword pairs: [{key, value}, ...]
+  defp gen_kw_pairs(_state, 0), do: StreamData.constant([])
+
+  defp gen_kw_pairs(state, count) when count > 0 do
+    StreamData.bind(StreamData.member_of(@atoms), fn key ->
+      StreamData.bind(gen_simple_expr(), fn value ->
+        StreamData.bind(gen_kw_pairs(state, count - 1), fn rest ->
+          StreamData.constant([{key, value} | rest])
+        end)
+      end)
+    end)
+  end
+
+  # Generate association pairs: [{key, value}, ...] for arrow syntax
+  defp gen_assoc_pairs(_state, 0), do: StreamData.constant([])
+
+  defp gen_assoc_pairs(state, count) when count > 0 do
+    StreamData.bind(gen_simple_expr(), fn key ->
+      StreamData.bind(gen_simple_expr(), fn value ->
+        StreamData.bind(gen_assoc_pairs(state, count - 1), fn rest ->
+          StreamData.constant([{key, value} | rest])
+        end)
+      end)
+    end)
+  end
+
+  # Generate container arguments (for lists and tuples)
+  defp gen_container_args(_state, 0), do: StreamData.constant([])
+
+  defp gen_container_args(state, count) when count > 0 do
+    arg_gen =
+      if state.budget.depth <= 1 do
+        gen_simple_expr()
+      else
+        gen_matched_expr(state)
+      end
+
+    StreamData.bind(arg_gen, fn arg ->
+      StreamData.bind(gen_container_args(GrammarTree.decr_nodes(state), count - 1), fn rest ->
+        StreamData.constant([arg | rest])
+      end)
+    end)
+  end
+
+  # ===========================================================================
+  # String Generators
+  # ===========================================================================
+
+  @doc """
+  Generate a binary string: "hello"
+
+  Per grammar lines 290-292:
+  - access_expr -> bin_string
+  - access_expr -> bin_heredoc (TODO)
+  """
+  def gen_bin_string do
+    StreamData.frequency([
+      # Simple string without interpolation
+      {5, gen_simple_bin_string()},
+      # Empty string
+      {1, StreamData.constant({:bin_string, ""})}
+    ])
+  end
+
+  # Generate a simple string (ASCII letters and spaces, no interpolation)
+  defp gen_simple_bin_string do
+    StreamData.bind(StreamData.string(:alphanumeric, min_length: 1, max_length: 20), fn str ->
+      StreamData.constant({:bin_string, str})
+    end)
   end
 
   # ===========================================================================

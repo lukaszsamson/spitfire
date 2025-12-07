@@ -128,6 +128,25 @@ defmodule Spitfire.Property.TokenCompiler do
     {[{:alias, meta, atom}], layout}
   end
 
+  # Dotted identifier: expr.identifier (e.g., foo.bar, Mod.func)
+  # Per grammar: dot_identifier -> matched_expr dot_op identifier
+  defp do_to_tokens({:dot_identifier, left, right_name}, layout, opts) do
+    # Compile left expression
+    {left_tokens, layout} = do_to_tokens(left, layout, opts)
+
+    # Compile dot (stuck to left for adhesion)
+    {dot_meta, layout} = TokenLayout.stick_right(layout, ".", nil)
+    dot_token = {:., dot_meta}
+
+    # Compile right identifier (stuck to dot for adhesion)
+    right_str = Atom.to_string(right_name)
+    chars = String.to_charlist(right_str)
+    {right_meta, layout} = TokenLayout.stick_right(layout, right_str, chars)
+    right_token = {:identifier, right_meta, right_name}
+
+    {left_tokens ++ [dot_token, right_token], layout}
+  end
+
   # ---------------------------------------------------------------------------
   # Binary Operators
   # ---------------------------------------------------------------------------
@@ -342,6 +361,125 @@ defmodule Spitfire.Property.TokenCompiler do
     close_token = {:")", close_meta}
 
     {[open_token, close_token], layout}
+  end
+
+  # ---------------------------------------------------------------------------
+  # Lists, Tuples, Maps
+  # ---------------------------------------------------------------------------
+
+  # List: [elem1, elem2, ...]
+  defp do_to_tokens({:list, []}, layout, _opts) do
+    # Empty list: []
+    {open_meta, layout} = TokenLayout.space_before(layout, "[", nil)
+    open_token = {:"[", open_meta}
+
+    {close_meta, layout} = TokenLayout.stick_right(layout, "]", nil)
+    close_token = {:"]", close_meta}
+
+    {[open_token, close_token], layout}
+  end
+
+  defp do_to_tokens({:list, args}, layout, opts) do
+    # Opening bracket
+    {open_meta, layout} = TokenLayout.space_before(layout, "[", nil)
+    open_token = {:"[", open_meta}
+
+    # Compile arguments (first stuck to open bracket)
+    {args_tokens, layout} = compile_args_in_brackets(args, layout, opts)
+
+    # Closing bracket (stuck to last arg)
+    {close_meta, layout} = TokenLayout.stick_right(layout, "]", nil)
+    close_token = {:"]", close_meta}
+
+    {[open_token] ++ args_tokens ++ [close_token], layout}
+  end
+
+  # Tuple: {elem1, elem2, ...}
+  defp do_to_tokens({:tuple, []}, layout, _opts) do
+    # Empty tuple: {}
+    {open_meta, layout} = TokenLayout.space_before(layout, "{", nil)
+    open_token = {:"{", open_meta}
+
+    {close_meta, layout} = TokenLayout.stick_right(layout, "}", nil)
+    close_token = {:"}", close_meta}
+
+    {[open_token, close_token], layout}
+  end
+
+  defp do_to_tokens({:tuple, args}, layout, opts) do
+    # Opening curly
+    {open_meta, layout} = TokenLayout.space_before(layout, "{", nil)
+    open_token = {:"{", open_meta}
+
+    # Compile arguments (first stuck to open curly)
+    {args_tokens, layout} = compile_args_in_brackets(args, layout, opts)
+
+    # Closing curly (stuck to last arg)
+    {close_meta, layout} = TokenLayout.stick_right(layout, "}", nil)
+    close_token = {:"}", close_meta}
+
+    {[open_token] ++ args_tokens ++ [close_token], layout}
+  end
+
+  # Map: %{key: value, ...} or %{key => value, ...}
+  defp do_to_tokens({:map, []}, layout, _opts) do
+    # Empty map: %{}
+    {map_meta, layout} = TokenLayout.space_before(layout, "%{}", nil)
+    map_token = {:"%{}", map_meta}
+
+    {[map_token], layout}
+  end
+
+  defp do_to_tokens({:map, {:kw, pairs}}, layout, opts) do
+    # Map with keyword syntax: %{foo: 1, bar: 2}
+    {map_meta, layout} = TokenLayout.space_before(layout, "%{", nil)
+    map_token = {:"%{}", map_meta}
+
+    # Compile keyword pairs
+    {pairs_tokens, layout} = compile_kw_pairs(pairs, layout, opts)
+
+    # Closing curly (stuck to last value)
+    {close_meta, layout} = TokenLayout.stick_right(layout, "}", nil)
+    close_token = {:"}", close_meta}
+
+    {[map_token] ++ pairs_tokens ++ [close_token], layout}
+  end
+
+  defp do_to_tokens({:map, {:assoc, pairs}}, layout, opts) do
+    # Map with arrow syntax: %{:foo => 1, :bar => 2}
+    {map_meta, layout} = TokenLayout.space_before(layout, "%{", nil)
+    map_token = {:"%{}", map_meta}
+
+    # Compile association pairs
+    {pairs_tokens, layout} = compile_assoc_pairs(pairs, layout, opts)
+
+    # Closing curly (stuck to last value)
+    {close_meta, layout} = TokenLayout.stick_right(layout, "}", nil)
+    close_token = {:"}", close_meta}
+
+    {[map_token] ++ pairs_tokens ++ [close_token], layout}
+  end
+
+  # ---------------------------------------------------------------------------
+  # Strings
+  # ---------------------------------------------------------------------------
+
+  # Binary string: "hello"
+  defp do_to_tokens({:bin_string, ""}, layout, _opts) do
+    # Empty string: ""
+    {str_meta, layout} = TokenLayout.space_before(layout, "\"\"", nil)
+    str_token = {:bin_string, str_meta, [""]}
+
+    {[str_token], layout}
+  end
+
+  defp do_to_tokens({:bin_string, content}, layout, _opts) when is_binary(content) do
+    # Simple string with content (no interpolation)
+    lexeme = "\"" <> content <> "\""
+    {str_meta, layout} = TokenLayout.space_before(layout, lexeme, nil)
+    str_token = {:bin_string, str_meta, [content]}
+
+    {[str_token], layout}
   end
 
   # ---------------------------------------------------------------------------
@@ -709,6 +847,118 @@ defmodule Spitfire.Property.TokenCompiler do
   # Legacy unary operator stuck to previous token
   defp compile_arg_with_adhesion({:unary_op, op_kind, operand}, layout, opts) do
     compile_unary_op_stuck(op_kind, operand, layout, opts)
+  end
+
+  # Dotted identifier stuck to previous token
+  defp compile_arg_with_adhesion({:dot_identifier, left, right_name}, layout, opts) do
+    # Compile left expression stuck to current position
+    {left_tokens, layout} = compile_arg_with_adhesion(left, layout, opts)
+
+    # Compile dot (stuck to left)
+    {dot_meta, layout} = TokenLayout.stick_right(layout, ".", nil)
+    dot_token = {:., dot_meta}
+
+    # Compile right identifier (stuck to dot)
+    right_str = Atom.to_string(right_name)
+    chars = String.to_charlist(right_str)
+    {right_meta, layout} = TokenLayout.stick_right(layout, right_str, chars)
+    right_token = {:identifier, right_meta, right_name}
+
+    {left_tokens ++ [dot_token, right_token], layout}
+  end
+
+  # List stuck to previous token
+  defp compile_arg_with_adhesion({:list, []}, layout, _opts) do
+    {open_meta, layout} = TokenLayout.stick_right(layout, "[", nil)
+    open_token = {:"[", open_meta}
+
+    {close_meta, layout} = TokenLayout.stick_right(layout, "]", nil)
+    close_token = {:"]", close_meta}
+
+    {[open_token, close_token], layout}
+  end
+
+  defp compile_arg_with_adhesion({:list, args}, layout, opts) do
+    {open_meta, layout} = TokenLayout.stick_right(layout, "[", nil)
+    open_token = {:"[", open_meta}
+
+    {args_tokens, layout} = compile_args_in_brackets(args, layout, opts)
+
+    {close_meta, layout} = TokenLayout.stick_right(layout, "]", nil)
+    close_token = {:"]", close_meta}
+
+    {[open_token] ++ args_tokens ++ [close_token], layout}
+  end
+
+  # Tuple stuck to previous token
+  defp compile_arg_with_adhesion({:tuple, []}, layout, _opts) do
+    {open_meta, layout} = TokenLayout.stick_right(layout, "{", nil)
+    open_token = {:"{", open_meta}
+
+    {close_meta, layout} = TokenLayout.stick_right(layout, "}", nil)
+    close_token = {:"}", close_meta}
+
+    {[open_token, close_token], layout}
+  end
+
+  defp compile_arg_with_adhesion({:tuple, args}, layout, opts) do
+    {open_meta, layout} = TokenLayout.stick_right(layout, "{", nil)
+    open_token = {:"{", open_meta}
+
+    {args_tokens, layout} = compile_args_in_brackets(args, layout, opts)
+
+    {close_meta, layout} = TokenLayout.stick_right(layout, "}", nil)
+    close_token = {:"}", close_meta}
+
+    {[open_token] ++ args_tokens ++ [close_token], layout}
+  end
+
+  # Map stuck to previous token
+  defp compile_arg_with_adhesion({:map, []}, layout, _opts) do
+    {map_meta, layout} = TokenLayout.stick_right(layout, "%{}", nil)
+    map_token = {:"%{}", map_meta}
+
+    {[map_token], layout}
+  end
+
+  defp compile_arg_with_adhesion({:map, {:kw, pairs}}, layout, opts) do
+    {map_meta, layout} = TokenLayout.stick_right(layout, "%{", nil)
+    map_token = {:"%{}", map_meta}
+
+    {pairs_tokens, layout} = compile_kw_pairs(pairs, layout, opts)
+
+    {close_meta, layout} = TokenLayout.stick_right(layout, "}", nil)
+    close_token = {:"}", close_meta}
+
+    {[map_token] ++ pairs_tokens ++ [close_token], layout}
+  end
+
+  defp compile_arg_with_adhesion({:map, {:assoc, pairs}}, layout, opts) do
+    {map_meta, layout} = TokenLayout.stick_right(layout, "%{", nil)
+    map_token = {:"%{}", map_meta}
+
+    {pairs_tokens, layout} = compile_assoc_pairs(pairs, layout, opts)
+
+    {close_meta, layout} = TokenLayout.stick_right(layout, "}", nil)
+    close_token = {:"}", close_meta}
+
+    {[map_token] ++ pairs_tokens ++ [close_token], layout}
+  end
+
+  # String stuck to previous token
+  defp compile_arg_with_adhesion({:bin_string, ""}, layout, _opts) do
+    {str_meta, layout} = TokenLayout.stick_right(layout, "\"\"", nil)
+    str_token = {:bin_string, str_meta, [""]}
+
+    {[str_token], layout}
+  end
+
+  defp compile_arg_with_adhesion({:bin_string, content}, layout, _opts) when is_binary(content) do
+    lexeme = "\"" <> content <> "\""
+    {str_meta, layout} = TokenLayout.stick_right(layout, lexeme, nil)
+    str_token = {:bin_string, str_meta, [content]}
+
+    {[str_token], layout}
   end
 
   defp compile_arg_with_adhesion(other, layout, opts) do
@@ -1173,5 +1423,157 @@ defmodule Spitfire.Property.TokenCompiler do
     {rest_tokens, layout} = compile_block_items(rest, layout, opts)
 
     {[after_token, eol_token] ++ body_tokens ++ rest_tokens, layout}
+  end
+
+  # ===========================================================================
+  # Helper: compile_args_in_brackets (for lists and tuples)
+  # ===========================================================================
+
+  # Compile arguments inside brackets (first arg stuck to open bracket)
+  defp compile_args_in_brackets([], layout, _opts), do: {[], layout}
+
+  defp compile_args_in_brackets([arg | rest], layout, opts) do
+    # First argument is stuck to opening bracket (no space)
+    {first_tokens, layout} = compile_arg_with_adhesion(arg, layout, opts)
+
+    # Remaining args have commas and spaces
+    {rest_tokens, layout} = compile_remaining_bracket_args(rest, layout, opts)
+
+    {first_tokens ++ rest_tokens, layout}
+  end
+
+  # Compile remaining arguments with comma separators
+  defp compile_remaining_bracket_args([], layout, _opts), do: {[], layout}
+
+  defp compile_remaining_bracket_args([arg | rest], layout, opts) do
+    # Add comma token (stuck to previous)
+    {comma_meta, layout} = TokenLayout.stick_right(layout, ",", nil)
+    comma_token = {:",", comma_meta}
+
+    # Compile arg with space before
+    {arg_tokens, layout} = do_to_tokens(arg, layout, opts)
+
+    # Continue with remaining args
+    {rest_tokens, layout} = compile_remaining_bracket_args(rest, layout, opts)
+
+    {[comma_token] ++ arg_tokens ++ rest_tokens, layout}
+  end
+
+  # ===========================================================================
+  # Helper: compile_kw_pairs (for maps with keyword syntax)
+  # ===========================================================================
+
+  # Compile keyword pairs: key: value, key2: value2
+  defp compile_kw_pairs([], layout, _opts), do: {[], layout}
+
+  defp compile_kw_pairs([{key, value}], layout, opts) do
+    # Single pair: key: value (stuck to %{)
+    compile_kw_pair_stuck(key, value, layout, opts)
+  end
+
+  defp compile_kw_pairs([{key, value} | rest], layout, opts) do
+    # First pair stuck to %{
+    {first_tokens, layout} = compile_kw_pair_stuck(key, value, layout, opts)
+
+    # Remaining pairs have commas
+    {rest_tokens, layout} = compile_remaining_kw_pairs(rest, layout, opts)
+
+    {first_tokens ++ rest_tokens, layout}
+  end
+
+  # Compile a single keyword pair stuck to previous token
+  defp compile_kw_pair_stuck(key, value, layout, opts) do
+    # Key (atom) stuck to previous
+    key_str = Atom.to_string(key)
+    key_lexeme = key_str <> ":"
+    {key_meta, layout} = TokenLayout.stick_right(layout, key_lexeme, nil)
+    key_token = {:kw_identifier, key_meta, key}
+
+    # Value with space after colon
+    {value_tokens, layout} = do_to_tokens(value, layout, opts)
+
+    {[key_token] ++ value_tokens, layout}
+  end
+
+  defp compile_remaining_kw_pairs([], layout, _opts), do: {[], layout}
+
+  defp compile_remaining_kw_pairs([{key, value} | rest], layout, opts) do
+    # Comma stuck to previous
+    {comma_meta, layout} = TokenLayout.stick_right(layout, ",", nil)
+    comma_token = {:",", comma_meta}
+
+    # Key with space after comma
+    key_str = Atom.to_string(key)
+    key_lexeme = key_str <> ":"
+    {key_meta, layout} = TokenLayout.space_before(layout, key_lexeme, nil)
+    key_token = {:kw_identifier, key_meta, key}
+
+    # Value with space after colon
+    {value_tokens, layout} = do_to_tokens(value, layout, opts)
+
+    # Continue with remaining pairs
+    {rest_tokens, layout} = compile_remaining_kw_pairs(rest, layout, opts)
+
+    {[comma_token, key_token] ++ value_tokens ++ rest_tokens, layout}
+  end
+
+  # ===========================================================================
+  # Helper: compile_assoc_pairs (for maps with arrow syntax)
+  # ===========================================================================
+
+  # Compile association pairs: key => value, key2 => value2
+  defp compile_assoc_pairs([], layout, _opts), do: {[], layout}
+
+  defp compile_assoc_pairs([{key, value}], layout, opts) do
+    # Single pair: key => value (stuck to %{)
+    compile_assoc_pair_stuck(key, value, layout, opts)
+  end
+
+  defp compile_assoc_pairs([{key, value} | rest], layout, opts) do
+    # First pair stuck to %{
+    {first_tokens, layout} = compile_assoc_pair_stuck(key, value, layout, opts)
+
+    # Remaining pairs have commas
+    {rest_tokens, layout} = compile_remaining_assoc_pairs(rest, layout, opts)
+
+    {first_tokens ++ rest_tokens, layout}
+  end
+
+  # Compile a single association pair stuck to previous token
+  defp compile_assoc_pair_stuck(key, value, layout, opts) do
+    # Key stuck to previous
+    {key_tokens, layout} = compile_arg_with_adhesion(key, layout, opts)
+
+    # => operator with space
+    {assoc_meta, layout} = TokenLayout.space_before(layout, "=>", nil)
+    assoc_token = {:assoc_op, assoc_meta, :"=>"}
+
+    # Value with space
+    {value_tokens, layout} = do_to_tokens(value, layout, opts)
+
+    {key_tokens ++ [assoc_token] ++ value_tokens, layout}
+  end
+
+  defp compile_remaining_assoc_pairs([], layout, _opts), do: {[], layout}
+
+  defp compile_remaining_assoc_pairs([{key, value} | rest], layout, opts) do
+    # Comma stuck to previous
+    {comma_meta, layout} = TokenLayout.stick_right(layout, ",", nil)
+    comma_token = {:",", comma_meta}
+
+    # Key with space
+    {key_tokens, layout} = do_to_tokens(key, layout, opts)
+
+    # => operator with space
+    {assoc_meta, layout} = TokenLayout.space_before(layout, "=>", nil)
+    assoc_token = {:assoc_op, assoc_meta, :"=>"}
+
+    # Value with space
+    {value_tokens, layout} = do_to_tokens(value, layout, opts)
+
+    # Continue with remaining pairs
+    {rest_tokens, layout} = compile_remaining_assoc_pairs(rest, layout, opts)
+
+    {[comma_token] ++ key_tokens ++ [assoc_token] ++ value_tokens ++ rest_tokens, layout}
   end
 end
