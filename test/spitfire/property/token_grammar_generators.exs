@@ -13,6 +13,9 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
   - **Increment 3**: Calls (call_parens, call_no_parens_one, capture_int).
   - **Increment 4**: fn_single with stab clauses.
   - **Increment 5**: Full unmatched_expr coverage per grammar lines 163-171.
+  - **Increment 6**: Full block_expr coverage per grammar lines 181-185.
+  - **Increment 7**: paren_stab forms per grammar lines 277-279.
+  - **Increment 8**: Full do_block coverage per grammar lines 322-329.
 
   ## Grammar Coverage: unmatched_expr (Increment 5)
 
@@ -26,7 +29,69 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
   6. `at_op_eol expr` - gen_unmatched_at_op
   7. `capture_op_eol expr` - gen_unmatched_capture_op
   8. `ellipsis_op expr` - gen_unmatched_ellipsis
-  9. `block_expr` - gen_call_do
+  9. `block_expr` - gen_block_expr (see below)
+
+  ## Grammar Coverage: block_expr (Increment 6)
+
+  All 5 productions from elixir_parser.yrl lines 181-185 are implemented:
+
+  1. `dot_call_identifier call_args_parens do_block` - gen_block_parens
+     Examples: `foo() do end`, `Mod.func() do end`, `expr.() do end`
+
+  2. `dot_call_identifier call_args_parens call_args_parens do_block` - gen_block_parens_nested
+     Examples: `foo()() do end`, `Mod.func()() do end` (higher-order function calls)
+
+  3. `dot_do_identifier do_block` - gen_call_do
+     Examples: `if true do end`, `Mod.if cond do end`, `expr.unless flag do end`
+     Supports both simple and dotted do_identifier targets via gen_dotted_do_identifier_call.
+
+  4. `dot_op_identifier call_args_no_parens_all do_block` - gen_block_no_parens_op
+     Examples: `.+ 1 do end`, `expr.* arg do end` (operator-as-function with do block)
+
+  5. `dot_identifier call_args_no_parens_all do_block` - gen_block_no_parens
+     Examples: `foo 1 do end`, `Mod.func arg do end`
+
+  ## Grammar Coverage: paren_stab (Increment 7)
+
+  All 3 paren_stab productions from elixir_parser.yrl lines 277-279 are implemented:
+
+  1. `open_paren stab_eoe ')' : build_paren_stab` - gen_paren_stab
+     Examples: `(x -> x + 1)`, `(x, y -> x + y)`, `(a -> b; c -> d)`
+     Parenthesized anonymous function patterns with 1+ stab clauses.
+
+  2. `open_paren ';' stab_eoe ')' : build_paren_stab` - gen_paren_stab_semi
+     Examples: `(; x -> x)`, `(; -> :ok)`
+     With leading semicolon (trailing newline/semicolon from previous context).
+
+  3. `open_paren ';' close_paren : build_paren_stab` - gen_paren_stab_empty
+     Examples: `(;)`
+     Empty parenthesized stab (edge case for macro expansions).
+
+  ## Grammar Coverage: do_block (Increment 8)
+
+  All 4 do_block productions from elixir_parser.yrl lines 322-329 are implemented:
+
+  1. `do_eoe 'end'` - Empty do block
+     Examples: `do end`
+     Generated with empty body: `{:do_block, [], []}`
+
+  2. `do_eoe stab_eoe 'end'` - Do block with stab clauses
+     Examples: `do x -> y end`, `do a -> b; c -> d end`
+     Generated with stab clauses: `{:do_block, [{:stab_clause, ...}, ...], []}`
+
+  3. `do_eoe block_list 'end'` - Do block with extras (empty body)
+     Examples: `do else :ok end`, `do rescue e -> handle(e) end`
+     Generated with: `{:do_block, [], [{:block_item, :else, body}]}`
+
+  4. `do_eoe stab_eoe block_list 'end'` - Stab clauses + block extras
+     Examples: `do x -> y else :error end`, `do :ok after cleanup() end`
+     Full combination with stab body and block extras.
+
+  Block extras (block_item per grammar lines 368-374):
+  - `:else` - else block with expressions (for if/unless)
+  - `:rescue` - rescue block with stab clauses (for try)
+  - `:catch` - catch block with stab clauses (for try)
+  - `:after` - after block with expressions (for try/receive)
 
   ## Deferred to Future Phases (TODO)
 
@@ -367,7 +432,7 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
     if GrammarTree.budget_exhausted?(state) do
       gen_fallback_literal()
     else
-      # Phase 1-2: literals, identifiers, operators, calls, fn_single, fn_multi, call_do
+      # Phase 1-2: literals, identifiers, operators, calls, fn_single, fn_multi, block_expr
       StreamData.frequency([
         {5, gen_literal()},
         {3, gen_identifier()},
@@ -379,7 +444,8 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
         {2, gen_capture_int()},
         {2, gen_fn_single(state)},
         {2, gen_fn_multi(state)},
-        {2, gen_call_do(state)}
+        # All 5 block_expr rules
+        {2, gen_block_expr(state)}
       ])
     end
   end
@@ -881,6 +947,51 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
   end
 
   # ===========================================================================
+  # Generator: paren_stab (parenthesized stab clauses)
+  # ===========================================================================
+
+  # Per grammar lines 277-279:
+  #   access_expr -> open_paren stab_eoe ')' : build_paren_stab('$1', '$2', '$3').
+  #   access_expr -> open_paren ';' stab_eoe ')' : build_paren_stab('$1', '$3', '$4').
+  #   access_expr -> open_paren ';' close_paren : build_paren_stab('$1', [], '$3').
+  #
+  # paren_stab forms represent anonymous function-like constructs in parentheses:
+  #   (x -> x + 1)     - basic paren_stab
+  #   (x, y -> x + y)  - with multiple args
+  #   (; x -> x)       - with leading semicolon
+  #   (;)              - empty with semicolon
+
+  # Generate basic paren_stab: (clause) or (clause1; clause2)
+  # Grammar: open_paren stab_eoe ')' : build_paren_stab('$1', '$2', '$3')
+  defp gen_paren_stab(state) do
+    child_state = GrammarTree.decr_depth(state)
+
+    # Generate 1-2 stab clauses
+    StreamData.bind(StreamData.integer(1..2), fn count ->
+      gen_stab_clause_list(child_state, count)
+    end)
+    |> StreamData.map(fn clauses -> {:paren_stab, clauses} end)
+  end
+
+  # Generate paren_stab with leading semicolon: (; clause) or (; clause1; clause2)
+  # Grammar: open_paren ';' stab_eoe ')' : build_paren_stab('$1', '$3', '$4')
+  defp gen_paren_stab_semi(state) do
+    child_state = GrammarTree.decr_depth(state)
+
+    # Generate 1-2 stab clauses
+    StreamData.bind(StreamData.integer(1..2), fn count ->
+      gen_stab_clause_list(child_state, count)
+    end)
+    |> StreamData.map(fn clauses -> {:paren_stab_semi, clauses} end)
+  end
+
+  # Generate empty paren_stab with semicolon: (;)
+  # Grammar: open_paren ';' close_paren : build_paren_stab('$1', [], '$3')
+  defp gen_paren_stab_empty do
+    StreamData.constant({:paren_stab_empty})
+  end
+
+  # ===========================================================================
   # Generator: call_do (if/unless/case with do blocks)
   # ===========================================================================
 
@@ -889,16 +1000,22 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
   @do_identifiers ~w(if unless case for try receive with cond)a
 
   # Generate a call with do block: if cond do body end
+  # Rule 3: dot_do_identifier do_block
+  # Per grammar lines 260-261 and 488-489:
+  #   dot_do_identifier -> do_identifier
+  #   dot_do_identifier -> matched_expr dot_op do_identifier
   defp gen_call_do(state) do
     child_state = GrammarTree.decr_depth(state)
 
     StreamData.frequency([
       {4, gen_if_unless(child_state)},
-      {2, gen_case(child_state)}
+      {2, gen_case(child_state)},
+      # Dotted do_identifier variant: Mod.if true do end (rare)
+      {1, gen_dotted_do_identifier_call(child_state)}
     ])
   end
 
-  # Generate if/unless with do block
+  # Generate if/unless with do block (simple identifier target)
   defp gen_if_unless(state) do
     StreamData.bind(StreamData.member_of(@do_identifiers), fn name ->
       StreamData.bind(gen_do_condition(), fn cond_expr ->
@@ -914,6 +1031,34 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
     StreamData.bind(gen_simple_expr(), fn match_expr ->
       StreamData.bind(gen_case_block(state), fn do_block ->
         StreamData.constant({:call_do, {:identifier, :case}, [match_expr], do_block})
+      end)
+    end)
+  end
+
+  # Generate dotted do_identifier call: Mod.if true do end, expr.unless cond do end
+  # Per grammar: matched_expr dot_op do_identifier
+  defp gen_dotted_do_identifier_call(state) do
+    left_gen =
+      if state.budget.depth <= 1 do
+        StreamData.frequency([
+          {2, gen_alias()},
+          {1, gen_identifier()}
+        ])
+      else
+        StreamData.frequency([
+          {3, gen_alias()},
+          {2, gen_identifier()},
+          {1, gen_matched_expr(GrammarTree.decr_depth(state))}
+        ])
+      end
+
+    StreamData.bind(left_gen, fn left ->
+      StreamData.bind(StreamData.member_of(@do_identifiers), fn name ->
+        StreamData.bind(gen_do_condition(), fn cond_expr ->
+          StreamData.bind(gen_do_block(state), fn do_block ->
+            StreamData.constant({:call_do, {:dot_do_identifier, left, name}, [cond_expr], do_block})
+          end)
+        end)
       end)
     end)
   end
@@ -965,9 +1110,14 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
   end
 
   # Generate do block: {:do_block, body, extras}
+  # Per grammar lines 322-329, do_block has 4 cases:
+  #   1. do_eoe 'end'                  -> empty body, no extras
+  #   2. do_eoe stab_eoe 'end'         -> stab clauses, no extras
+  #   3. do_eoe block_list 'end'       -> empty body, with extras
+  #   4. do_eoe stab_eoe block_list 'end' -> stab clauses, with extras
   defp gen_do_block(state) do
     body_gen = gen_do_body(state)
-    extras_gen = gen_block_extras()
+    extras_gen = gen_block_extras(state)
 
     StreamData.bind(body_gen, fn body ->
       StreamData.bind(extras_gen, fn extras ->
@@ -976,10 +1126,35 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
     end)
   end
 
-  # Generate body for do block (1-2 simple expressions)
-  defp gen_do_body(_state) do
+  # Generate body for do block - can be:
+  # - Empty: [] (grammar case 1 and 3)
+  # - Simple expressions: [expr1, expr2, ...] (common case)
+  # - Stab clauses: [{:stab_clause, ...}, ...] (grammar case 2 and 4)
+  defp gen_do_body(state) do
+    child_state = GrammarTree.decr_depth(state)
+
+    StreamData.frequency([
+      # Empty body (grammar: do_eoe 'end')
+      {1, StreamData.constant([])},
+      # Simple expressions (1-2 expressions)
+      {6, gen_do_body_exprs(child_state)},
+      # Stab clauses (grammar: do_eoe stab_eoe 'end')
+      {3, gen_do_body_stab(child_state)}
+    ])
+  end
+
+  # Generate do body with simple expressions (1-2 expressions)
+  defp gen_do_body_exprs(_state) do
     StreamData.bind(StreamData.integer(1..2), fn count ->
       gen_simple_expr_list(count)
+    end)
+  end
+
+  # Generate do body with stab clauses (for case/receive/cond/try)
+  # This produces bodies like: x -> y; a -> b
+  defp gen_do_body_stab(state) do
+    StreamData.bind(StreamData.integer(1..3), fn count ->
+      gen_stab_clause_list(state, count)
     end)
   end
 
@@ -994,20 +1169,260 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
     end)
   end
 
-  # Generate block extras (empty or else)
-  defp gen_block_extras do
+  # Generate block extras (block_list from grammar lines 368-374)
+  # block_list -> block_item | block_item block_list
+  # block_item -> block_eoe stab_eoe | block_eoe
+  #
+  # block_identifier tokens: else, rescue, catch, after
+  defp gen_block_extras(state) do
+    child_state = GrammarTree.decr_depth(state)
+
     StreamData.frequency([
-      {6, StreamData.constant([])},
-      {4, gen_else_block()}
+      # No extras (most common)
+      {5, StreamData.constant([])},
+      # Just else (for if/unless)
+      {3, gen_else_block(child_state)},
+      # Just rescue (for try)
+      {1, gen_rescue_block(child_state)},
+      # Just catch (for try)
+      {1, gen_catch_block(child_state)},
+      # Just after (for try/receive)
+      {1, gen_after_block(child_state)},
+      # rescue + after combo (for try)
+      {1, gen_rescue_after_combo(child_state)}
     ])
   end
 
   # Generate else block: [{:block_item, :else, body}]
-  defp gen_else_block do
-    StreamData.bind(StreamData.integer(1..1), fn count ->
+  # Per grammar: block_item -> block_eoe | block_eoe stab_eoe
+  # else typically uses expressions, not stab clauses
+  defp gen_else_block(state) do
+    StreamData.frequency([
+      # Empty else (block_eoe only)
+      {1, StreamData.constant([{:block_item, :else, []}])},
+      # else with body
+      {4, gen_block_item_body(state, :else)}
+    ])
+  end
+
+  # Generate rescue block: [{:block_item, :rescue, body}]
+  # rescue uses stab clauses: rescue e -> handle(e)
+  defp gen_rescue_block(state) do
+    StreamData.frequency([
+      # Empty rescue
+      {1, StreamData.constant([{:block_item, :rescue, []}])},
+      # rescue with stab clauses
+      {4, gen_block_item_stab(state, :rescue)}
+    ])
+  end
+
+  # Generate catch block: [{:block_item, :catch, body}]
+  # catch uses stab clauses: catch :throw, value -> handle(value)
+  defp gen_catch_block(state) do
+    StreamData.frequency([
+      # Empty catch
+      {1, StreamData.constant([{:block_item, :catch, []}])},
+      # catch with stab clauses
+      {4, gen_block_item_stab(state, :catch)}
+    ])
+  end
+
+  # Generate after block: [{:block_item, :after, body}]
+  # after uses expressions: after cleanup()
+  defp gen_after_block(state) do
+    StreamData.frequency([
+      # Empty after
+      {1, StreamData.constant([{:block_item, :after, []}])},
+      # after with body
+      {4, gen_block_item_body(state, :after)}
+    ])
+  end
+
+  # Generate rescue + after combo for try blocks
+  defp gen_rescue_after_combo(state) do
+    StreamData.bind(gen_rescue_block(state), fn rescue_items ->
+      StreamData.bind(gen_after_block(state), fn after_items ->
+        StreamData.constant(rescue_items ++ after_items)
+      end)
+    end)
+  end
+
+  # Generate block item with simple expression body
+  defp gen_block_item_body(_state, block_type) do
+    StreamData.bind(StreamData.integer(1..2), fn count ->
       gen_simple_expr_list(count)
     end)
-    |> StreamData.map(fn body -> [{:block_item, :else, body}] end)
+    |> StreamData.map(fn body -> [{:block_item, block_type, body}] end)
+  end
+
+  # Generate block item with stab clause body
+  defp gen_block_item_stab(state, block_type) do
+    StreamData.bind(StreamData.integer(1..2), fn count ->
+      gen_stab_clause_list(state, count)
+    end)
+    |> StreamData.map(fn clauses -> [{:block_item, block_type, clauses}] end)
+  end
+
+  # ===========================================================================
+  # Generator: block_expr (all 5 rules from elixir_parser.yrl lines 181-185)
+  # ===========================================================================
+
+  # Generate block_expr according to all 5 grammar rules:
+  # 1. dot_call_identifier call_args_parens do_block          -> gen_block_parens
+  # 2. dot_call_identifier call_args_parens call_args_parens do_block -> gen_block_parens_nested
+  # 3. dot_do_identifier do_block                             -> gen_call_do (existing)
+  # 4. dot_op_identifier call_args_no_parens_all do_block     -> gen_block_no_parens_op
+  # 5. dot_identifier call_args_no_parens_all do_block        -> gen_block_no_parens
+  defp gen_block_expr(state) do
+    child_state = GrammarTree.decr_depth(state)
+
+    StreamData.frequency([
+      # Rule 1: paren call with do block - foo() do end
+      {3, gen_block_parens(child_state)},
+      # Rule 2: nested paren calls - foo()() do end (rare)
+      {1, gen_block_parens_nested(child_state)},
+      # Rule 3: do_identifier do block - if do end (most common)
+      {5, gen_call_do(state)},
+      # Rule 4: op_identifier with args + do block - .+ 1 do end (very rare)
+      {1, gen_block_no_parens_op(child_state)},
+      # Rule 5: identifier with args + do block - foo 1 do end
+      {3, gen_block_no_parens(child_state)}
+    ])
+  end
+
+  # Rule 1: dot_call_identifier call_args_parens do_block
+  # Examples: foo() do end, Mod.func() do end, expr.() do end
+  defp gen_block_parens(state) do
+    child_state = GrammarTree.decr_depth(state)
+
+    # dot_call_identifier is either:
+    # - paren_identifier (simple): foo
+    # - matched_expr.paren_identifier: Mod.foo, expr.foo
+    # - matched_expr dot_call_op: expr.
+    target_gen =
+      StreamData.frequency([
+        {4, gen_paren_identifier()},
+        {2, gen_dot_paren_identifier(child_state)},
+        {1, gen_dot_call_target(child_state)}
+      ])
+
+    args_gen = gen_args(child_state, 3)
+
+    StreamData.bind(target_gen, fn target ->
+      StreamData.bind(args_gen, fn args ->
+        StreamData.bind(gen_do_block(child_state), fn do_block ->
+          StreamData.constant({:block_parens, target, args, do_block})
+        end)
+      end)
+    end)
+  end
+
+  # Generate dot_paren_identifier: matched_expr.paren_identifier
+  # Per grammar: dot_paren_identifier -> paren_identifier | matched_expr dot_op paren_identifier
+  defp gen_dot_paren_identifier(state) do
+    left_gen =
+      if state.budget.depth <= 1 do
+        StreamData.frequency([
+          {2, gen_alias()},
+          {1, gen_identifier()}
+        ])
+      else
+        StreamData.frequency([
+          {3, gen_alias()},
+          {2, gen_identifier()},
+          {1, gen_matched_expr(GrammarTree.decr_depth(state))}
+        ])
+      end
+
+    StreamData.bind(left_gen, fn left ->
+      StreamData.bind(StreamData.member_of(@identifiers), fn right_name ->
+        StreamData.constant({:dot_paren_identifier, left, right_name})
+      end)
+    end)
+  end
+
+  # Rule 2: dot_call_identifier call_args_parens call_args_parens do_block
+  # Examples: foo()() do end, Mod.func()() do end (higher-order function calls)
+  defp gen_block_parens_nested(state) do
+    child_state = GrammarTree.decr_depth(state)
+
+    # Similar to Rule 1 but with two sets of args
+    target_gen =
+      StreamData.frequency([
+        {4, gen_paren_identifier()},
+        {2, gen_dot_paren_identifier(child_state)}
+      ])
+
+    args1_gen = gen_args(child_state, 2)
+    args2_gen = gen_args(child_state, 2)
+
+    StreamData.bind(target_gen, fn target ->
+      StreamData.bind(args1_gen, fn args1 ->
+        StreamData.bind(args2_gen, fn args2 ->
+          StreamData.bind(gen_do_block(child_state), fn do_block ->
+            StreamData.constant({:block_parens_nested, target, args1, args2, do_block})
+          end)
+        end)
+      end)
+    end)
+  end
+
+  # Rule 4: dot_op_identifier call_args_no_parens_all do_block
+  # Examples: .+ 1 do end, expr.* a do end (operator-as-function with do block)
+  defp gen_block_no_parens_op(state) do
+    child_state = GrammarTree.decr_depth(state)
+
+    # dot_op_identifier: op_identifier | matched_expr dot_op op_identifier
+    target_gen =
+      StreamData.frequency([
+        {2, StreamData.bind(StreamData.member_of(@binary_ops), fn {_, op} ->
+          StreamData.constant({:op_identifier, op})
+        end)},
+        {1, gen_dot_op_identifier_for_call(child_state)}
+      ])
+
+    # call_args_no_parens_all: matched_expr | kw_args
+    args_gen =
+      StreamData.frequency([
+        {3, gen_simple_expr() |> StreamData.map(&{:single_arg, &1})},
+        {2, gen_call_args_no_parens_kw()}
+      ])
+
+    StreamData.bind(target_gen, fn target ->
+      StreamData.bind(args_gen, fn args ->
+        StreamData.bind(gen_do_block(child_state), fn do_block ->
+          StreamData.constant({:block_no_parens_op, target, args, do_block})
+        end)
+      end)
+    end)
+  end
+
+  # Rule 5: dot_identifier call_args_no_parens_all do_block
+  # Examples: foo 1 do end, Mod.func arg do end
+  defp gen_block_no_parens(state) do
+    child_state = GrammarTree.decr_depth(state)
+
+    # dot_identifier: identifier | matched_expr dot_op identifier
+    target_gen =
+      StreamData.frequency([
+        {3, StreamData.member_of(@identifiers) |> StreamData.map(&{:identifier, &1})},
+        {2, gen_dot_identifier_for_call(child_state)}
+      ])
+
+    # call_args_no_parens_all: matched_expr | kw_args
+    args_gen =
+      StreamData.frequency([
+        {3, gen_simple_expr() |> StreamData.map(&{:single_arg, &1})},
+        {2, gen_call_args_no_parens_kw()}
+      ])
+
+    StreamData.bind(target_gen, fn target ->
+      StreamData.bind(args_gen, fn args ->
+        StreamData.bind(gen_do_block(child_state), fn do_block ->
+          StreamData.constant({:block_no_parens, target, args, do_block})
+        end)
+      end)
+    end)
   end
 
   # Generate a stab clause: pattern -> body (or pattern when guard -> body)
@@ -1225,7 +1640,8 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
       gen_simple_call_do(state)
     else
       StreamData.frequency([
-        {5, gen_call_do(state)},
+        # All 5 block_expr rules (lines 181-185 in grammar)
+        {5, gen_block_expr(state)},
         {3, gen_unmatched_op(state)},
         # Prefix operators with unmatched operand (e.g., &if true do :ok end)
         {1, gen_unmatched_unary(state)},
@@ -1378,6 +1794,10 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
         {1, gen_capture_int()},
         {1, gen_paren_expr(state)},
         {1, gen_empty_paren()},
+        # Paren stab forms: (x -> y), (; x -> y), (;)
+        {2, gen_paren_stab(state)},
+        {1, gen_paren_stab_semi(state)},
+        {1, gen_paren_stab_empty()},
         # Container types
         {2, gen_list(state)},
         {2, gen_tuple(state)},

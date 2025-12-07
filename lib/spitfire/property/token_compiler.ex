@@ -838,6 +838,71 @@ defmodule Spitfire.Property.TokenCompiler do
   end
 
   # ---------------------------------------------------------------------------
+  # paren_stab expressions (Increment 7)
+  # ---------------------------------------------------------------------------
+
+  # Per grammar lines 277-279:
+  #   access_expr -> open_paren stab_eoe ')' : build_paren_stab('$1', '$2', '$3').
+  #   access_expr -> open_paren ';' stab_eoe ')' : build_paren_stab('$1', '$3', '$4').
+  #   access_expr -> open_paren ';' close_paren : build_paren_stab('$1', [], '$3').
+
+  # paren_stab: (clause) or (clause1; clause2)
+  # Grammar: open_paren stab_eoe ')' : build_paren_stab
+  defp do_to_tokens({:paren_stab, clauses}, layout, opts) when is_list(clauses) and length(clauses) >= 1 do
+    # Compile '(' - with space before
+    {open_meta, layout} = TokenLayout.space_before(layout, "(", nil)
+    open_token = {:"(", open_meta}
+
+    # Compile stab clauses with semicolon separators
+    {clauses_tokens, layout} = compile_stab_clauses(clauses, layout, opts)
+
+    # Compile ')' - stuck to last token
+    {close_meta, layout} = TokenLayout.stick_right(layout, ")", nil)
+    close_token = {:")", close_meta}
+
+    {[open_token] ++ clauses_tokens ++ [close_token], layout}
+  end
+
+  # paren_stab_semi: (; clause) or (; clause1; clause2)
+  # Grammar: open_paren ';' stab_eoe ')' : build_paren_stab
+  defp do_to_tokens({:paren_stab_semi, clauses}, layout, opts) when is_list(clauses) and length(clauses) >= 1 do
+    # Compile '(' - with space before
+    {open_meta, layout} = TokenLayout.space_before(layout, "(", nil)
+    open_token = {:"(", open_meta}
+
+    # Compile leading ';' - stuck to open paren
+    {semi_meta, layout} = TokenLayout.stick_right(layout, ";", nil)
+    semi_token = {:";", semi_meta}
+
+    # Compile stab clauses with semicolon separators
+    {clauses_tokens, layout} = compile_stab_clauses(clauses, layout, opts)
+
+    # Compile ')' - stuck to last token
+    {close_meta, layout} = TokenLayout.stick_right(layout, ")", nil)
+    close_token = {:")", close_meta}
+
+    {[open_token, semi_token] ++ clauses_tokens ++ [close_token], layout}
+  end
+
+  # paren_stab_empty: (;)
+  # Grammar: open_paren ';' close_paren : build_paren_stab
+  defp do_to_tokens({:paren_stab_empty}, layout, _opts) do
+    # Compile '(' - with space before
+    {open_meta, layout} = TokenLayout.space_before(layout, "(", nil)
+    open_token = {:"(", open_meta}
+
+    # Compile ';' - stuck to open paren
+    {semi_meta, layout} = TokenLayout.stick_right(layout, ";", nil)
+    semi_token = {:";", semi_meta}
+
+    # Compile ')' - stuck to semicolon
+    {close_meta, layout} = TokenLayout.stick_right(layout, ")", nil)
+    close_token = {:")", close_meta}
+
+    {[open_token, semi_token, close_token], layout}
+  end
+
+  # ---------------------------------------------------------------------------
   # do_block expressions (Phase 2)
   # ---------------------------------------------------------------------------
 
@@ -872,6 +937,211 @@ defmodule Spitfire.Property.TokenCompiler do
     end_token = {:end, end_meta}
 
     {[id_token] ++ args_tokens ++ [do_token, eol_token] ++ body_tokens ++ extras_tokens ++ [end_token], layout}
+  end
+
+  # call_do with dot_do_identifier target: Mod.if true do :yes end
+  # Per grammar: matched_expr dot_op do_identifier
+  defp do_to_tokens({:call_do, {:dot_do_identifier, left, name}, args, {:do_block, body, extras}}, layout, opts) do
+    # Compile left side (matched_expr)
+    {left_tokens, layout} = do_to_tokens(left, layout, opts)
+
+    # Compile dot (stuck to left)
+    {dot_meta, layout} = TokenLayout.stick_right(layout, ".", nil)
+    dot_token = {:., dot_meta}
+
+    # Compile right side as do_identifier (stuck to dot)
+    name_str = Atom.to_string(name)
+    chars = String.to_charlist(name_str)
+    {id_meta, layout} = TokenLayout.stick_right(layout, name_str, chars)
+    id_token = {:do_identifier, id_meta, name}
+
+    # Compile arguments (if any)
+    {args_tokens, layout} = compile_do_args(args, layout, opts)
+
+    # Compile 'do' keyword
+    {do_meta, layout} = TokenLayout.space_before(layout, "do", nil)
+    do_token = {:do, do_meta}
+
+    # Newline after do
+    eol_meta = TokenLayout.meta(layout, "\n", 1)
+    eol_token = {:eol, eol_meta}
+    layout = TokenLayout.newline(layout)
+
+    # Compile body expressions
+    {body_tokens, layout} = compile_do_body(body, layout, opts)
+
+    # Compile extras (else, rescue, etc.)
+    {extras_tokens, layout} = compile_block_items(extras, layout, opts)
+
+    # Compile 'end' keyword
+    {end_meta, layout} = TokenLayout.space_before(layout, "end", nil)
+    end_token = {:end, end_meta}
+
+    {left_tokens ++ [dot_token, id_token] ++ args_tokens ++ [do_token, eol_token] ++ body_tokens ++ extras_tokens ++ [end_token], layout}
+  end
+
+  # ---------------------------------------------------------------------------
+  # block_expr: Rule 1 - dot_call_identifier call_args_parens do_block
+  # Examples: foo() do end, Mod.func() do end, expr.() do end
+  # ---------------------------------------------------------------------------
+
+  defp do_to_tokens({:block_parens, target, args, {:do_block, body, extras}}, layout, opts) do
+    # Compile target (paren_identifier, dot_paren_identifier, or dot_call)
+    {target_tokens, layout} = compile_block_parens_target(target, layout, opts)
+
+    # Compile open paren (stuck to target)
+    {lparen_meta, layout} = TokenLayout.stick_right(layout, "(", nil)
+    lparen_token = {:"(", lparen_meta}
+
+    # Compile arguments
+    {args_tokens, layout} = compile_args_list(args, layout, opts)
+
+    # Compile close paren (stuck to args)
+    {rparen_meta, layout} = TokenLayout.stick_right(layout, ")", nil)
+    rparen_token = {:")", rparen_meta}
+
+    # Compile 'do' keyword
+    {do_meta, layout} = TokenLayout.space_before(layout, "do", nil)
+    do_token = {:do, do_meta}
+
+    # Newline after do
+    eol_meta = TokenLayout.meta(layout, "\n", 1)
+    eol_token = {:eol, eol_meta}
+    layout = TokenLayout.newline(layout)
+
+    # Compile body expressions
+    {body_tokens, layout} = compile_do_body(body, layout, opts)
+
+    # Compile extras (else, rescue, etc.)
+    {extras_tokens, layout} = compile_block_items(extras, layout, opts)
+
+    # Compile 'end' keyword
+    {end_meta, layout} = TokenLayout.space_before(layout, "end", nil)
+    end_token = {:end, end_meta}
+
+    {target_tokens ++ [lparen_token] ++ args_tokens ++ [rparen_token, do_token, eol_token] ++
+       body_tokens ++ extras_tokens ++ [end_token], layout}
+  end
+
+  # ---------------------------------------------------------------------------
+  # block_expr: Rule 2 - nested paren calls with do block
+  # Examples: foo()() do end, Mod.func()() do end
+  # ---------------------------------------------------------------------------
+
+  defp do_to_tokens({:block_parens_nested, target, args1, args2, {:do_block, body, extras}}, layout, opts) do
+    # Compile target (paren_identifier or dot_paren_identifier)
+    {target_tokens, layout} = compile_block_parens_target(target, layout, opts)
+
+    # Compile first call args
+    {lparen1_meta, layout} = TokenLayout.stick_right(layout, "(", nil)
+    lparen1_token = {:"(", lparen1_meta}
+
+    {args1_tokens, layout} = compile_args_list(args1, layout, opts)
+
+    {rparen1_meta, layout} = TokenLayout.stick_right(layout, ")", nil)
+    rparen1_token = {:")", rparen1_meta}
+
+    # Compile second call args (stuck to first close paren)
+    {lparen2_meta, layout} = TokenLayout.stick_right(layout, "(", nil)
+    lparen2_token = {:"(", lparen2_meta}
+
+    {args2_tokens, layout} = compile_args_list(args2, layout, opts)
+
+    {rparen2_meta, layout} = TokenLayout.stick_right(layout, ")", nil)
+    rparen2_token = {:")", rparen2_meta}
+
+    # Compile 'do' keyword
+    {do_meta, layout} = TokenLayout.space_before(layout, "do", nil)
+    do_token = {:do, do_meta}
+
+    # Newline after do
+    eol_meta = TokenLayout.meta(layout, "\n", 1)
+    eol_token = {:eol, eol_meta}
+    layout = TokenLayout.newline(layout)
+
+    # Compile body expressions
+    {body_tokens, layout} = compile_do_body(body, layout, opts)
+
+    # Compile extras
+    {extras_tokens, layout} = compile_block_items(extras, layout, opts)
+
+    # Compile 'end' keyword
+    {end_meta, layout} = TokenLayout.space_before(layout, "end", nil)
+    end_token = {:end, end_meta}
+
+    {target_tokens ++ [lparen1_token] ++ args1_tokens ++ [rparen1_token, lparen2_token] ++
+       args2_tokens ++ [rparen2_token, do_token, eol_token] ++
+       body_tokens ++ extras_tokens ++ [end_token], layout}
+  end
+
+  # ---------------------------------------------------------------------------
+  # block_expr: Rule 4 - op_identifier with no-parens args and do block
+  # Examples: .+ 1 do end, expr.* arg do end
+  # ---------------------------------------------------------------------------
+
+  defp do_to_tokens({:block_no_parens_op, target, args, {:do_block, body, extras}}, layout, opts) do
+    # Compile target (op_identifier or dot_op_identifier)
+    {target_tokens, layout} = compile_op_identifier_target(target, layout, opts)
+
+    # Compile args (single_arg or kw_args)
+    {args_tokens, layout} = compile_no_parens_args(args, layout, opts)
+
+    # Compile 'do' keyword
+    {do_meta, layout} = TokenLayout.space_before(layout, "do", nil)
+    do_token = {:do, do_meta}
+
+    # Newline after do
+    eol_meta = TokenLayout.meta(layout, "\n", 1)
+    eol_token = {:eol, eol_meta}
+    layout = TokenLayout.newline(layout)
+
+    # Compile body expressions
+    {body_tokens, layout} = compile_do_body(body, layout, opts)
+
+    # Compile extras
+    {extras_tokens, layout} = compile_block_items(extras, layout, opts)
+
+    # Compile 'end' keyword
+    {end_meta, layout} = TokenLayout.space_before(layout, "end", nil)
+    end_token = {:end, end_meta}
+
+    {target_tokens ++ args_tokens ++ [do_token, eol_token] ++
+       body_tokens ++ extras_tokens ++ [end_token], layout}
+  end
+
+  # ---------------------------------------------------------------------------
+  # block_expr: Rule 5 - identifier with no-parens args and do block
+  # Examples: foo 1 do end, Mod.func arg do end
+  # ---------------------------------------------------------------------------
+
+  defp do_to_tokens({:block_no_parens, target, args, {:do_block, body, extras}}, layout, opts) do
+    # Compile target (identifier or dot_identifier)
+    {target_tokens, layout} = compile_identifier_target(target, layout, opts)
+
+    # Compile args (single_arg or kw_args)
+    {args_tokens, layout} = compile_no_parens_args(args, layout, opts)
+
+    # Compile 'do' keyword
+    {do_meta, layout} = TokenLayout.space_before(layout, "do", nil)
+    do_token = {:do, do_meta}
+
+    # Newline after do
+    eol_meta = TokenLayout.meta(layout, "\n", 1)
+    eol_token = {:eol, eol_meta}
+    layout = TokenLayout.newline(layout)
+
+    # Compile body expressions
+    {body_tokens, layout} = compile_do_body(body, layout, opts)
+
+    # Compile extras
+    {extras_tokens, layout} = compile_block_items(extras, layout, opts)
+
+    # Compile 'end' keyword
+    {end_meta, layout} = TokenLayout.space_before(layout, "end", nil)
+    end_token = {:end, end_meta}
+
+    {target_tokens ++ args_tokens ++ [do_token, eol_token] ++
+       body_tokens ++ extras_tokens ++ [end_token], layout}
   end
 
   # ---------------------------------------------------------------------------
@@ -929,6 +1199,126 @@ defmodule Spitfire.Property.TokenCompiler do
     chars = String.to_charlist(name)
     {meta, layout} = TokenLayout.space_before(layout, name, chars)
     {[{:identifier, meta, atom}], layout}
+  end
+
+  # ===========================================================================
+  # Helper: compile_block_parens_target (for block_expr rule 1 & 2)
+  # ===========================================================================
+
+  # Compile target for paren calls with do blocks
+  # Target types: paren_identifier, dot_paren_identifier, dot_call
+
+  # Simple paren_identifier: foo
+  defp compile_block_parens_target({:paren_identifier, atom}, layout, _opts) do
+    name = Atom.to_string(atom)
+    chars = String.to_charlist(name)
+    {meta, layout} = TokenLayout.space_before(layout, name, chars)
+    {[{:paren_identifier, meta, atom}], layout}
+  end
+
+  # dot_paren_identifier: matched_expr.paren_identifier
+  defp compile_block_parens_target({:dot_paren_identifier, left, right_name}, layout, opts) do
+    # Compile left side (matched_expr)
+    {left_tokens, layout} = do_to_tokens(left, layout, opts)
+
+    # Compile dot (stuck to left)
+    {dot_meta, layout} = TokenLayout.stick_right(layout, ".", nil)
+    dot_token = {:., dot_meta}
+
+    # Compile right side as paren_identifier (stuck to dot)
+    right_str = Atom.to_string(right_name)
+    chars = String.to_charlist(right_str)
+    {right_meta, layout} = TokenLayout.stick_right(layout, right_str, chars)
+    right_token = {:paren_identifier, right_meta, right_name}
+
+    {left_tokens ++ [dot_token, right_token], layout}
+  end
+
+  # dot_call: expr. (for anonymous function calls)
+  defp compile_block_parens_target({:dot_call, expr}, layout, opts) do
+    # Compile expression
+    {expr_tokens, layout} = do_to_tokens(expr, layout, opts)
+
+    # Compile dot (stuck to expression)
+    {dot_meta, layout} = TokenLayout.stick_right(layout, ".", nil)
+    dot_token = {:., dot_meta}
+
+    {expr_tokens ++ [dot_token], layout}
+  end
+
+  # ===========================================================================
+  # Helper: compile_op_identifier_target (for block_expr rule 4)
+  # ===========================================================================
+
+  # Simple op_identifier: + (as function reference)
+  defp compile_op_identifier_target({:op_identifier, op}, layout, _opts) do
+    name = Atom.to_string(op)
+    {meta, layout} = TokenLayout.space_before(layout, name, nil)
+    {[{:op_identifier, meta, op}], layout}
+  end
+
+  # dot_op_identifier: matched_expr.+
+  defp compile_op_identifier_target({:dot_op_identifier, left, op}, layout, opts) do
+    # Compile left side (matched_expr)
+    {left_tokens, layout} = do_to_tokens(left, layout, opts)
+
+    # Compile dot (stuck to left)
+    {dot_meta, layout} = TokenLayout.stick_right(layout, ".", nil)
+    dot_token = {:., dot_meta}
+
+    # Compile operator as op_identifier (stuck to dot)
+    op_str = Atom.to_string(op)
+    {op_meta, layout} = TokenLayout.stick_right(layout, op_str, nil)
+    op_token = {:op_identifier, op_meta, op}
+
+    {left_tokens ++ [dot_token, op_token], layout}
+  end
+
+  # ===========================================================================
+  # Helper: compile_identifier_target (for block_expr rule 5)
+  # ===========================================================================
+
+  # Simple identifier: foo
+  defp compile_identifier_target({:identifier, atom}, layout, _opts) do
+    name = Atom.to_string(atom)
+    chars = String.to_charlist(name)
+    {meta, layout} = TokenLayout.space_before(layout, name, chars)
+    {[{:identifier, meta, atom}], layout}
+  end
+
+  # dot_identifier: matched_expr.identifier
+  defp compile_identifier_target({:dot_identifier, left, right_name}, layout, opts) do
+    # Compile left side (matched_expr)
+    {left_tokens, layout} = do_to_tokens(left, layout, opts)
+
+    # Compile dot (stuck to left)
+    {dot_meta, layout} = TokenLayout.stick_right(layout, ".", nil)
+    dot_token = {:., dot_meta}
+
+    # Compile right side as identifier (stuck to dot)
+    right_str = Atom.to_string(right_name)
+    chars = String.to_charlist(right_str)
+    {right_meta, layout} = TokenLayout.stick_right(layout, right_str, chars)
+    right_token = {:identifier, right_meta, right_name}
+
+    {left_tokens ++ [dot_token, right_token], layout}
+  end
+
+  # ===========================================================================
+  # Helper: compile_args_list (for call args inside parens)
+  # ===========================================================================
+
+  # Compile argument list with first arg stuck to open paren
+  defp compile_args_list([], layout, _opts), do: {[], layout}
+
+  defp compile_args_list([arg | rest], layout, opts) do
+    # First argument stuck to opening paren
+    {first_tokens, layout} = compile_arg_with_adhesion(arg, layout, opts)
+
+    # Remaining args have commas
+    {rest_tokens, layout} = compile_remaining_args(rest, layout, opts)
+
+    {first_tokens ++ rest_tokens, layout}
   end
 
   # ===========================================================================
