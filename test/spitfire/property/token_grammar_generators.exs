@@ -460,8 +460,37 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
   end
 
   defp gen_alias do
-    StreamData.member_of(@aliases)
-    |> StreamData.map(fn atom -> {:alias, atom} end)
+    StreamData.frequency([
+      # Simple alias: Foo
+      {4, StreamData.member_of(@aliases) |> StreamData.map(&{:alias, &1})},
+      # Dotted alias: Foo.Bar (multi-segment alias)
+      {2, gen_dot_alias()}
+    ])
+  end
+
+  # Generate a dotted alias: Foo.Bar or Foo.Bar.Baz
+  # Per grammar: dot_alias -> matched_expr dot_op alias
+  defp gen_dot_alias do
+    # First segment is always a simple alias
+    StreamData.bind(StreamData.member_of(@aliases), fn first ->
+      # Optionally add 1-2 more segments
+      StreamData.bind(StreamData.integer(1..2), fn extra_count ->
+        gen_alias_segments(extra_count)
+        |> StreamData.map(fn segments ->
+          {:dot_alias, [{:alias, first} | segments]}
+        end)
+      end)
+    end)
+  end
+
+  defp gen_alias_segments(0), do: StreamData.constant([])
+
+  defp gen_alias_segments(count) when count > 0 do
+    StreamData.bind(StreamData.member_of(@aliases), fn segment ->
+      StreamData.bind(gen_alias_segments(count - 1), fn rest ->
+        StreamData.constant([{:alias, segment} | rest])
+      end)
+    end)
   end
 
   # ===========================================================================
@@ -555,14 +584,70 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
     end)
   end
 
-  # Generate a no-parens call with one argument: foo bar
+  # Generate a no-parens call with one argument: foo bar or Mod.fun bar
+  # Per grammar: no_parens_one_expr -> dot_identifier call_args_no_parens_one
+  #              no_parens_one_expr -> dot_op_identifier call_args_no_parens_one
+  # call_args_no_parens_one can be either a single matched_expr or keyword args
   defp gen_call_no_parens_one(_state) do
-    # Generate simple arg (no operators to avoid ambiguity)
-    arg_gen = gen_simple_expr()
+    # Target can be simple identifier or dotted identifier
+    target_gen =
+      StreamData.frequency([
+        # Simple identifier: foo bar
+        {4, StreamData.member_of(@identifiers) |> StreamData.map(&{:identifier, &1})},
+        # Dotted identifier: Mod.fun bar
+        {2, gen_dot_identifier_for_call()}
+      ])
 
-    StreamData.bind(StreamData.member_of(@identifiers), fn name ->
-      StreamData.bind(arg_gen, fn arg ->
-        StreamData.constant({:call_no_parens_one, {:identifier, name}, arg})
+    # Args can be a single expression or keyword arguments
+    args_gen =
+      StreamData.frequency([
+        # Single arg: foo bar
+        {4, gen_simple_expr() |> StreamData.map(&{:single_arg, &1})},
+        # Keyword args: foo a: 1, b: 2
+        {2, gen_call_args_no_parens_kw()}
+      ])
+
+    StreamData.bind(target_gen, fn target ->
+      StreamData.bind(args_gen, fn args ->
+        StreamData.constant({:call_no_parens_one, target, args})
+      end)
+    end)
+  end
+
+  # Generate keyword arguments for no-parens call: a: 1 or a: 1, b: 2
+  # Per grammar: call_args_no_parens_kw -> call_args_no_parens_kw_expr [',' ...]
+  # call_args_no_parens_kw_expr -> kw_eol matched_expr
+  defp gen_call_args_no_parens_kw do
+    StreamData.bind(StreamData.integer(1..3), fn count ->
+      gen_kw_arg_list(count)
+    end)
+    |> StreamData.map(fn pairs -> {:kw_args, pairs} end)
+  end
+
+  # Generate list of keyword argument pairs
+  defp gen_kw_arg_list(0), do: StreamData.constant([])
+
+  defp gen_kw_arg_list(count) when count > 0 do
+    StreamData.bind(StreamData.member_of(@identifiers), fn key ->
+      StreamData.bind(gen_simple_expr(), fn value ->
+        StreamData.bind(gen_kw_arg_list(count - 1), fn rest ->
+          StreamData.constant([{key, value} | rest])
+        end)
+      end)
+    end)
+  end
+
+  # Generate a dotted identifier for use as call target: Mod.fun or foo.bar
+  defp gen_dot_identifier_for_call do
+    left_gen =
+      StreamData.frequency([
+        {2, gen_alias()},
+        {1, gen_identifier()}
+      ])
+
+    StreamData.bind(left_gen, fn left ->
+      StreamData.bind(StreamData.member_of(@identifiers), fn right_name ->
+        StreamData.constant({:dot_identifier, left, right_name})
       end)
     end)
   end
@@ -1094,13 +1179,13 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
   - Tuples ({a, b})
   - Maps (%{a: 1})
   - Binary strings ("hello")
+  - Bracket access (foo[bar])
 
   NOTE: Identifiers are NOT in access_expr per grammar.
   They belong to no_parens_zero_expr (sub_matched_expr).
 
   TODO (later phases):
   - bracket_at_expr (@foo[bar])
-  - bracket_expr (foo[bar])
   - list_string / list_heredoc ('hello')
   - bin_heredoc
   - bitstring (<<1, 2, 3>>)
@@ -1121,7 +1206,9 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
         {1, gen_empty_paren()},
         # Container types
         {2, gen_list(state)},
-        {2, gen_tuple(state)}
+        {2, gen_tuple(state)},
+        # Bracket access
+        {2, gen_bracket_expr(state)}
         # NOTE: map disabled - Toxic doesn't render %{} token correctly
         # {2, gen_map(state)}
         # NOTE: bin_string disabled - Toxic doesn't support this token format yet
@@ -1449,6 +1536,57 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
         StreamData.constant([arg | rest])
       end)
     end)
+  end
+
+  # ===========================================================================
+  # Bracket Access Generators
+  # ===========================================================================
+
+  @doc """
+  Generate a bracket access expression: foo[bar]
+
+  Per grammar lines 312-313:
+  - bracket_expr -> dot_bracket_identifier bracket_arg
+  - bracket_expr -> access_expr bracket_arg
+
+  Where bracket_arg is: open_bracket container_expr close_bracket
+  """
+  def gen_bracket_expr(state) do
+    child_state = GrammarTree.decr_depth(state)
+
+    StreamData.frequency([
+      # Identifier with bracket access: foo[bar]
+      {4, gen_bracket_identifier(child_state)},
+      # Expression with bracket access: expr[key] (less common to avoid nesting)
+      {1, gen_bracket_access_expr(child_state)}
+    ])
+  end
+
+  # Generate bracket identifier access: foo[bar]
+  defp gen_bracket_identifier(state) do
+    StreamData.bind(StreamData.member_of(@identifiers), fn name ->
+      StreamData.bind(gen_bracket_arg(state), fn arg ->
+        StreamData.constant({:bracket_expr, {:bracket_identifier, name}, arg})
+      end)
+    end)
+  end
+
+  # Generate expression bracket access: (expr)[key]
+  defp gen_bracket_access_expr(state) do
+    # Use simple expressions to avoid deep nesting
+    expr_gen = gen_simple_expr()
+
+    StreamData.bind(expr_gen, fn expr ->
+      StreamData.bind(gen_bracket_arg(state), fn arg ->
+        StreamData.constant({:bracket_expr, {:expr, expr}, arg})
+      end)
+    end)
+  end
+
+  # Generate bracket argument: the [key] part
+  defp gen_bracket_arg(_state) do
+    # Use simple expressions as keys
+    gen_simple_expr()
   end
 
   # ===========================================================================

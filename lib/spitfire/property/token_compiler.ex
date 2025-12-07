@@ -128,6 +128,12 @@ defmodule Spitfire.Property.TokenCompiler do
     {[{:alias, meta, atom}], layout}
   end
 
+  # Dotted alias: Foo.Bar.Baz
+  # Per grammar: dot_alias -> matched_expr dot_op alias
+  defp do_to_tokens({:dot_alias, segments}, layout, _opts) when is_list(segments) do
+    compile_alias_segments(segments, layout, true)
+  end
+
   # Dotted identifier: expr.identifier (e.g., foo.bar, Mod.func)
   # Per grammar: dot_identifier -> matched_expr dot_op identifier
   defp do_to_tokens({:dot_identifier, left, right_name}, layout, opts) do
@@ -364,6 +370,35 @@ defmodule Spitfire.Property.TokenCompiler do
   end
 
   # ---------------------------------------------------------------------------
+  # Bracket Access Expressions
+  # ---------------------------------------------------------------------------
+
+  # Bracket access with identifier: foo[bar]
+  defp do_to_tokens({:bracket_expr, {:bracket_identifier, name}, arg}, layout, opts) do
+    # Compile bracket_identifier
+    name_str = Atom.to_string(name)
+    chars = String.to_charlist(name_str)
+    {id_meta, layout} = TokenLayout.space_before(layout, name_str, chars)
+    id_token = {:bracket_identifier, id_meta, name}
+
+    # Compile bracket arg: [key]
+    {bracket_tokens, layout} = compile_bracket_arg(arg, layout, opts)
+
+    {[id_token] ++ bracket_tokens, layout}
+  end
+
+  # Bracket access with expression: expr[key]
+  defp do_to_tokens({:bracket_expr, {:expr, expr}, arg}, layout, opts) do
+    # Compile the expression
+    {expr_tokens, layout} = do_to_tokens(expr, layout, opts)
+
+    # Compile bracket arg (stuck to expression)
+    {bracket_tokens, layout} = compile_bracket_arg_stuck(arg, layout, opts)
+
+    {expr_tokens ++ bracket_tokens, layout}
+  end
+
+  # ---------------------------------------------------------------------------
   # Lists, Tuples, Maps
   # ---------------------------------------------------------------------------
 
@@ -521,10 +556,21 @@ defmodule Spitfire.Property.TokenCompiler do
     {id_meta, layout} = TokenLayout.space_before(layout, name_str, chars)
     id_token = {:identifier, id_meta, name}
 
-    # Compile argument (with space before)
-    {arg_tokens, layout} = do_to_tokens(arg, layout, opts)
+    # Compile argument(s)
+    {arg_tokens, layout} = compile_no_parens_args(arg, layout, opts)
 
     {[id_token] ++ arg_tokens, layout}
+  end
+
+  # No-parens call with dotted target: Mod.fun bar
+  defp do_to_tokens({:call_no_parens_one, {:dot_identifier, left, right_name}, arg}, layout, opts) do
+    # Compile the dotted identifier target
+    {target_tokens, layout} = do_to_tokens({:dot_identifier, left, right_name}, layout, opts)
+
+    # Compile argument(s)
+    {arg_tokens, layout} = compile_no_parens_args(arg, layout, opts)
+
+    {target_tokens ++ arg_tokens, layout}
   end
 
   # Dot call: expr.(args) - the expr part with the dot
@@ -959,6 +1005,25 @@ defmodule Spitfire.Property.TokenCompiler do
     str_token = {:bin_string, str_meta, [content]}
 
     {[str_token], layout}
+  end
+
+  # Bracket access stuck to previous token
+  defp compile_arg_with_adhesion({:bracket_expr, {:bracket_identifier, name}, arg}, layout, opts) do
+    name_str = Atom.to_string(name)
+    chars = String.to_charlist(name_str)
+    {id_meta, layout} = TokenLayout.stick_right(layout, name_str, chars)
+    id_token = {:bracket_identifier, id_meta, name}
+
+    {bracket_tokens, layout} = compile_bracket_arg(arg, layout, opts)
+
+    {[id_token] ++ bracket_tokens, layout}
+  end
+
+  defp compile_arg_with_adhesion({:bracket_expr, {:expr, expr}, arg}, layout, opts) do
+    {expr_tokens, layout} = compile_arg_with_adhesion(expr, layout, opts)
+    {bracket_tokens, layout} = compile_bracket_arg_stuck(arg, layout, opts)
+
+    {expr_tokens ++ bracket_tokens, layout}
   end
 
   defp compile_arg_with_adhesion(other, layout, opts) do
@@ -1575,5 +1640,161 @@ defmodule Spitfire.Property.TokenCompiler do
     {rest_tokens, layout} = compile_remaining_assoc_pairs(rest, layout, opts)
 
     {[comma_token] ++ key_tokens ++ [assoc_token] ++ value_tokens ++ rest_tokens, layout}
+  end
+
+  # ===========================================================================
+  # Helper: compile_bracket_arg (for bracket access expressions)
+  # ===========================================================================
+
+  # Compile bracket argument: [key]
+  defp compile_bracket_arg(arg, layout, opts) do
+    # Opening bracket (stuck to identifier for adhesion)
+    {open_meta, layout} = TokenLayout.stick_right(layout, "[", nil)
+    open_token = {:"[", open_meta}
+
+    # Key expression (stuck to bracket)
+    {arg_tokens, layout} = compile_arg_with_adhesion(arg, layout, opts)
+
+    # Closing bracket (stuck to key)
+    {close_meta, layout} = TokenLayout.stick_right(layout, "]", nil)
+    close_token = {:"]", close_meta}
+
+    {[open_token] ++ arg_tokens ++ [close_token], layout}
+  end
+
+  # Compile bracket argument stuck to expression: expr[key]
+  defp compile_bracket_arg_stuck(arg, layout, opts) do
+    # Opening bracket (stuck to expression)
+    {open_meta, layout} = TokenLayout.stick_right(layout, "[", nil)
+    open_token = {:"[", open_meta}
+
+    # Key expression (stuck to bracket)
+    {arg_tokens, layout} = compile_arg_with_adhesion(arg, layout, opts)
+
+    # Closing bracket (stuck to key)
+    {close_meta, layout} = TokenLayout.stick_right(layout, "]", nil)
+    close_token = {:"]", close_meta}
+
+    {[open_token] ++ arg_tokens ++ [close_token], layout}
+  end
+
+  # ===========================================================================
+  # Helper: compile_no_parens_args (for no-parens call arguments)
+  # ===========================================================================
+
+  # Compile arguments for no-parens calls
+  # Can be a single expression or keyword arguments
+
+  # Legacy format: direct expression
+  defp compile_no_parens_args({:single_arg, expr}, layout, opts) do
+    do_to_tokens(expr, layout, opts)
+  end
+
+  # Keyword arguments: foo a: 1, b: 2
+  defp compile_no_parens_args({:kw_args, pairs}, layout, opts) do
+    compile_no_parens_kw_pairs(pairs, layout, opts)
+  end
+
+  # Fallback for legacy format (direct expression without wrapper)
+  defp compile_no_parens_args(expr, layout, opts) do
+    do_to_tokens(expr, layout, opts)
+  end
+
+  # Compile keyword pairs for no-parens call: a: 1 or a: 1, b: 2
+  defp compile_no_parens_kw_pairs([], layout, _opts), do: {[], layout}
+
+  defp compile_no_parens_kw_pairs([{key, value}], layout, opts) do
+    # Single pair: key: value
+    compile_no_parens_kw_pair(key, value, layout, opts)
+  end
+
+  defp compile_no_parens_kw_pairs([{key, value} | rest], layout, opts) do
+    # First pair
+    {first_tokens, layout} = compile_no_parens_kw_pair(key, value, layout, opts)
+
+    # Remaining pairs have commas
+    {rest_tokens, layout} = compile_remaining_no_parens_kw_pairs(rest, layout, opts)
+
+    {first_tokens ++ rest_tokens, layout}
+  end
+
+  # Compile a single keyword pair for no-parens call
+  defp compile_no_parens_kw_pair(key, value, layout, opts) do
+    # Key (identifier as keyword) with space before
+    key_str = Atom.to_string(key)
+    key_lexeme = key_str <> ":"
+    {key_meta, layout} = TokenLayout.space_before(layout, key_lexeme, nil)
+    key_token = {:kw_identifier, key_meta, key}
+
+    # Value with space after colon
+    {value_tokens, layout} = do_to_tokens(value, layout, opts)
+
+    {[key_token] ++ value_tokens, layout}
+  end
+
+  defp compile_remaining_no_parens_kw_pairs([], layout, _opts), do: {[], layout}
+
+  defp compile_remaining_no_parens_kw_pairs([{key, value} | rest], layout, opts) do
+    # Comma stuck to previous
+    {comma_meta, layout} = TokenLayout.stick_right(layout, ",", nil)
+    comma_token = {:",", comma_meta}
+
+    # Key with space after comma
+    key_str = Atom.to_string(key)
+    key_lexeme = key_str <> ":"
+    {key_meta, layout} = TokenLayout.space_before(layout, key_lexeme, nil)
+    key_token = {:kw_identifier, key_meta, key}
+
+    # Value with space after colon
+    {value_tokens, layout} = do_to_tokens(value, layout, opts)
+
+    # Continue with remaining pairs
+    {rest_tokens, layout} = compile_remaining_no_parens_kw_pairs(rest, layout, opts)
+
+    {[comma_token, key_token] ++ value_tokens ++ rest_tokens, layout}
+  end
+
+  # ===========================================================================
+  # Helper: compile_alias_segments (for dotted aliases like Foo.Bar.Baz)
+  # ===========================================================================
+
+  # Compile alias segments with dots between them
+  defp compile_alias_segments([], layout, _is_first), do: {[], layout}
+
+  defp compile_alias_segments([{:alias, atom}], layout, is_first) do
+    name = Atom.to_string(atom)
+    chars = String.to_charlist(name)
+
+    {meta, layout} =
+      if is_first do
+        TokenLayout.space_before(layout, name, chars)
+      else
+        TokenLayout.stick_right(layout, name, chars)
+      end
+
+    {[{:alias, meta, atom}], layout}
+  end
+
+  defp compile_alias_segments([{:alias, atom} | rest], layout, is_first) do
+    name = Atom.to_string(atom)
+    chars = String.to_charlist(name)
+
+    {meta, layout} =
+      if is_first do
+        TokenLayout.space_before(layout, name, chars)
+      else
+        TokenLayout.stick_right(layout, name, chars)
+      end
+
+    alias_token = {:alias, meta, atom}
+
+    # Add dot (stuck to alias)
+    {dot_meta, layout} = TokenLayout.stick_right(layout, ".", nil)
+    dot_token = {:., dot_meta}
+
+    # Compile remaining segments (not first anymore)
+    {rest_tokens, layout} = compile_alias_segments(rest, layout, false)
+
+    {[alias_token, dot_token] ++ rest_tokens, layout}
   end
 end
