@@ -458,4 +458,125 @@ defmodule SpitfireReproTest do
     """
     assert Spitfire.parse(code) == s2q(code)
   end
+
+  @tag :skip
+  test "repro 55" do
+    code = """
+    ...@@spam[Context]
+    """
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
+  @tag :skip
+  test "repro 56" do
+    code = """
+
+    [@
+    eggs, @
+    eggs[:error], @
+    @bar[89.35]]
+    &{alpha, foo, false}; (; :one -> Default)
+    @foo[foo] <~ delta beta: 0o50 |> foo.delta gamma
+    <~> -[0o36, 729, Foo]
+    """
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
+  # @tag :skip
+  test "repro 57" do
+    # . and @ operator precedence bug
+    code = """
+    @Foo.Bar
+    """
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
+  @tag :skip
+  test "repro 58" do
+    code = """
+    cond .. bar // spam <-
+    ... +++ ( delta -> Default.Schema.State; qux -> 254)
+    baz Baz.Config
+    ...bar.spam; @ bar alpha: delta; [baz[60], (; :error -> :ok; foo -> ?r) <= .., @@:ok[true]]; ^
+    spam
+    @fn bar, beta, alpha, qux -> :bob end <= &3
+    ; @ -799 <|> false.when :bar
+    fn -> State end == false when State.Context.Default.bar; eggs \\ @ ( alpha -> Baz; delta -> Bar)
+    ; ... <> fn spam, qux when gamma and true -> Remote.Foo end\
+    """
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
+  @tag :skip
+  test "repro 59" do
+    code = """
+    ... &4 .. for // ...
+    delta <|> bar -604
+    not spam .. (;) //
+    ...
+    ~~~
+    ( bar -> Context.Config.Schema; 4 -> spam) ~>> ()
+    spam 0b101 != @ Bar.Default.Remote; fn eggs, beta, baz -> gamma | .. end
+    ~~~&8
+    {{478}, (;) ..
+    (; foo -> nil; 4 -> bar) // baz}
+    {} <<~
+    spam.foo beta: Mod.Context --- (;)
+    ... ... Default.Bar.State
+    842 .. @fn foo -> :bob end // !
+    State
+    - (:two)
+    qux fn -> true end <~> spam ?a\
+    """
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
+  @tag :skip
+  test "repro 60" do
+    code = """
+    ( delta -> spam; baz -> false)
+    - baz <<~ Mod.Remote.State.eggs 195
+    @@foo[?l] when qux ^^^ 71.28
+    ; ...qux(beta, bar, beta) ~>
+    ( :bob -> Config)
+    ; gamma(baz) ~> ...spam
+    ?\\.(@
+    gamma, true != beta, delta[Mod])
+    !
+    @Context; @ ... ||| (; foo -> 0x0)\
+    """
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
+  @tag :skip
+  test "repro 61" do
+    code = """
+    .. || @ Bar.Schema + 198
+    ( alpha -> Default; qux -> qux)
+    -16.(fn eggs -> delta - beta end)
+    ![ ... .. (;) // eggs, beta < [beta, eggs], (; :bar -> 2.78) \\ foo]\
+    """
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
+  @tag :skip
+  test "repro 62" do
+    code = """
+    nil .. nil
+    bar
+    (; foo -> 203; 8 -> State.Context); &baz
+    ; nil !== nil
+    @
+    Config.State.gamma
+    """
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
+  # @tag :skip
+  test "repro 63" do
+    code = """
+    @@delta[?a]\
+    """
+    assert Spitfire.parse(code) == s2q(code)
+  end
 end

@@ -1170,9 +1170,22 @@ defmodule Spitfire do
 
       parser = parser |> next_token() |> eat_eol()
 
+      operand_token_type = current_token_type(parser)
+
+      module_attr_alias_context? =
+        token_type == :at_op and operand_token_type == :alias
+
+      parser =
+        if module_attr_alias_context? do
+          Map.put(parser, :module_attr_alias_context, true)
+        else
+          parser
+        end
+
       effective_precedence =
         cond do
-          token_type == :at_op and attribute_value_context?(parser) ->
+          token_type == :at_op and
+              (attribute_value_context?(parser) or operand_token_type == :at_op) ->
             @lowest
 
           logical_not_operator?(token) ->
@@ -1183,6 +1196,13 @@ defmodule Spitfire do
         end
 
       {rhs, parser} = parse_expression(parser, effective_precedence, false, false, false)
+
+      parser =
+        if module_attr_alias_context? do
+          Map.delete(parser, :module_attr_alias_context)
+        else
+          parser
+        end
 
       {rhs, parser, not_in_operand?} =
         if logical_not_operator?(token) and peek_token_type(parser) == :in_op and
@@ -2689,15 +2709,19 @@ defmodule Spitfire do
       Process.put(:alias_last_meta, Keyword.delete(meta, :range))
 
       {aliases, parser} =
-        while2 peek_token(parser) == :. && peek_token(next_token(parser)) == :alias <- parser do
-          parser = next_token(parser)
+        if Map.get(parser, :module_attr_alias_context, false) do
+          {[], parser}
+        else
+          while2 peek_token(parser) == :. && peek_token(next_token(parser)) == :alias <- parser do
+            parser = next_token(parser)
 
-          case parser.peek_token do
-            {:alias, _, alias} ->
-              parser = next_token(parser)
-              meta = put_meta_range(current_meta(parser), token_range(parser.current_token))
-              Process.put(:alias_last_meta, Keyword.delete(meta, :range))
-              {alias, parser}
+            case parser.peek_token do
+              {:alias, _, alias} ->
+                parser = next_token(parser)
+                meta = put_meta_range(current_meta(parser), token_range(parser.current_token))
+                Process.put(:alias_last_meta, Keyword.delete(meta, :range))
+                {alias, parser}
+            end
           end
         end
 
