@@ -44,9 +44,8 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
     {:concat_op, :<>},
     {:concat_op, :+++},
     {:concat_op, :---},
-    # range_op (..) as binary
+    # range_op (..) as binary (ternary_op // is handled separately in gen_range_step)
     {:range_op, :..},
-    # Note: ternary_op (//) omitted - only valid immediately after .. (e.g., 1..10//2)
     # xor_op (^^^)
     {:xor_op, :"^^^"},
     # Comparison (comp_op)
@@ -93,7 +92,8 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
   # Unary operators: {token_kind, operator_atom}
   # Per elixir_parser.yrl unary_op_eol rules (lines 402-407)
   # and Code.Identifier.unary_op (line 21): :!, :^, :not, :+, :-, :~~~
-  # Note: ternary_op (//) omitted - semantically only valid after .. (e.g., 1..10//2)
+  # Note: ternary_op (//) is NOT a unary operator - it's only valid after range_op (..)
+  # as in 1..10//2. See gen_range_step for that pattern.
   @unary_ops [
     {:unary_op, :not},
     {:unary_op, :!},
@@ -101,6 +101,20 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
     {:unary_op, :"~~~"},
     {:dual_op, :+},
     {:dual_op, :-}
+  ]
+
+  # Arrow operators that can trigger warn_pipe when followed by no_parens_one_expr
+  # Per grammar line 209: matched_op_expr -> arrow_op_eol no_parens_one_expr : warn_pipe('$1', '$2')
+  @arrow_ops [
+    {:arrow_op, :<<<},
+    {:arrow_op, :>>>},
+    {:arrow_op, :<~},
+    {:arrow_op, :~>},
+    {:arrow_op, :<<~},
+    {:arrow_op, :~>>},
+    {:arrow_op, :<~>},
+    {:arrow_op, :"<|>"},
+    {:pipe_op, :|>}
   ]
 
   # Fallback literals when budget is exhausted
@@ -111,6 +125,7 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
   def alias_pool, do: @aliases
   def binary_op_pool, do: @binary_ops
   def unary_op_pool, do: @unary_ops
+  def arrow_op_pool, do: @arrow_ops
 
   # ===========================================================================
   # Public API: grammar/1
@@ -1139,6 +1154,10 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
   - ellipsis_op matched_expr (...expr)
   - no_parens_one_expr
   - sub_matched_expr
+
+  Additional patterns:
+  - Range with step: left..middle//step (ternary_op, grammar lines 739-746)
+  - Arrow + no_parens_one: generates warn_pipe pattern (grammar line 209)
   """
   def gen_matched_expr(state) do
     if GrammarTree.budget_exhausted?(state) do
@@ -1151,7 +1170,11 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
         {1, gen_at_op(state)},
         {1, gen_capture_op(state)},
         {1, gen_ellipsis_prefix(state)},
-        {1, gen_call_no_parens_one(state)}
+        {1, gen_call_no_parens_one(state)},
+        # Range with step: 1..10//2 (ternary_op is only valid after range_op)
+        {1, gen_range_step(state)},
+        # Arrow + no_parens_one: foo 1 |> bar 2 (warn_pipe pattern)
+        {1, gen_matched_op_warn_pipe(state)}
       ])
     end
   end
@@ -1160,8 +1183,12 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
   Generate an unmatched expression (has trailing do block).
 
   Per grammar lines 163-171, unmatched expressions include:
-  - call_do (if, unless, case, try, etc.)
-  - unmatched_op (binary op with unmatched right operand)
+  - block_expr (if, unless, case, try, etc. with do blocks)
+  - matched_expr unmatched_op_expr (binary op with unmatched right operand)
+  - unary_op_eol expr (unary op with any expr)
+  - at_op_eol expr (@foo with any expr)
+  - capture_op_eol expr (&expr with any expr, including do blocks)
+  - ellipsis_op expr (...expr with any expr)
   """
   def gen_unmatched_expr(state) do
     if GrammarTree.budget_exhausted?(state) do
@@ -1170,7 +1197,12 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
     else
       StreamData.frequency([
         {5, gen_call_do(state)},
-        {3, gen_unmatched_op(state)}
+        {3, gen_unmatched_op(state)},
+        # Prefix operators with unmatched operand (e.g., &if true do :ok end)
+        {1, gen_unmatched_unary(state)},
+        {1, gen_unmatched_at_op(state)},
+        {1, gen_unmatched_capture_op(state)},
+        {1, gen_unmatched_ellipsis(state)}
       ])
     end
   end
@@ -1357,6 +1389,65 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
     end)
   end
 
+  # Generate range with step: left..middle//step
+  # Per grammar lines 739-746: ternary_op (//) is only valid immediately after range_op (..)
+  # The result is: {'..//', Meta, [Left, Middle, Step]}
+  #
+  # Example: 1..10//2 produces range 1 to 10 with step 2
+  defp gen_range_step(state) do
+    child_state = GrammarTree.decr_depth(state)
+    restricted_state = restrict_unmatched(child_state)
+
+    operand_gen =
+      if child_state.budget.depth <= 1 do
+        gen_sub_matched_expr(restricted_state)
+      else
+        gen_matched_expr(restricted_state)
+      end
+
+    StreamData.bind(operand_gen, fn left ->
+      StreamData.bind(gen_newlines(), fn range_newlines ->
+        StreamData.bind(operand_gen, fn middle ->
+          StreamData.bind(gen_newlines(), fn step_newlines ->
+            StreamData.bind(operand_gen, fn step ->
+              StreamData.constant({:range_step, left, range_newlines, middle, step_newlines, step})
+            end)
+          end)
+        end)
+      end)
+    end)
+  end
+
+  # Generate matched_op with warn_pipe pattern: left arrow_op no_parens_one_expr
+  # Per grammar line 209: matched_op_expr -> arrow_op_eol no_parens_one_expr : warn_pipe('$1', '$2')
+  # This generates code like: foo 1 |> bar 2
+  # The parser will emit a warning for this pattern.
+  defp gen_matched_op_warn_pipe(state) do
+    child_state = GrammarTree.decr_depth(state)
+    restricted_state = restrict_unmatched(child_state)
+
+    left_gen =
+      if child_state.budget.depth <= 1 do
+        gen_sub_matched_expr(restricted_state)
+      else
+        gen_matched_expr(restricted_state)
+      end
+
+    # Right side must be no_parens_one_expr
+    right_gen = gen_call_no_parens_one(child_state)
+
+    StreamData.bind(left_gen, fn left ->
+      StreamData.bind(StreamData.member_of(@arrow_ops), fn {op_kind, op} ->
+        StreamData.bind(gen_newlines(), fn newlines ->
+          StreamData.bind(right_gen, fn right ->
+            # Use :matched_op_warn_pipe to signal this is the warn_pipe pattern
+            StreamData.constant({:matched_op_warn_pipe, left, {:op_eol, {op_kind, op}, newlines}, right})
+          end)
+        end)
+      end)
+    end)
+  end
+
   # Generate matched unary operator: op operand (operand matched)
   # Per grammar: matched_expr -> unary_op_eol matched_expr
   # unary_op_eol -> unary_op | unary_op eol
@@ -1441,36 +1532,195 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
   end
 
   # ===========================================================================
-  # Category-Aware: Unmatched Operators
+  # Category-Aware: Unmatched Prefix Operators
   # ===========================================================================
+  #
+  # Per grammar lines 167-170, unmatched_expr includes prefix operators with
+  # any expr (not just matched_expr) as the operand:
+  #   unmatched_expr -> unary_op_eol expr
+  #   unmatched_expr -> at_op_eol expr
+  #   unmatched_expr -> capture_op_eol expr
+  #   unmatched_expr -> ellipsis_op expr
+  #
+  # This allows expressions like: &if true do :ok end, @case x do ... end, etc.
 
-  # Generate unmatched binary operator: left op right (right is unmatched)
-  # Per grammar: unmatched_expr -> matched_expr unmatched_op_expr
-  defp gen_unmatched_op(state) do
+  # Generate unmatched unary operator: op expr (operand can be unmatched)
+  # Per grammar: unmatched_expr -> unary_op_eol expr
+  defp gen_unmatched_unary(state) do
     child_state = GrammarTree.decr_depth(state)
-    restricted_state = restrict_unmatched(child_state)
 
-    left_gen =
-      if child_state.budget.depth <= 1 do
-        gen_sub_matched_expr(restricted_state)
-      else
-        gen_matched_expr(restricted_state)
-      end
-
-    right_gen =
+    # Operand can be any expression including unmatched
+    operand_gen =
       if child_state.budget.depth <= 1 do
         gen_simple_call_do(child_state)
       else
         gen_unmatched_expr(child_state)
       end
 
-    StreamData.bind(left_gen, fn left ->
-      StreamData.bind(gen_op_eol(), fn op_eol ->
-        StreamData.bind(right_gen, fn right ->
-          StreamData.constant({:unmatched_op, left, op_eol, right})
+    StreamData.bind(StreamData.member_of(@unary_ops), fn {op_kind, op} ->
+      StreamData.bind(gen_newlines(), fn newlines ->
+        StreamData.bind(operand_gen, fn operand ->
+          # Use same :matched_unary tag - TokenCompiler handles it the same way
+          StreamData.constant({:matched_unary, {op_kind, op}, newlines, operand})
         end)
       end)
     end)
+  end
+
+  # Generate unmatched at_op expression: @expr where expr can be unmatched
+  # Per grammar: unmatched_expr -> at_op_eol expr
+  # Example: @if true do :ok end
+  defp gen_unmatched_at_op(state) do
+    child_state = GrammarTree.decr_depth(state)
+
+    # Operand can be any expression including unmatched
+    operand_gen =
+      if child_state.budget.depth <= 1 do
+        gen_simple_call_do(child_state)
+      else
+        gen_unmatched_expr(child_state)
+      end
+
+    StreamData.bind(gen_newlines(), fn newlines ->
+      StreamData.bind(operand_gen, fn operand ->
+        # Use same :at_op tag - TokenCompiler handles it the same way
+        StreamData.constant({:at_op, newlines, operand})
+      end)
+    end)
+  end
+
+  # Generate unmatched capture_op expression: &expr where expr can be unmatched
+  # Per grammar: unmatched_expr -> capture_op_eol expr
+  # Example: &if true do :ok end, &Mod.fun/1 with do-block
+  defp gen_unmatched_capture_op(state) do
+    child_state = GrammarTree.decr_depth(state)
+
+    # Operand can be any expression including unmatched
+    operand_gen =
+      if child_state.budget.depth <= 1 do
+        gen_simple_call_do(child_state)
+      else
+        gen_unmatched_expr(child_state)
+      end
+
+    StreamData.bind(gen_newlines(), fn newlines ->
+      StreamData.bind(operand_gen, fn operand ->
+        # Use same :capture_op tag - TokenCompiler handles it the same way
+        StreamData.constant({:capture_op, newlines, operand})
+      end)
+    end)
+  end
+
+  # Generate unmatched ellipsis expression: ...expr where expr can be unmatched
+  # Per grammar: unmatched_expr -> ellipsis_op expr
+  # Example: ...if true do :ok end
+  defp gen_unmatched_ellipsis(state) do
+    child_state = GrammarTree.decr_depth(state)
+
+    # Operand can be any expression including unmatched
+    operand_gen =
+      if child_state.budget.depth <= 1 do
+        gen_simple_call_do(child_state)
+      else
+        gen_unmatched_expr(child_state)
+      end
+
+    StreamData.bind(operand_gen, fn operand ->
+      # Use same :ellipsis_prefix tag - TokenCompiler handles it the same way
+      StreamData.constant({:ellipsis_prefix, operand})
+    end)
+  end
+
+  # ===========================================================================
+  # Category-Aware: Unmatched Operators
+  # ===========================================================================
+
+  # Generate unmatched binary operator: various combinations per grammar
+  # Per grammar variants:
+  # - matched_expr unmatched_op_expr
+  # - unmatched_expr matched_op_expr
+  # - unmatched_expr unmatched_op_expr
+  # - unmatched_expr no_parens_op_expr (warn_pipe)
+  defp gen_unmatched_op(state) do
+    child_state = GrammarTree.decr_depth(state)
+    restricted_state = restrict_unmatched(child_state)
+
+    # Variant A: matched_left + unmatched_right  (existing common case)
+    variant_a =
+      if child_state.budget.depth <= 1 do
+        StreamData.bind(gen_sub_matched_expr(restricted_state), fn left ->
+          StreamData.bind(gen_op_eol(), fn op_eol ->
+            StreamData.bind(gen_simple_call_do(child_state), fn right ->
+              StreamData.constant({:unmatched_op, left, op_eol, right})
+            end)
+          end)
+        end)
+      else
+        StreamData.bind(gen_matched_expr(restricted_state), fn left ->
+          StreamData.bind(gen_op_eol(), fn op_eol ->
+            StreamData.bind(gen_unmatched_expr(child_state), fn right ->
+              StreamData.constant({:unmatched_op, left, op_eol, right})
+            end)
+          end)
+        end)
+      end
+
+    # Variant B: unmatched_left + matched_right (unmatched_expr -> unmatched_expr matched_op_expr)
+    # Represent using :unmatched_op to reflect that the left side can be unmatched
+    variant_b =
+      if child_state.budget.depth <= 1 do
+        StreamData.bind(gen_simple_call_do(child_state), fn left ->
+          StreamData.bind(gen_op_eol(), fn op_eol ->
+            StreamData.bind(gen_sub_matched_expr(restricted_state), fn right ->
+              StreamData.constant({:unmatched_op, left, op_eol, right})
+            end)
+          end)
+        end)
+      else
+        StreamData.bind(gen_unmatched_expr(child_state), fn left ->
+          StreamData.bind(gen_op_eol(), fn op_eol ->
+            StreamData.bind(gen_matched_expr(restricted_state), fn right ->
+              StreamData.constant({:unmatched_op, left, op_eol, right})
+            end)
+          end)
+        end)
+      end
+
+    # Variant C: unmatched_left + unmatched_right (unmatched_expr -> unmatched_expr unmatched_op_expr)
+    variant_c =
+      StreamData.bind(gen_unmatched_expr(child_state), fn left ->
+        StreamData.bind(gen_op_eol(), fn op_eol ->
+          StreamData.bind(gen_unmatched_expr(child_state), fn right ->
+            StreamData.constant({:unmatched_op, left, op_eol, right})
+          end)
+        end)
+      end)
+
+    # Variant D: warn-pipe pattern where right side is a no_parens_one_expr
+    # warn-pipe: allow either matched or unmatched left (unmatched_expr no_parens_op_expr)
+    variant_d =
+      StreamData.bind(
+        StreamData.frequency([
+          {3, gen_matched_expr(restricted_state)},
+          {1, gen_unmatched_expr(child_state)}
+        ]),
+        fn left ->
+          StreamData.bind(StreamData.member_of(@arrow_ops), fn {op_kind, op} ->
+            StreamData.bind(gen_newlines(), fn newlines ->
+              StreamData.bind(gen_call_no_parens_one(child_state), fn right ->
+                StreamData.constant({:matched_op_warn_pipe, left, {:op_eol, {op_kind, op}, newlines}, right})
+              end)
+            end)
+          end)
+        end
+      )
+
+    StreamData.frequency([
+      {5, variant_a},
+      {3, variant_b},
+      {2, variant_c},
+      {1, variant_d}
+    ])
   end
 
   # Generate a simple call_do when depth is limited

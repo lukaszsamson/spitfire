@@ -324,6 +324,67 @@ defmodule Spitfire.Property.TokenCompiler do
   end
 
   # ---------------------------------------------------------------------------
+  # Range with Step (ternary_op)
+  # ---------------------------------------------------------------------------
+
+  # Range with step: left..middle//step
+  # Per grammar lines 739-746: ternary_op (//) is only valid immediately after range_op (..)
+  # Produces: left .. middle // step
+  defp do_to_tokens({:range_step, left, range_newlines, middle, step_newlines, step}, layout, opts) do
+    # Compile left operand
+    {left_tokens, layout} = do_to_tokens(left, layout, opts)
+
+    # Compile range operator (..)
+    {range_meta, layout} = TokenLayout.space_before(layout, "..", nil)
+    range_token = {:range_op, range_meta, :..}
+
+    # Handle newlines after range operator
+    {range_eol_tokens, layout} =
+      if range_newlines > 0 do
+        eol_meta = TokenLayout.meta(layout, "\n", range_newlines)
+        layout = TokenLayout.newlines(layout, range_newlines)
+        {[{:eol, eol_meta}], layout}
+      else
+        {[], layout}
+      end
+
+    # Compile middle operand
+    {middle_tokens, layout} = do_to_tokens(middle, layout, opts)
+
+    # Compile ternary operator (//)
+    {ternary_meta, layout} = TokenLayout.space_before(layout, "//", nil)
+    ternary_token = {:ternary_op, ternary_meta, :"//"}
+
+    # Handle newlines after ternary operator
+    {ternary_eol_tokens, layout} =
+      if step_newlines > 0 do
+        eol_meta = TokenLayout.meta(layout, "\n", step_newlines)
+        layout = TokenLayout.newlines(layout, step_newlines)
+        {[{:eol, eol_meta}], layout}
+      else
+        {[], layout}
+      end
+
+    # Compile step operand
+    {step_tokens, layout} = do_to_tokens(step, layout, opts)
+
+    {left_tokens ++ [range_token] ++ range_eol_tokens ++ middle_tokens ++
+       [ternary_token] ++ ternary_eol_tokens ++ step_tokens, layout}
+  end
+
+  # ---------------------------------------------------------------------------
+  # Matched Op with warn_pipe pattern
+  # ---------------------------------------------------------------------------
+
+  # Matched op with warn_pipe: left arrow_op no_parens_one_expr
+  # Per grammar line 209: matched_op_expr -> arrow_op_eol no_parens_one_expr : warn_pipe('$1', '$2')
+  # This is a valid expression that generates a warning at parse time.
+  # We compile it like a regular matched_op - the warning is emitted by the parser, not us.
+  defp do_to_tokens({:matched_op_warn_pipe, left, op_eol, right}, layout, opts) do
+    compile_binary_op(left, op_eol, right, layout, opts)
+  end
+
+  # ---------------------------------------------------------------------------
   # At operator (@expr)
   # ---------------------------------------------------------------------------
 
