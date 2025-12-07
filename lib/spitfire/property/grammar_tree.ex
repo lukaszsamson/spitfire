@@ -166,10 +166,14 @@ defmodule Spitfire.Property.GrammarTree do
   @typedoc """
   Matched unary operator expression.
 
+  Per grammar: matched_expr -> unary_op_eol matched_expr
+  unary_op_eol -> unary_op | unary_op eol
+
   - `op`: operator kind
+  - `newlines`: number of newlines after operator (0 = no newline)
   - `operand`: the operand expression (matched)
   """
-  @type matched_unary_t :: {:matched_unary, op_kind(), matched_expr_t()}
+  @type matched_unary_t :: {:matched_unary, op_kind(), non_neg_integer(), matched_expr_t()}
 
   @typedoc """
   Legacy unary operator expression (deprecated, use matched_unary_t).

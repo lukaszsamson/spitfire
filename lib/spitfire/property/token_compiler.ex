@@ -180,6 +180,31 @@ defmodule Spitfire.Property.TokenCompiler do
   # ---------------------------------------------------------------------------
 
   # Matched unary operator: op operand (with adhesion)
+  # Per grammar: matched_expr -> unary_op_eol matched_expr
+  # unary_op_eol -> unary_op | unary_op eol
+  defp do_to_tokens({:matched_unary, {op_kind, op}, newlines, operand}, layout, opts)
+       when is_integer(newlines) do
+    op_lexeme = op_to_lexeme(op)
+    {op_meta, layout} = TokenLayout.space_before(layout, op_lexeme, nil)
+    op_token = {op_kind, op_meta, op}
+
+    # Emit newlines if any (per unary_op_eol -> unary_op eol)
+    {eol_tokens, layout} =
+      if newlines > 0 do
+        eol_meta = TokenLayout.meta(layout, "\n", newlines)
+        layout = TokenLayout.newlines(layout, newlines)
+        {[{:eol, eol_meta}], layout}
+      else
+        {[], layout}
+      end
+
+    # Compile operand with adhesion (stuck to operator for matched_unary)
+    {operand_tokens, layout} = compile_arg_with_adhesion(operand, layout, opts)
+
+    {[op_token] ++ eol_tokens ++ operand_tokens, layout}
+  end
+
+  # Legacy matched_unary without newlines (backward compatibility)
   defp do_to_tokens({:matched_unary, {op_kind, op}, operand}, layout, opts) do
     op_lexeme = op_to_lexeme(op)
     {op_meta, layout} = TokenLayout.space_before(layout, op_lexeme, nil)
@@ -670,7 +695,13 @@ defmodule Spitfire.Property.TokenCompiler do
     compile_binary_op_stuck(left, op_eol, right, layout, opts)
   end
 
-  # Matched unary operator stuck to previous token
+  # Matched unary operator stuck to previous token (with newlines)
+  defp compile_arg_with_adhesion({:matched_unary, op_kind, newlines, operand}, layout, opts)
+       when is_integer(newlines) do
+    compile_unary_op_stuck_with_newlines(op_kind, newlines, operand, layout, opts)
+  end
+
+  # Matched unary operator stuck to previous token (legacy, no newlines)
   defp compile_arg_with_adhesion({:matched_unary, op_kind, operand}, layout, opts) do
     compile_unary_op_stuck(op_kind, operand, layout, opts)
   end
@@ -721,6 +752,28 @@ defmodule Spitfire.Property.TokenCompiler do
     {operand_tokens, layout} = compile_arg_with_adhesion(operand, layout, opts)
 
     {[op_token] ++ operand_tokens, layout}
+  end
+
+  # Compile unary operator stuck to current position with newlines
+  defp compile_unary_op_stuck_with_newlines({op_kind, op}, newlines, operand, layout, opts) do
+    op_lexeme = op_to_lexeme(op)
+    {op_meta, layout} = TokenLayout.stick_right(layout, op_lexeme, nil)
+    op_token = {op_kind, op_meta, op}
+
+    # Emit newlines if any
+    {eol_tokens, layout} =
+      if newlines > 0 do
+        eol_meta = TokenLayout.meta(layout, "\n", newlines)
+        layout = TokenLayout.newlines(layout, newlines)
+        {[{:eol, eol_meta}], layout}
+      else
+        {[], layout}
+      end
+
+    # Compile operand with adhesion (stuck to operator or after newline)
+    {operand_tokens, layout} = compile_arg_with_adhesion(operand, layout, opts)
+
+    {[op_token] ++ eol_tokens ++ operand_tokens, layout}
   end
 
   # Compile call target stuck to current position (no leading space)

@@ -413,5 +413,49 @@ defmodule SpitfireReproTest do
     assert Spitfire.parse(code) == s2q(code)
   end
 
+  @tag :skip
+  test "repro 53" do
+    code = """
+    not foo :baz
+    ..
+    if false do
+    ?v
+    0xD9
+    else
+    beta
+    end; & bar true
+    (Mod)
+    ; if true do
+    90.32
+    Remote
+    else
+    Foo
+    end
+    """
+    assert Spitfire.parse(code) == s2q(code)
+  end
 
+  @tag :skip
+  test "repro 54" do
+    code = """
+    Config && ..
+    ; ..
+    case Schema do
+    bar -> spam
+    gamma -> eggs
+    :foo -> Mod
+    end
+    -248; 74.0
+    ...Qux
+    &bar >= unless delta do
+    true
+    baz
+    else
+    -763
+    end
+    ..
+    -343 - 0b11.(beta, ?n) <- ...&1
+    """
+    assert Spitfire.parse(code) == s2q(code)
+  end
 end

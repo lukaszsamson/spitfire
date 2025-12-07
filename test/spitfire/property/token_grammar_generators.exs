@@ -27,18 +27,34 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
   @atoms ~w(ok error foo bar baz one two three alice bob)a
 
   # Binary operators: {token_kind, operator_atom}
-  # These are safe operators that don't require special context
+  # Per elixir_parser.yrl matched_op_expr rules (lines 187-204)
   @binary_ops [
+    # match_op (=)
+    {:match_op, :=},
     # Arithmetic (dual_op)
     {:dual_op, :+},
     {:dual_op, :-},
     {:mult_op, :*},
     {:mult_op, :/},
+    # power_op (**)
+    {:power_op, :**},
+    # concat_op (++, --, <>, +++, ---)
+    {:concat_op, :++},
+    {:concat_op, :--},
+    {:concat_op, :<>},
+    {:concat_op, :+++},
+    {:concat_op, :---},
+    # range_op (..) as binary
+    {:range_op, :..},
+    # Note: ternary_op (//) omitted - only valid immediately after .. (e.g., 1..10//2)
+    # xor_op (^^^)
+    {:xor_op, :"^^^"},
     # Comparison (comp_op)
     {:comp_op, :==},
     {:comp_op, :!=},
     {:comp_op, :===},
     {:comp_op, :!==},
+    {:comp_op, :=~},
     # Relational (rel_op)
     {:rel_op, :<},
     {:rel_op, :>},
@@ -46,15 +62,43 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
     {:rel_op, :>=},
     # Boolean (and_op, or_op)
     {:and_op, :and},
+    {:and_op, :&&},
+    {:and_op, :&&&},
     {:or_op, :or},
-    # Pipe
-    {:pipe_op, :|>}
+    {:or_op, :||},
+    {:or_op, :|||},
+    # in_op (in)
+    {:in_op, :in},
+    # in_match_op (<-, \\)
+    {:in_match_op, :<-},
+    {:in_match_op, :\\},
+    # type_op (::)
+    {:type_op, :"::"},
+    # when_op (when)
+    {:when_op, :when},
+    # arrow_op (<<<, >>>, <~, ~>, <<~, ~>>, <~>, <|>)
+    {:arrow_op, :<<<},
+    {:arrow_op, :>>>},
+    {:arrow_op, :<~},
+    {:arrow_op, :~>},
+    {:arrow_op, :<<~},
+    {:arrow_op, :~>>},
+    {:arrow_op, :<~>},
+    {:arrow_op, :"<|>"},
+    # pipe_op (|>, |)
+    {:pipe_op, :|>},
+    {:pipe_op, :|}
   ]
 
   # Unary operators: {token_kind, operator_atom}
+  # Per elixir_parser.yrl unary_op_eol rules (lines 402-407)
+  # and Code.Identifier.unary_op (line 21): :!, :^, :not, :+, :-, :~~~
+  # Note: ternary_op (//) omitted - semantically only valid after .. (e.g., 1..10//2)
   @unary_ops [
     {:unary_op, :not},
     {:unary_op, :!},
+    {:unary_op, :^},
+    {:unary_op, :"~~~"},
     {:dual_op, :+},
     {:dual_op, :-}
   ]
@@ -1049,6 +1093,7 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
 
   # Generate matched unary operator: op operand (operand matched)
   # Per grammar: matched_expr -> unary_op_eol matched_expr
+  # unary_op_eol -> unary_op | unary_op eol
   defp gen_matched_unary(state) do
     child_state = GrammarTree.decr_depth(state)
     restricted_state = restrict_unmatched(child_state)
@@ -1061,8 +1106,10 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
       end
 
     StreamData.bind(StreamData.member_of(@unary_ops), fn {op_kind, op} ->
-      StreamData.bind(operand_gen, fn operand ->
-        StreamData.constant({:matched_unary, {op_kind, op}, operand})
+      StreamData.bind(gen_newlines(), fn newlines ->
+        StreamData.bind(operand_gen, fn operand ->
+          StreamData.constant({:matched_unary, {op_kind, op}, newlines, operand})
+        end)
       end)
     end)
   end
