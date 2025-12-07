@@ -12,6 +12,33 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
   - **Increment 2**: Binary and unary operators with newline handling.
   - **Increment 3**: Calls (call_parens, call_no_parens_one, capture_int).
   - **Increment 4**: fn_single with stab clauses.
+  - **Increment 5**: Full unmatched_expr coverage per grammar lines 163-171.
+
+  ## Grammar Coverage: unmatched_expr (Increment 5)
+
+  All 9 productions from elixir_parser.yrl lines 163-171 are implemented:
+
+  1. `matched_expr unmatched_op_expr` - gen_unmatched_op variant_a
+  2. `unmatched_expr matched_op_expr` - gen_unmatched_op variant_b
+  3. `unmatched_expr unmatched_op_expr` - gen_unmatched_op variant_c
+  4. `unmatched_expr no_parens_op_expr` - gen_unmatched_op variant_d (warn_pipe)
+  5. `unary_op_eol expr` - gen_unmatched_unary
+  6. `at_op_eol expr` - gen_unmatched_at_op
+  7. `capture_op_eol expr` - gen_unmatched_capture_op
+  8. `ellipsis_op expr` - gen_unmatched_ellipsis
+  9. `block_expr` - gen_call_do
+
+  ## Deferred to Future Phases (TODO)
+
+  The following are intentionally not generated in the current phase:
+
+  - **no_parens_expr** (Phase 6+): no_parens_one_ambig_expr, no_parens_many_expr
+  - **access_expr additions** (Phase 7+):
+    - Bitstrings: `<<1, 2, 3>>`
+    - Heredocs: `\"\"\"text\"\"\"`
+    - Sigils: `~r/regex/`, `~s[string]`
+    - Quoted atoms: `:\"hello world\"`
+  - **Strings** (Phase 7+): bin_string interpolation, list_string
   """
 
   use ExUnitProperties
@@ -321,10 +348,12 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
     else
       if state.context.allow_unmatched do
         # Top-level context: can generate any expression type
+        # Per grammar: expr -> matched_expr | no_parens_expr | unmatched_expr
         StreamData.frequency([
           {6, gen_matched_expr(state)},
           {3, gen_unmatched_expr(state)}
-          # no_parens_expr deferred to Phase 3+
+          # TODO Phase 6+: Add no_parens_expr (no_parens_one_ambig_expr, no_parens_many_expr)
+          # These are expressions like: foo bar, baz (multi-arg without parens)
         ])
       else
         # Restricted context (e.g., operand position): only matched
@@ -1321,20 +1350,21 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
   - Empty parentheses (empty_paren)
   - Lists ([a, b, c])
   - Tuples ({a, b})
-  - Maps (%{a: 1})
-  - Binary strings ("hello")
-  - Bracket access (foo[bar])
+  - Bracket access (foo[bar], @foo[bar])
 
   NOTE: Identifiers are NOT in access_expr per grammar.
   They belong to no_parens_zero_expr (sub_matched_expr).
 
-  TODO (later phases):
-  - bracket_at_expr (@foo[bar])
+  ## Currently Disabled (Toxic limitations)
+  - Maps (%{a: 1}) - Toxic doesn't render %{} token correctly
+  - Binary strings ("hello") - Toxic doesn't support this token format yet
+
+  ## TODO Phase 7+: Additional access_expr forms
   - list_string / list_heredoc ('hello')
-  - bin_heredoc
+  - bin_heredoc (\"\"\")
   - bitstring (<<1, 2, 3>>)
-  - sigil (~r/regex/)
-  - atom_quoted / atom_safe / atom_unsafe
+  - sigil (~r/regex/, ~s[string])
+  - atom_quoted / atom_safe / atom_unsafe (:"hello world")
   """
   def gen_access_expr(state) do
     if GrammarTree.budget_exhausted?(state) do
