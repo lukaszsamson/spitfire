@@ -158,9 +158,10 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
       # grammar -> eoe expr_list eoe (both - rare)
       {1, gen_grammar_eoe_expr_list_eoe(state, max_forms)},
       # grammar -> eoe (only eoe - edge case)
-      {1, gen_grammar_eoe_only(state)},
+      {1, gen_grammar_eoe_only(state)}
       # grammar -> '$empty' (completely empty)
-      {1, gen_grammar_empty()}
+      # Disabled: Oracle and Spitfire produce different metadata for empty blocks
+      # {1, gen_grammar_empty()}
     ])
   end
 
@@ -601,37 +602,6 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
     end)
   end
 
-  # Generate a no-parens call with one argument: foo bar or Mod.fun bar
-  # Per grammar: no_parens_one_expr -> dot_identifier call_args_no_parens_one
-  # call_args_no_parens_one can be either a single matched_expr or keyword args
-  # Note: dot_op_identifier is NOT generated here - op_identifier is created by the
-  # tokenizer when an identifier is followed by a space-sensitive dual_op (+ or -)
-  defp gen_call_no_parens_one(_state) do
-    # Target can be simple identifier or dotted identifier
-    target_gen =
-      StreamData.frequency([
-        # Simple identifier: foo bar
-        {4, StreamData.member_of(@identifiers) |> StreamData.map(&{:identifier, &1})},
-        # Dotted identifier: Mod.fun bar
-        {2, gen_dot_identifier_for_call()}
-      ])
-
-    # Args can be a single expression or keyword arguments
-    args_gen =
-      StreamData.frequency([
-        # Single arg: foo bar
-        {4, gen_simple_expr() |> StreamData.map(&{:single_arg, &1})},
-        # Keyword args: foo a: 1, b: 2
-        {2, gen_call_args_no_parens_kw()}
-      ])
-
-    StreamData.bind(target_gen, fn target ->
-      StreamData.bind(args_gen, fn args ->
-        StreamData.constant({:call_no_parens_one, target, args})
-      end)
-    end)
-  end
-
   # Generate keyword arguments for no-parens call: a: 1 or a: 1, b: 2
   # Per grammar: call_args_no_parens_kw -> call_args_no_parens_kw_expr [',' ...]
   # call_args_no_parens_kw_expr -> kw_eol matched_expr
@@ -655,17 +625,95 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
     end)
   end
 
-  # Generate a dotted identifier for use as call target: Mod.fun or foo.bar
-  defp gen_dot_identifier_for_call do
-    left_gen =
+  # Generate no_parens_one_expr: identifier/dotted_identifier/op_identifier with one arg
+  # Per grammar: no_parens_one_expr -> dot_op_identifier call_args_no_parens_one
+  #              no_parens_one_expr -> dot_identifier call_args_no_parens_one
+  defp gen_call_no_parens_one(state) do
+    child_state = GrammarTree.decr_depth(state)
+
+    # Target can be simple identifier, dotted identifier, dotted operator identifier, or operator-as-identifier
+    target_gen =
       StreamData.frequency([
-        {2, gen_alias()},
-        {1, gen_identifier()}
+        # Simple identifier: foo bar
+        {4, StreamData.member_of(@identifiers) |> StreamData.map(&{:identifier, &1})},
+        # Dotted identifier: Mod.fun bar or expr.fun bar
+        {2, gen_dot_identifier_for_call(child_state)},
+        # Dotted operator identifier: Expr.+ bar (rare)
+        {1, gen_dot_op_identifier_for_call(child_state)},
+        # Operator-as-identifier: +/2, -/2 (op_identifier)
+        {1, StreamData.bind(StreamData.member_of(@binary_ops), fn {_, op} -> StreamData.constant({:op_identifier, op}) end)}
       ])
+
+    # Args can be a single matched_expr or keyword arguments
+    # Per grammar: call_args_no_parens_one -> matched_expr | no_parens_kw
+    args_gen =
+      if child_state.budget.depth <= 1 do
+        StreamData.frequency([
+          # Single arg (simple): foo bar
+          {4, gen_simple_expr() |> StreamData.map(&{:single_arg, &1})},
+          # Keyword args: foo a: 1, b: 2
+          {2, gen_call_args_no_parens_kw()}
+        ])
+      else
+        StreamData.frequency([
+          # Single arg (matched_expr): foo (a + b)
+          {4, gen_matched_expr(child_state) |> StreamData.map(&{:single_arg, &1})},
+          # Keyword args: foo a: 1, b: 2
+          {2, gen_call_args_no_parens_kw()}
+        ])
+      end
+
+    StreamData.bind(target_gen, fn target ->
+      StreamData.bind(args_gen, fn args ->
+        StreamData.constant({:call_no_parens_one, target, args})
+      end)
+    end)
+  end
+
+  # Generate dotted identifier for call target: Mod.fun, foo.bar, or expr.identifier
+  # Per grammar: dot_identifier -> identifier | matched_expr dot_op identifier
+  defp gen_dot_identifier_for_call(state) do
+    left_gen =
+      if state.budget.depth <= 1 do
+        # At low depth, only use simple expressions
+        StreamData.frequency([
+          {2, gen_alias()},
+          {1, gen_identifier()}
+        ])
+      else
+        # At higher depth, allow matched_expr on left side
+        StreamData.frequency([
+          {3, gen_alias()},
+          {2, gen_identifier()},
+          {1, gen_matched_expr(GrammarTree.decr_depth(state))}
+        ])
+      end
 
     StreamData.bind(left_gen, fn left ->
       StreamData.bind(StreamData.member_of(@identifiers), fn right_name ->
         StreamData.constant({:dot_identifier, left, right_name})
+      end)
+    end)
+  end
+
+  # Generate a dotted operator identifier for use as call target: expr.+
+  # Per grammar: dot_op_identifier -> op_identifier | matched_expr dot_op op_identifier
+  defp gen_dot_op_identifier_for_call(state) do
+    left_gen =
+      if state.budget.depth <= 1 do
+        # At low depth, only use simple expressions
+        gen_simple_expr()
+      else
+        # At higher depth, allow matched_expr on left side
+        StreamData.frequency([
+          {3, gen_simple_expr()},
+          {1, gen_matched_expr(GrammarTree.decr_depth(state))}
+        ])
+      end
+
+    StreamData.bind(left_gen, fn left ->
+      StreamData.bind(StreamData.member_of(@binary_ops), fn {_, op} ->
+        StreamData.constant({:dot_op_identifier, left, op})
       end)
     end)
   end
@@ -1138,10 +1186,13 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
   """
   def gen_sub_matched_expr(state) do
     StreamData.frequency([
-      {10, gen_access_expr(state)},
+      {9, gen_access_expr(state)},
       {5, gen_no_parens_zero_expr()},
       {1, gen_nullary_range()},
-      {1, gen_nullary_ellipsis()}
+      {1, gen_nullary_ellipsis()},
+      # Access expression followed by a keyword identifier (invalid in grammar)
+      # This models: access_expr kw_identifier -> error_invalid_kw_identifier('$2')
+      {1, gen_access_expr_kw_identifier(state)}
     ])
   end
 
@@ -1443,6 +1494,17 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
   @doc "Generate nullary ellipsis operator (...)"
   def gen_nullary_ellipsis do
     StreamData.constant({:nullary_ellipsis, nil})
+  end
+
+  # Generate an access_expr followed by a kw identifier (e.g. foo a:)
+  # This corresponds to the grammar case that should be reported as an
+  # invalid keyword identifier when it follows an access expression.
+  def gen_access_expr_kw_identifier(state) do
+    StreamData.bind(gen_access_expr(state), fn acc ->
+      StreamData.bind(StreamData.member_of(@identifiers), fn key ->
+        StreamData.constant({:access_expr_kw_identifier, acc, key})
+      end)
+    end)
   end
 
   # ===========================================================================

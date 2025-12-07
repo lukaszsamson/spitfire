@@ -130,6 +130,14 @@ defmodule Spitfire.Property.TokenCompiler do
     {[{:do_identifier, meta, atom}], layout}
   end
 
+  # Op identifier (operator used as identifier, e.g., in `def +/2`)
+  defp do_to_tokens({:op_identifier, op}, layout, _opts) do
+    name = Atom.to_string(op)
+    chars = String.to_charlist(name)
+    {meta, layout} = TokenLayout.space_before(layout, name, chars)
+    {[{:op_identifier, meta, op}], layout}
+  end
+
   defp do_to_tokens({:alias, atom}, layout, _opts) do
     name = Atom.to_string(atom)
     chars = String.to_charlist(name)
@@ -160,6 +168,24 @@ defmodule Spitfire.Property.TokenCompiler do
     right_token = {:identifier, right_meta, right_name}
 
     {left_tokens ++ [dot_token, right_token], layout}
+  end
+
+  # Dotted operator identifier: matched_expr . op_identifier
+  defp do_to_tokens({:dot_op_identifier, left, op}, layout, opts) do
+    # Compile left expression
+    {left_tokens, layout} = do_to_tokens(left, layout, opts)
+
+    # Compile dot (stuck to left for adhesion)
+    {dot_meta, layout} = TokenLayout.stick_right(layout, ".", nil)
+    dot_token = {:., dot_meta}
+
+    # Compile op identifier (stuck to dot for adhesion)
+    name = Atom.to_string(op)
+    chars = String.to_charlist(name)
+    {op_meta, layout} = TokenLayout.stick_right(layout, name, chars)
+    op_token = {:op_identifier, op_meta, op}
+
+    {left_tokens ++ [dot_token, op_token], layout}
   end
 
   # Dotted do_identifier: expr.do_identifier (e.g., Foo.if, Mod.case)
@@ -651,10 +677,35 @@ defmodule Spitfire.Property.TokenCompiler do
     {[id_token] ++ arg_tokens, layout}
   end
 
+  # No-parens call with op identifier: +/2 used as identifier
+  defp do_to_tokens({:call_no_parens_one, {:op_identifier, op}, arg}, layout, opts) do
+    # Compile op_identifier as a standalone identifier
+    name_str = Atom.to_string(op)
+    chars = String.to_charlist(name_str)
+    {id_meta, layout} = TokenLayout.space_before(layout, name_str, chars)
+    id_token = {:op_identifier, id_meta, op}
+
+    # Compile argument(s)
+    {arg_tokens, layout} = compile_no_parens_args(arg, layout, opts)
+
+    {[id_token] ++ arg_tokens, layout}
+  end
+
   # No-parens call with dotted target: Mod.fun bar
   defp do_to_tokens({:call_no_parens_one, {:dot_identifier, left, right_name}, arg}, layout, opts) do
     # Compile the dotted identifier target
     {target_tokens, layout} = do_to_tokens({:dot_identifier, left, right_name}, layout, opts)
+
+    # Compile argument(s)
+    {arg_tokens, layout} = compile_no_parens_args(arg, layout, opts)
+
+    {target_tokens ++ arg_tokens, layout}
+  end
+
+  # No-parens call with dotted op-identifier target: Expr.+ bar
+  defp do_to_tokens({:call_no_parens_one, {:dot_op_identifier, left, op}, arg}, layout, opts) do
+    # Compile the dotted op_identifier target
+    {target_tokens, layout} = do_to_tokens({:dot_op_identifier, left, op}, layout, opts)
 
     # Compile argument(s)
     {arg_tokens, layout} = compile_no_parens_args(arg, layout, opts)
@@ -760,6 +811,23 @@ defmodule Spitfire.Property.TokenCompiler do
     end_token = {:end, end_meta}
 
     {[id_token] ++ args_tokens ++ [do_token, eol_token] ++ body_tokens ++ extras_tokens ++ [end_token], layout}
+  end
+
+  # ---------------------------------------------------------------------------
+  # Access expression followed by keyword identifier (invalid kw identifier)
+  # ---------------------------------------------------------------------------
+
+  defp do_to_tokens({:access_expr_kw_identifier, access_expr, key}, layout, opts) do
+    # Compile the access expression normally
+    {access_tokens, layout} = do_to_tokens(access_expr, layout, opts)
+
+    # Emit the kw_identifier token (e.g., "key:") with a space before it
+    key_str = Atom.to_string(key)
+    key_lexeme = key_str <> ":"
+    {meta, layout} = TokenLayout.space_before(layout, key_lexeme, nil)
+    kw_token = {:kw_identifier, meta, key}
+
+    {access_tokens ++ [kw_token], layout}
   end
 
   # ---------------------------------------------------------------------------
@@ -899,6 +967,14 @@ defmodule Spitfire.Property.TokenCompiler do
     {[{:do_identifier, meta, atom}], layout}
   end
 
+  # Op identifier stuck to previous token
+  defp compile_arg_with_adhesion({:op_identifier, op}, layout, _opts) do
+    name = Atom.to_string(op)
+    chars = String.to_charlist(name)
+    {meta, layout} = TokenLayout.stick_right(layout, name, chars)
+    {[{:op_identifier, meta, op}], layout}
+  end
+
   defp compile_arg_with_adhesion({:alias, atom}, layout, _opts) do
     name = Atom.to_string(atom)
     chars = String.to_charlist(name)
@@ -1008,6 +1084,24 @@ defmodule Spitfire.Property.TokenCompiler do
     right_token = {:identifier, right_meta, right_name}
 
     {left_tokens ++ [dot_token, right_token], layout}
+  end
+
+  # Dotted operator identifier stuck to previous token
+  defp compile_arg_with_adhesion({:dot_op_identifier, left, op}, layout, opts) do
+    # Compile left expression stuck to current position
+    {left_tokens, layout} = compile_arg_with_adhesion(left, layout, opts)
+
+    # Compile dot (stuck to left)
+    {dot_meta, layout} = TokenLayout.stick_right(layout, ".", nil)
+    dot_token = {:., dot_meta}
+
+    # Compile op identifier (stuck to dot)
+    name = Atom.to_string(op)
+    chars = String.to_charlist(name)
+    {op_meta, layout} = TokenLayout.stick_right(layout, name, chars)
+    op_token = {:op_identifier, op_meta, op}
+
+    {left_tokens ++ [dot_token, op_token], layout}
   end
 
   # Dotted do_identifier stuck to previous token
@@ -1194,6 +1288,30 @@ defmodule Spitfire.Property.TokenCompiler do
     {bracket_tokens, layout} = compile_bracket_arg_stuck(arg, layout, opts)
 
     {[at_token] ++ eol_tokens ++ expr_tokens ++ bracket_tokens, layout}
+  end
+
+  # At operator stuck to previous token: used in contexts like `foo @bar` or
+  # in operator adhesion positions. This mirrors do_to_tokens/3 for at_op but
+  # preserves stickiness when compiling into a larger stuck expression.
+  defp compile_arg_with_adhesion({:at_op, newlines, operand}, layout, opts) when is_integer(newlines) do
+    # @ stuck to previous
+    {at_meta, layout} = TokenLayout.stick_right(layout, "@", nil)
+    at_token = {:at_op, at_meta, :@}
+
+    # Emit newlines if any
+    {eol_tokens, layout} =
+      if newlines > 0 do
+        eol_meta = TokenLayout.meta(layout, "\n", newlines)
+        layout = TokenLayout.newlines(layout, newlines)
+        {[{:eol, eol_meta}], layout}
+      else
+        {[], layout}
+      end
+
+    # Compile operand stuck to @ (adhesion)
+    {operand_tokens, layout} = compile_arg_with_adhesion(operand, layout, opts)
+
+    {[at_token] ++ eol_tokens ++ operand_tokens, layout}
   end
 
   defp compile_arg_with_adhesion(other, layout, opts) do
