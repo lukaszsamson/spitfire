@@ -586,8 +586,9 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
 
   # Generate a no-parens call with one argument: foo bar or Mod.fun bar
   # Per grammar: no_parens_one_expr -> dot_identifier call_args_no_parens_one
-  #              no_parens_one_expr -> dot_op_identifier call_args_no_parens_one
   # call_args_no_parens_one can be either a single matched_expr or keyword args
+  # Note: dot_op_identifier is NOT generated here - op_identifier is created by the
+  # tokenizer when an identifier is followed by a space-sensitive dual_op (+ or -)
   defp gen_call_no_parens_one(_state) do
     # Target can be simple identifier or dotted identifier
     target_gen =
@@ -774,7 +775,9 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
   # Generator: call_do (if/unless/case with do blocks)
   # ===========================================================================
 
-  @do_identifiers ~w(if unless)a
+  # Identifiers that can precede do blocks (do_identifier in grammar)
+  # These are tokenized as :do_identifier by the lexer
+  @do_identifiers ~w(if unless case for try receive with cond)a
 
   # Generate a call with do block: if cond do body end
   defp gen_call_do(state) do
@@ -1136,6 +1139,10 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
   - dot_identifier -> identifier
   - dot_identifier -> matched_expr dot_op identifier
 
+  And per grammar lines 488-489 (dot_do_identifier):
+  - dot_do_identifier -> do_identifier
+  - dot_do_identifier -> matched_expr dot_op do_identifier
+
   This is where identifiers belong in the grammar (not access_expr).
   """
   def gen_no_parens_zero_expr do
@@ -1143,8 +1150,45 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
       # Simple identifier (most common)
       {6, gen_identifier()},
       # Dotted identifier: expr.identifier (e.g., foo.bar, Mod.func)
-      {2, gen_dot_identifier()}
+      {2, gen_dot_identifier()},
+      # Do identifier: if, unless, case, etc. (as bare identifiers)
+      {1, gen_dot_do_identifier()}
     ])
+  end
+
+  @doc """
+  Generate a dot_do_identifier (do_identifier or dotted do_identifier).
+
+  Per grammar lines 488-489:
+  - dot_do_identifier -> do_identifier (e.g., if, unless, case)
+  - dot_do_identifier -> matched_expr dot_op do_identifier (e.g., Foo.if)
+
+  These are identifiers that can precede do blocks when used with arguments.
+  When used alone (in no_parens_zero_expr), they're just bare identifiers.
+  """
+  def gen_dot_do_identifier do
+    StreamData.frequency([
+      # Simple do_identifier: if, unless, case, etc.
+      {4, StreamData.member_of(@do_identifiers) |> StreamData.map(&{:do_identifier, &1})},
+      # Dotted do_identifier: Foo.if, Mod.case, etc. (rare but valid)
+      {1, gen_dotted_do_identifier()}
+    ])
+  end
+
+  # Generate a dotted do_identifier: expr.do_identifier
+  # Per grammar: dot_do_identifier -> matched_expr dot_op do_identifier
+  defp gen_dotted_do_identifier do
+    left_gen =
+      StreamData.frequency([
+        {2, gen_alias()},
+        {1, gen_identifier()}
+      ])
+
+    StreamData.bind(left_gen, fn left ->
+      StreamData.bind(StreamData.member_of(@do_identifiers), fn do_id ->
+        StreamData.constant({:dot_do_identifier, left, do_id})
+      end)
+    end)
   end
 
   # Generate a dotted identifier: expr.identifier
@@ -1208,7 +1252,9 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
         {2, gen_list(state)},
         {2, gen_tuple(state)},
         # Bracket access
-        {2, gen_bracket_expr(state)}
+        {2, gen_bracket_expr(state)},
+        # Bracket at access: @foo[bar]
+        {1, gen_bracket_at_expr(state)}
         # NOTE: map disabled - Toxic doesn't render %{} token correctly
         # {2, gen_map(state)}
         # NOTE: bin_string disabled - Toxic doesn't support this token format yet
@@ -1560,6 +1606,49 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
       # Expression with bracket access: expr[key] (less common to avoid nesting)
       {1, gen_bracket_access_expr(child_state)}
     ])
+  end
+
+  @doc """
+  Generate a bracket access expression with at operator: @foo[bar]
+
+  Per grammar lines 310-311:
+  - bracket_at_expr -> at_op_eol dot_bracket_identifier bracket_arg
+  - bracket_at_expr -> at_op_eol access_expr bracket_arg
+  """
+  def gen_bracket_at_expr(state) do
+    child_state = GrammarTree.decr_depth(state)
+
+    StreamData.frequency([
+      # @identifier[key]: @foo[bar]
+      {4, gen_bracket_at_identifier(child_state)},
+      # @(expr)[key]: @(foo)[bar] - less common
+      {1, gen_bracket_at_access_expr(child_state)}
+    ])
+  end
+
+  # Generate @identifier[key]
+  defp gen_bracket_at_identifier(state) do
+    StreamData.bind(gen_newlines(), fn newlines ->
+      StreamData.bind(StreamData.member_of(@identifiers), fn name ->
+        StreamData.bind(gen_bracket_arg(state), fn arg ->
+          StreamData.constant({:bracket_at_expr, newlines, {:bracket_identifier, name}, arg})
+        end)
+      end)
+    end)
+  end
+
+  # Generate @(expr)[key]
+  defp gen_bracket_at_access_expr(state) do
+    # Use simple expressions to avoid deep nesting
+    expr_gen = gen_simple_expr()
+
+    StreamData.bind(gen_newlines(), fn newlines ->
+      StreamData.bind(expr_gen, fn expr ->
+        StreamData.bind(gen_bracket_arg(state), fn arg ->
+          StreamData.constant({:bracket_at_expr, newlines, {:expr, expr}, arg})
+        end)
+      end)
+    end)
   end
 
   # Generate bracket identifier access: foo[bar]

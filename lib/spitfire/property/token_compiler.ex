@@ -121,6 +121,15 @@ defmodule Spitfire.Property.TokenCompiler do
     {[{:identifier, meta, atom}], layout}
   end
 
+  # Do identifier (if, unless, case, etc.) used as bare identifier
+  # Per grammar: dot_do_identifier -> do_identifier
+  defp do_to_tokens({:do_identifier, atom}, layout, _opts) do
+    name = Atom.to_string(atom)
+    chars = String.to_charlist(name)
+    {meta, layout} = TokenLayout.space_before(layout, name, chars)
+    {[{:do_identifier, meta, atom}], layout}
+  end
+
   defp do_to_tokens({:alias, atom}, layout, _opts) do
     name = Atom.to_string(atom)
     chars = String.to_charlist(name)
@@ -151,6 +160,25 @@ defmodule Spitfire.Property.TokenCompiler do
     right_token = {:identifier, right_meta, right_name}
 
     {left_tokens ++ [dot_token, right_token], layout}
+  end
+
+  # Dotted do_identifier: expr.do_identifier (e.g., Foo.if, Mod.case)
+  # Per grammar: dot_do_identifier -> matched_expr dot_op do_identifier
+  defp do_to_tokens({:dot_do_identifier, left, do_id}, layout, opts) do
+    # Compile left expression
+    {left_tokens, layout} = do_to_tokens(left, layout, opts)
+
+    # Compile dot (stuck to left for adhesion)
+    {dot_meta, layout} = TokenLayout.stick_right(layout, ".", nil)
+    dot_token = {:., dot_meta}
+
+    # Compile do_identifier (stuck to dot for adhesion)
+    id_str = Atom.to_string(do_id)
+    chars = String.to_charlist(id_str)
+    {id_meta, layout} = TokenLayout.stick_right(layout, id_str, chars)
+    id_token = {:do_identifier, id_meta, do_id}
+
+    {left_tokens ++ [dot_token, id_token], layout}
   end
 
   # ---------------------------------------------------------------------------
@@ -396,6 +424,67 @@ defmodule Spitfire.Property.TokenCompiler do
     {bracket_tokens, layout} = compile_bracket_arg_stuck(arg, layout, opts)
 
     {expr_tokens ++ bracket_tokens, layout}
+  end
+
+  # ---------------------------------------------------------------------------
+  # Bracket At Expressions (@foo[bar])
+  # ---------------------------------------------------------------------------
+
+  # Bracket at with identifier: @foo[bar]
+  # Per grammar: bracket_at_expr -> at_op_eol dot_bracket_identifier bracket_arg
+  defp do_to_tokens({:bracket_at_expr, newlines, {:bracket_identifier, name}, arg}, layout, opts)
+       when is_integer(newlines) do
+    # Compile @ operator
+    {at_meta, layout} = TokenLayout.space_before(layout, "@", nil)
+    at_token = {:at_op, at_meta, :@}
+
+    # Emit newlines if any (per at_op_eol -> at_op eol)
+    {eol_tokens, layout} =
+      if newlines > 0 do
+        eol_meta = TokenLayout.meta(layout, "\n", newlines)
+        layout = TokenLayout.newlines(layout, newlines)
+        {[{:eol, eol_meta}], layout}
+      else
+        {[], layout}
+      end
+
+    # Compile identifier (stuck to @)
+    name_str = Atom.to_string(name)
+    chars = String.to_charlist(name_str)
+    {id_meta, layout} = TokenLayout.stick_right(layout, name_str, chars)
+    id_token = {:bracket_identifier, id_meta, name}
+
+    # Compile bracket arg: [key]
+    {bracket_tokens, layout} = compile_bracket_arg(arg, layout, opts)
+
+    {[at_token] ++ eol_tokens ++ [id_token] ++ bracket_tokens, layout}
+  end
+
+  # Bracket at with expression: @(expr)[bar]
+  # Per grammar: bracket_at_expr -> at_op_eol access_expr bracket_arg
+  defp do_to_tokens({:bracket_at_expr, newlines, {:expr, expr}, arg}, layout, opts)
+       when is_integer(newlines) do
+    # Compile @ operator
+    {at_meta, layout} = TokenLayout.space_before(layout, "@", nil)
+    at_token = {:at_op, at_meta, :@}
+
+    # Emit newlines if any (per at_op_eol -> at_op eol)
+    {eol_tokens, layout} =
+      if newlines > 0 do
+        eol_meta = TokenLayout.meta(layout, "\n", newlines)
+        layout = TokenLayout.newlines(layout, newlines)
+        {[{:eol, eol_meta}], layout}
+      else
+        {[], layout}
+      end
+
+    # Compile expression (stuck to @)
+    {expr_tokens, layout} = compile_arg_with_adhesion(expr, layout, opts)
+
+    # Compile bracket arg (stuck to expression)
+    {bracket_tokens, layout} = compile_bracket_arg_stuck(arg, layout, opts)
+
+    {[at_token] ++ eol_tokens ++ expr_tokens ++ bracket_tokens, layout}
   end
 
   # ---------------------------------------------------------------------------
@@ -802,6 +891,14 @@ defmodule Spitfire.Property.TokenCompiler do
     {[{:identifier, meta, atom}], layout}
   end
 
+  # Do identifier stuck to previous token
+  defp compile_arg_with_adhesion({:do_identifier, atom}, layout, _opts) do
+    name = Atom.to_string(atom)
+    chars = String.to_charlist(name)
+    {meta, layout} = TokenLayout.stick_right(layout, name, chars)
+    {[{:do_identifier, meta, atom}], layout}
+  end
+
   defp compile_arg_with_adhesion({:alias, atom}, layout, _opts) do
     name = Atom.to_string(atom)
     chars = String.to_charlist(name)
@@ -911,6 +1008,24 @@ defmodule Spitfire.Property.TokenCompiler do
     right_token = {:identifier, right_meta, right_name}
 
     {left_tokens ++ [dot_token, right_token], layout}
+  end
+
+  # Dotted do_identifier stuck to previous token
+  defp compile_arg_with_adhesion({:dot_do_identifier, left, do_id}, layout, opts) do
+    # Compile left expression stuck to current position
+    {left_tokens, layout} = compile_arg_with_adhesion(left, layout, opts)
+
+    # Compile dot (stuck to left)
+    {dot_meta, layout} = TokenLayout.stick_right(layout, ".", nil)
+    dot_token = {:., dot_meta}
+
+    # Compile do_identifier (stuck to dot)
+    id_str = Atom.to_string(do_id)
+    chars = String.to_charlist(id_str)
+    {id_meta, layout} = TokenLayout.stick_right(layout, id_str, chars)
+    id_token = {:do_identifier, id_meta, do_id}
+
+    {left_tokens ++ [dot_token, id_token], layout}
   end
 
   # List stuck to previous token
@@ -1024,6 +1139,61 @@ defmodule Spitfire.Property.TokenCompiler do
     {bracket_tokens, layout} = compile_bracket_arg_stuck(arg, layout, opts)
 
     {expr_tokens ++ bracket_tokens, layout}
+  end
+
+  # Bracket at with identifier stuck to previous token: @foo[bar]
+  defp compile_arg_with_adhesion({:bracket_at_expr, newlines, {:bracket_identifier, name}, arg}, layout, opts)
+       when is_integer(newlines) do
+    # @ stuck to previous
+    {at_meta, layout} = TokenLayout.stick_right(layout, "@", nil)
+    at_token = {:at_op, at_meta, :@}
+
+    # Emit newlines if any
+    {eol_tokens, layout} =
+      if newlines > 0 do
+        eol_meta = TokenLayout.meta(layout, "\n", newlines)
+        layout = TokenLayout.newlines(layout, newlines)
+        {[{:eol, eol_meta}], layout}
+      else
+        {[], layout}
+      end
+
+    # Identifier stuck to @
+    name_str = Atom.to_string(name)
+    chars = String.to_charlist(name_str)
+    {id_meta, layout} = TokenLayout.stick_right(layout, name_str, chars)
+    id_token = {:bracket_identifier, id_meta, name}
+
+    # Bracket arg
+    {bracket_tokens, layout} = compile_bracket_arg(arg, layout, opts)
+
+    {[at_token] ++ eol_tokens ++ [id_token] ++ bracket_tokens, layout}
+  end
+
+  # Bracket at with expression stuck to previous token: @(expr)[bar]
+  defp compile_arg_with_adhesion({:bracket_at_expr, newlines, {:expr, expr}, arg}, layout, opts)
+       when is_integer(newlines) do
+    # @ stuck to previous
+    {at_meta, layout} = TokenLayout.stick_right(layout, "@", nil)
+    at_token = {:at_op, at_meta, :@}
+
+    # Emit newlines if any
+    {eol_tokens, layout} =
+      if newlines > 0 do
+        eol_meta = TokenLayout.meta(layout, "\n", newlines)
+        layout = TokenLayout.newlines(layout, newlines)
+        {[{:eol, eol_meta}], layout}
+      else
+        {[], layout}
+      end
+
+    # Expression stuck to @
+    {expr_tokens, layout} = compile_arg_with_adhesion(expr, layout, opts)
+
+    # Bracket arg stuck to expression
+    {bracket_tokens, layout} = compile_bracket_arg_stuck(arg, layout, opts)
+
+    {[at_token] ++ eol_tokens ++ expr_tokens ++ bracket_tokens, layout}
   end
 
   defp compile_arg_with_adhesion(other, layout, opts) do
