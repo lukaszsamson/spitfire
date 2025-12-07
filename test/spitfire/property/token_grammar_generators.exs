@@ -156,8 +156,11 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
       # grammar -> eoe expr_list (leading newline - less common)
       {1, gen_grammar_eoe_expr_list(state, max_forms)},
       # grammar -> eoe expr_list eoe (both - rare)
-      {1, gen_grammar_eoe_expr_list_eoe(state, max_forms)}
-      # Note: grammar -> eoe and grammar -> '$empty' omitted (edge cases)
+      {1, gen_grammar_eoe_expr_list_eoe(state, max_forms)},
+      # grammar -> eoe (only eoe - edge case)
+      {1, gen_grammar_eoe_only(state)},
+      # grammar -> '$empty' (completely empty)
+      {1, gen_grammar_empty()}
     ])
   end
 
@@ -201,6 +204,20 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
         end)
       end)
     end)
+  end
+
+  # grammar -> eoe : {'__block__', meta_from_token('$1'), []}.
+  # Represented as grammar_v2 with leading_eoe and empty expr list.
+  defp gen_grammar_eoe_only(_state) do
+    StreamData.bind(gen_eoe(), fn leading_eoe ->
+      StreamData.constant({:grammar_v2, leading_eoe, [], nil})
+    end)
+  end
+
+  # grammar -> '$empty' : {'__block__', [], []}.
+  # Represented as grammar_v2 with no leading/trailing eoe and empty expr list.
+  defp gen_grammar_empty do
+    StreamData.constant({:grammar_v2, nil, [], nil})
   end
 
   @doc """
