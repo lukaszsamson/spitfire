@@ -17,10 +17,22 @@ defmodule Spitfire.Property.GrammarTree do
   # ===========================================================================
 
   @typedoc "A complete grammar tree (program)"
-  @type t :: {:grammar, [expr_t()]}
+  @type t ::
+          {:grammar, [expr_t()]}
+          | {:grammar_eoe, [{expr_t(), eoe_t()}]}
+          | {:grammar_v2, eoe_t() | nil, [{expr_t(), eoe_t() | nil}], eoe_t() | nil}
 
   @typedoc "Any expression"
   @type expr_t :: t()
+
+  @typedoc """
+  End-of-expression marker (grammar rules 331-333).
+
+  - `:eol` - newline only
+  - `:semi` - semicolon only
+  - `:eol_semi` - newline followed by semicolon
+  """
+  @type eoe_t :: :eol | :semi | :eol_semi
 
   @typedoc "Pattern expression (for fn arguments)"
   @type pattern_t :: :empty | {:single, expr_t()} | {:many, [expr_t()]}
@@ -121,21 +133,128 @@ defmodule Spitfire.Property.GrammarTree do
   @type op_eol_t :: {:op_eol, op_kind(), non_neg_integer()}
 
   @typedoc """
-  Binary operator expression.
+  Matched binary operator expression (both operands are matched expressions).
 
-  - `left`: left operand
+  Used when the operator appears in a context where unmatched expressions
+  would be invalid (e.g., as operands of another operator).
+
+  - `left`: left operand (matched expression)
   - `op`: operator with optional newlines
-  - `right`: right operand
+  - `right`: right operand (matched expression)
+  """
+  @type matched_op_t :: {:matched_op, matched_expr_t(), op_eol_t(), matched_expr_t()}
+
+  @typedoc """
+  Unmatched binary operator expression (right operand is unmatched).
+
+  Used when an operator has a do-block-bearing expression as its right operand.
+  Per grammar, the left operand must be matched, but the right can be unmatched.
+
+  - `left`: left operand (matched expression)
+  - `op`: operator with optional newlines
+  - `right`: right operand (unmatched expression)
+  """
+  @type unmatched_op_t :: {:unmatched_op, matched_expr_t(), op_eol_t(), unmatched_expr_t()}
+
+  @typedoc """
+  Legacy binary operator expression (deprecated, use matched_op_t).
+
+  Kept for backward compatibility during migration.
   """
   @type binary_op_t :: {:binary_op, expr_t(), op_eol_t(), expr_t()}
 
   @typedoc """
-  Unary operator expression.
+  Matched unary operator expression.
 
   - `op`: operator kind
-  - `operand`: the operand expression
+  - `operand`: the operand expression (matched)
+  """
+  @type matched_unary_t :: {:matched_unary, op_kind(), matched_expr_t()}
+
+  @typedoc """
+  Legacy unary operator expression (deprecated, use matched_unary_t).
   """
   @type unary_op_t :: {:unary_op, op_kind(), expr_t()}
+
+  @typedoc "Nullary range operator (..)"
+  @type nullary_range_t :: {:nullary_range, nil}
+
+  @typedoc "Nullary ellipsis operator (...)"
+  @type nullary_ellipsis_t :: {:nullary_ellipsis, nil}
+
+  # ===========================================================================
+  # Expression Categories (per elixir_parser.yrl)
+  # ===========================================================================
+
+  @typedoc """
+  Matched expression - safe to use as operands.
+
+  Per grammar lines 155-161, matched expressions include:
+  - Binary ops with matched operands
+  - Unary ops with matched operands
+  - no_parens_one_expr
+  - sub_matched_expr (access_expr, nullary ops)
+  """
+  @type matched_expr_t ::
+          matched_op_t()
+          | matched_unary_t()
+          | call_no_parens_one_t()
+          | sub_matched_expr_t()
+          # Legacy types for backward compatibility
+          | binary_op_t()
+          | unary_op_t()
+
+  @typedoc """
+  Unmatched expression - has trailing do block.
+
+  Per grammar lines 163-171, unmatched expressions include:
+  - Do-block bearing calls (if, case, fn_multi, etc.)
+  - Binary ops with unmatched right operand
+  """
+  @type unmatched_expr_t ::
+          call_do_t()
+          | unmatched_op_t()
+
+  @typedoc """
+  Sub-matched expression - atomic/access expressions.
+
+  Per grammar lines 263-267, includes:
+  - access_expr (literals, identifiers, fn, calls, etc.)
+  - Nullary range_op (..)
+  - Nullary ellipsis_op (...)
+  """
+  @type sub_matched_expr_t ::
+          access_expr_t()
+          | nullary_range_t()
+          | nullary_ellipsis_t()
+
+  @typedoc """
+  Access expression - the leaf nodes.
+
+  Per grammar lines 273-301, includes:
+  - Literals (int, float, char, atom, bool, nil)
+  - Identifiers and aliases
+  - fn expressions
+  - Parenthesized calls
+  - Captures
+  - Parenthesized expressions
+  """
+  @type access_expr_t ::
+          literal_t()
+          | identifier_t()
+          | alias_t()
+          | fn_single_t()
+          | fn_multi_t()
+          | call_parens_t()
+          | capture_int_t()
+          | paren_expr_t()
+          | empty_paren_t()
+
+  @typedoc "Parenthesized expression (e.g., `(1 + 2)`)"
+  @type paren_expr_t :: {:paren_expr, expr_t()}
+
+  @typedoc "Empty parentheses (e.g., `()`)"
+  @type empty_paren_t :: {:empty_paren, nil}
 
   # ===========================================================================
   # Phase 1: Calls and Captures
@@ -206,6 +325,15 @@ defmodule Spitfire.Property.GrammarTree do
 
   @typedoc "Do block (Phase 2+)"
   @type do_block_t :: {:do_block, [stab_clause_t()] | [expr_t()], [block_item_t()]}
+
+  @typedoc """
+  Call with do-block (e.g., `if x do y end`).
+
+  - `target`: the call target identifier
+  - `args`: list of arguments before the do block
+  - `do_block`: the do block itself
+  """
+  @type call_do_t :: {:call_do, identifier_t(), [expr_t()], do_block_t()}
 
   @typedoc "Block item (else, rescue, catch, after) (Phase 2+)"
   @type block_item_t ::

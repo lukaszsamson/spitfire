@@ -1195,4 +1195,221 @@ defmodule Spitfire.TokenGrammarTest do
              ] = tokens
     end
   end
+
+  # ===========================================================================
+  # EOE (end-of-expression) tests - grammar_eoe format
+  # ===========================================================================
+
+  describe "eoe: semicolon separators" do
+    test "two expressions with semicolon: 1; 2" do
+      tree =
+        {:grammar_eoe,
+         [
+           {{:int, 1, :dec, ~c"1"}, :semi},
+           {{:int, 2, :dec, ~c"2"}, :eol}
+         ]}
+
+      assert_roundtrip(tree, "1; 2\n")
+    end
+
+    test "three expressions with semicolons: 1; 2; 3" do
+      tree =
+        {:grammar_eoe,
+         [
+           {{:int, 1, :dec, ~c"1"}, :semi},
+           {{:int, 2, :dec, ~c"2"}, :semi},
+           {{:int, 3, :dec, ~c"3"}, :eol}
+         ]}
+
+      assert_roundtrip(tree, "1; 2; 3\n")
+    end
+
+    test "semicolon token structure" do
+      tree =
+        {:grammar_eoe,
+         [
+           {{:int, 1, :dec, ~c"1"}, :semi},
+           {{:int, 2, :dec, ~c"2"}, :eol}
+         ]}
+
+      tokens = TokenCompiler.to_tokens(tree)
+
+      assert [
+               {:int, _, ~c"1"},
+               {:";", _},
+               {:int, _, ~c"2"},
+               {:eol, _}
+             ] = tokens
+    end
+  end
+
+  describe "eoe: mixed separators" do
+    test "eol then semicolon: 1\\n; 2" do
+      tree =
+        {:grammar_eoe,
+         [
+           {{:int, 1, :dec, ~c"1"}, :eol_semi},
+           {{:int, 2, :dec, ~c"2"}, :eol}
+         ]}
+
+      assert_roundtrip(tree, "1\n; 2\n")
+    end
+
+    test "eol_semi token structure" do
+      tree =
+        {:grammar_eoe,
+         [
+           {{:int, 1, :dec, ~c"1"}, :eol_semi},
+           {{:int, 2, :dec, ~c"2"}, :eol}
+         ]}
+
+      tokens = TokenCompiler.to_tokens(tree)
+
+      assert [
+               {:int, _, ~c"1"},
+               {:eol, _},
+               {:";", _},
+               {:int, _, ~c"2"},
+               {:eol, _}
+             ] = tokens
+    end
+  end
+
+  describe "eoe: explicit newlines" do
+    test "two expressions with newlines: 1\\n2" do
+      tree =
+        {:grammar_eoe,
+         [
+           {{:int, 1, :dec, ~c"1"}, :eol},
+           {{:int, 2, :dec, ~c"2"}, :eol}
+         ]}
+
+      assert_roundtrip(tree, "1\n2\n")
+    end
+  end
+
+  # ===========================================================================
+  # Category-aware node types
+  # ===========================================================================
+
+  describe "matched_op (category-aware binary operator)" do
+    test "matched_op simple addition: 1 + 2" do
+      tree =
+        {:grammar,
+         [
+           {:matched_op, {:int, 1, :dec, ~c"1"}, {:op_eol, {:dual_op, :+}, 0},
+            {:int, 2, :dec, ~c"2"}}
+         ]}
+
+      assert_roundtrip(tree, "1 + 2")
+    end
+
+    test "matched_op nested: 1 + 2 * 3" do
+      tree =
+        {:grammar,
+         [
+           {:matched_op, {:int, 1, :dec, ~c"1"}, {:op_eol, {:dual_op, :+}, 0},
+            {:matched_op, {:int, 2, :dec, ~c"2"}, {:op_eol, {:mult_op, :*}, 0},
+             {:int, 3, :dec, ~c"3"}}}
+         ]}
+
+      assert_roundtrip(tree, "1 + 2 * 3")
+    end
+  end
+
+  describe "matched_unary (category-aware unary operator)" do
+    test "matched_unary minus identifier: -x" do
+      tree = {:grammar, [{:matched_unary, {:dual_op, :-}, {:identifier, :x}}]}
+      assert_roundtrip(tree, "-x")
+    end
+
+    test "matched_unary minus literal: -5" do
+      tree = {:grammar, [{:matched_unary, {:dual_op, :-}, {:int, 5, :dec, ~c"5"}}]}
+      assert_roundtrip(tree, "-5")
+    end
+
+    test "matched_unary plus: +x" do
+      tree = {:grammar, [{:matched_unary, {:dual_op, :+}, {:identifier, :x}}]}
+      assert_roundtrip(tree, "+x")
+    end
+  end
+
+  describe "unmatched_op (binary op with unmatched right)" do
+    test "unmatched_op: 1 + if true do 2 end" do
+      tree =
+        {:grammar,
+         [
+           {:unmatched_op, {:int, 1, :dec, ~c"1"}, {:op_eol, {:dual_op, :+}, 0},
+            {:call_do, {:identifier, :if}, [{:bool_lit, true}],
+             {:do_block, [{:int, 2, :dec, ~c"2"}], []}}}
+         ]}
+
+      assert_roundtrip(tree, "1 + if true do\n2\nend")
+    end
+  end
+
+  describe "nullary operators" do
+    test "nullary range: .." do
+      tree = {:grammar, [{:nullary_range, nil}]}
+      assert_roundtrip(tree, "..")
+    end
+
+    test "nullary ellipsis: ..." do
+      tree = {:grammar, [{:nullary_ellipsis, nil}]}
+      assert_roundtrip(tree, "...")
+    end
+
+    test "nullary range token structure" do
+      tree = {:grammar, [{:nullary_range, nil}]}
+      tokens = TokenCompiler.to_tokens(tree)
+      assert [{:range_op, _, :..}] = tokens
+    end
+
+    test "nullary ellipsis token structure" do
+      tree = {:grammar, [{:nullary_ellipsis, nil}]}
+      tokens = TokenCompiler.to_tokens(tree)
+      assert [{:ellipsis_op, _, :...}] = tokens
+    end
+  end
+
+  describe "parenthesized expressions" do
+    test "paren_expr: (1)" do
+      tree = {:grammar, [{:paren_expr, {:int, 1, :dec, ~c"1"}}]}
+      assert_roundtrip(tree, "(1)")
+    end
+
+    test "paren_expr with binary op: (1 + 2)" do
+      tree =
+        {:grammar,
+         [
+           {:paren_expr,
+            {:matched_op, {:int, 1, :dec, ~c"1"}, {:op_eol, {:dual_op, :+}, 0},
+             {:int, 2, :dec, ~c"2"}}}
+         ]}
+
+      assert_roundtrip(tree, "(1 + 2)")
+    end
+
+    test "empty_paren: ()" do
+      tree = {:grammar, [{:empty_paren, nil}]}
+      assert_roundtrip(tree, "()")
+    end
+
+    test "paren_expr token structure" do
+      tree = {:grammar, [{:paren_expr, {:int, 1, :dec, ~c"1"}}]}
+      tokens = TokenCompiler.to_tokens(tree)
+
+      assert [
+               {:"(", _},
+               {:int, _, _},
+               {:")", _}
+             ] = tokens
+    end
+
+    test "empty_paren token structure" do
+      tree = {:grammar, [{:empty_paren, nil}]}
+      tokens = TokenCompiler.to_tokens(tree)
+      assert [{:"(", _}, {:")", _}] = tokens
+    end
+  end
 end

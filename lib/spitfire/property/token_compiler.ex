@@ -28,9 +28,41 @@ defmodule Spitfire.Property.TokenCompiler do
   # Token compiler: do_to_tokens/3
   # ===========================================================================
 
-  # Top-level grammar
+  # Top-level grammar (legacy format with implicit newline separators)
   defp do_to_tokens({:grammar, forms}, layout, opts) do
     compile_forms(forms, layout, opts)
+  end
+
+  # Top-level grammar with explicit eoe markers (legacy format)
+  defp do_to_tokens({:grammar_eoe, forms_with_eoe}, layout, opts) do
+    compile_forms_with_eoe(forms_with_eoe, layout, opts)
+  end
+
+  # Top-level grammar v2 format per elixir_parser.yrl grammar rules:
+  # - leading_eoe: optional eoe before expr_list
+  # - exprs: list of {expr, eoe | nil} where eoe is between exprs (last has nil)
+  # - trailing_eoe: optional eoe after expr_list
+  defp do_to_tokens({:grammar_v2, leading_eoe, exprs, trailing_eoe}, layout, opts) do
+    # Emit leading eoe if present
+    {leading_tokens, layout} =
+      if leading_eoe do
+        compile_eoe(leading_eoe, layout)
+      else
+        {[], layout}
+      end
+
+    # Compile expressions with eoe between them
+    {expr_tokens, layout} = compile_expr_list(exprs, layout, opts)
+
+    # Emit trailing eoe if present
+    {trailing_tokens, layout} =
+      if trailing_eoe do
+        compile_eoe(trailing_eoe, layout)
+      else
+        {[], layout}
+      end
+
+    {leading_tokens ++ expr_tokens ++ trailing_tokens, layout}
   end
 
   # ---------------------------------------------------------------------------
@@ -100,10 +132,25 @@ defmodule Spitfire.Property.TokenCompiler do
   # Binary Operators
   # ---------------------------------------------------------------------------
 
-  # Binary operator: left op right (with optional trailing newlines)
+  # Matched binary operator: left op right (both operands are matched)
+  defp do_to_tokens({:matched_op, left, op_eol, right}, layout, opts) do
+    compile_binary_op(left, op_eol, right, layout, opts)
+  end
+
+  # Unmatched binary operator: left op right (right is unmatched/do-block-bearing)
+  defp do_to_tokens({:unmatched_op, left, op_eol, right}, layout, opts) do
+    compile_binary_op(left, op_eol, right, layout, opts)
+  end
+
+  # Legacy binary operator (backward compatibility)
   # Per V7 Section 2: operators never render newlines from extra,
   # we emit :eol token if newlines > 0
-  defp do_to_tokens({:binary_op, left, {:op_eol, {op_kind, op}, newlines}, right}, layout, opts) do
+  defp do_to_tokens({:binary_op, left, op_eol, right}, layout, opts) do
+    compile_binary_op(left, op_eol, right, layout, opts)
+  end
+
+  # Common binary operator compilation
+  defp compile_binary_op(left, {:op_eol, {op_kind, op}, newlines}, right, layout, opts) do
     # Compile left operand
     {left_tokens, layout} = do_to_tokens(left, layout, opts)
 
@@ -132,16 +179,77 @@ defmodule Spitfire.Property.TokenCompiler do
   # Unary Operators
   # ---------------------------------------------------------------------------
 
-  # Unary operator: op operand
+  # Matched unary operator: op operand (with adhesion)
+  defp do_to_tokens({:matched_unary, {op_kind, op}, operand}, layout, opts) do
+    op_lexeme = op_to_lexeme(op)
+    {op_meta, layout} = TokenLayout.space_before(layout, op_lexeme, nil)
+    op_token = {op_kind, op_meta, op}
+
+    # Compile operand with adhesion (stuck to operator for matched_unary)
+    {operand_tokens, layout} = compile_arg_with_adhesion(operand, layout, opts)
+
+    {[op_token] ++ operand_tokens, layout}
+  end
+
+  # Legacy unary operator (backward compatibility - keeps original space behavior)
   defp do_to_tokens({:unary_op, {op_kind, op}, operand}, layout, opts) do
     op_lexeme = op_to_lexeme(op)
     {op_meta, layout} = TokenLayout.space_before(layout, op_lexeme, nil)
     op_token = {op_kind, op_meta, op}
 
-    # Compile operand (may need space depending on operator)
+    # Compile operand with space (original behavior)
     {operand_tokens, layout} = do_to_tokens(operand, layout, opts)
 
     {[op_token] ++ operand_tokens, layout}
+  end
+
+  # ---------------------------------------------------------------------------
+  # Nullary Operators
+  # ---------------------------------------------------------------------------
+
+  # Nullary range operator: ..
+  defp do_to_tokens({:nullary_range, nil}, layout, _opts) do
+    {meta, layout} = TokenLayout.space_before(layout, "..", nil)
+    {[{:range_op, meta, :..}], layout}
+  end
+
+  # Nullary ellipsis operator: ...
+  defp do_to_tokens({:nullary_ellipsis, nil}, layout, _opts) do
+    {meta, layout} = TokenLayout.space_before(layout, "...", nil)
+    {[{:ellipsis_op, meta, :...}], layout}
+  end
+
+  # ---------------------------------------------------------------------------
+  # Parenthesized Expressions
+  # ---------------------------------------------------------------------------
+
+  # Parenthesized expression: (expr)
+  defp do_to_tokens({:paren_expr, expr}, layout, opts) do
+    # Opening paren
+    {open_meta, layout} = TokenLayout.space_before(layout, "(", nil)
+    open_token = {:"(", open_meta}
+
+    # Compile expression (stuck to open paren)
+    {expr_tokens, layout} = compile_arg_with_adhesion(expr, layout, opts)
+
+    # Closing paren (stuck to expression)
+    {close_meta, layout} = TokenLayout.stick_right(layout, ")", nil)
+    close_token = {:")", close_meta}
+
+    {[open_token] ++ expr_tokens ++ [close_token], layout}
+  end
+
+  # Empty parentheses: ()
+  defp do_to_tokens({:empty_paren, nil}, layout, _opts) do
+    # Opening paren
+    {open_meta, layout} = TokenLayout.space_before(layout, "(", nil)
+    open_token = {:"(", open_meta}
+
+    # Closing paren (stuck to open paren)
+    {close_meta, layout} = TokenLayout.stick_right(layout, ")", nil)
+    close_token = {:")", close_meta}
+
+    {[open_token, close_token], layout}
   end
 
   # ---------------------------------------------------------------------------
@@ -480,9 +588,72 @@ defmodule Spitfire.Property.TokenCompiler do
     {[fn_token] ++ clause_tokens ++ [end_token], layout}
   end
 
+  # Matched binary operator stuck to previous token
+  defp compile_arg_with_adhesion({:matched_op, left, op_eol, right}, layout, opts) do
+    compile_binary_op_stuck(left, op_eol, right, layout, opts)
+  end
+
+  # Unmatched binary operator stuck to previous token
+  defp compile_arg_with_adhesion({:unmatched_op, left, op_eol, right}, layout, opts) do
+    compile_binary_op_stuck(left, op_eol, right, layout, opts)
+  end
+
+  # Legacy binary operator stuck to previous token
+  defp compile_arg_with_adhesion({:binary_op, left, op_eol, right}, layout, opts) do
+    compile_binary_op_stuck(left, op_eol, right, layout, opts)
+  end
+
+  # Matched unary operator stuck to previous token
+  defp compile_arg_with_adhesion({:matched_unary, op_kind, operand}, layout, opts) do
+    compile_unary_op_stuck(op_kind, operand, layout, opts)
+  end
+
+  # Legacy unary operator stuck to previous token
+  defp compile_arg_with_adhesion({:unary_op, op_kind, operand}, layout, opts) do
+    compile_unary_op_stuck(op_kind, operand, layout, opts)
+  end
+
   defp compile_arg_with_adhesion(other, layout, opts) do
     # Fallback: use do_to_tokens (may add unwanted space in some cases)
     do_to_tokens(other, layout, opts)
+  end
+
+  # Compile binary operator with left operand stuck to current position
+  defp compile_binary_op_stuck(left, {:op_eol, {op_kind, op}, newlines}, right, layout, opts) do
+    # Compile left operand stuck to current position
+    {left_tokens, layout} = compile_arg_with_adhesion(left, layout, opts)
+
+    # Compile operator
+    op_lexeme = op_to_lexeme(op)
+    {op_meta, layout} = TokenLayout.space_before(layout, op_lexeme, nil)
+    op_token = {op_kind, op_meta, op}
+
+    # Handle newlines after operator
+    {eol_tokens, layout} =
+      if newlines > 0 do
+        eol_meta = TokenLayout.meta(layout, "\n", newlines)
+        layout = TokenLayout.newlines(layout, newlines)
+        {[{:eol, eol_meta}], layout}
+      else
+        {[], layout}
+      end
+
+    # Compile right operand
+    {right_tokens, layout} = do_to_tokens(right, layout, opts)
+
+    {left_tokens ++ [op_token] ++ eol_tokens ++ right_tokens, layout}
+  end
+
+  # Compile unary operator stuck to current position
+  defp compile_unary_op_stuck({op_kind, op}, operand, layout, opts) do
+    op_lexeme = op_to_lexeme(op)
+    {op_meta, layout} = TokenLayout.stick_right(layout, op_lexeme, nil)
+    op_token = {op_kind, op_meta, op}
+
+    # Compile operand with adhesion (stuck to operator)
+    {operand_tokens, layout} = compile_arg_with_adhesion(operand, layout, opts)
+
+    {[op_token] ++ operand_tokens, layout}
   end
 
   # Compile call target stuck to current position (no leading space)
@@ -541,6 +712,77 @@ defmodule Spitfire.Property.TokenCompiler do
     {rest_tokens, layout} = compile_forms(rest, layout, opts)
 
     {form_tokens ++ [eol_token] ++ rest_tokens, layout}
+  end
+
+  # ===========================================================================
+  # Helper: compile_forms_with_eoe (explicit eoe markers - legacy)
+  # ===========================================================================
+
+  # Compile forms with explicit eoe markers (legacy format where every form has eoe)
+  defp compile_forms_with_eoe([], layout, _opts), do: {[], layout}
+
+  defp compile_forms_with_eoe([{form, eoe}], layout, opts) do
+    {form_tokens, layout} = do_to_tokens(form, layout, opts)
+    {eoe_tokens, layout} = compile_eoe(eoe, layout)
+    {form_tokens ++ eoe_tokens, layout}
+  end
+
+  defp compile_forms_with_eoe([{form, eoe} | rest], layout, opts) do
+    {form_tokens, layout} = do_to_tokens(form, layout, opts)
+    {eoe_tokens, layout} = compile_eoe(eoe, layout)
+    {rest_tokens, layout} = compile_forms_with_eoe(rest, layout, opts)
+    {form_tokens ++ eoe_tokens ++ rest_tokens, layout}
+  end
+
+  # ===========================================================================
+  # Helper: compile_expr_list (grammar v2 format)
+  # ===========================================================================
+
+  # Compile expr_list per grammar rules:
+  #   expr_list -> expr
+  #   expr_list -> expr_list eoe expr
+  #
+  # The eoe goes BETWEEN expressions. Last expr has eoe = nil.
+  # Format: [{expr, eoe | nil}, ...]
+
+  defp compile_expr_list([], layout, _opts), do: {[], layout}
+
+  defp compile_expr_list([{expr, nil}], layout, opts) do
+    # Last expression, no eoe after it
+    do_to_tokens(expr, layout, opts)
+  end
+
+  defp compile_expr_list([{expr, eoe} | rest], layout, opts) when eoe != nil do
+    # Expression with eoe after it (between this and next)
+    {expr_tokens, layout} = do_to_tokens(expr, layout, opts)
+    {eoe_tokens, layout} = compile_eoe(eoe, layout)
+    {rest_tokens, layout} = compile_expr_list(rest, layout, opts)
+    {expr_tokens ++ eoe_tokens ++ rest_tokens, layout}
+  end
+
+  # ===========================================================================
+  # Helper: compile_eoe (end-of-expression markers)
+  # ===========================================================================
+
+  # eoe -> eol (newline only)
+  defp compile_eoe(:eol, layout) do
+    eol_meta = TokenLayout.meta(layout, "\n", 1)
+    layout = TokenLayout.newline(layout)
+    {[{:eol, eol_meta}], layout}
+  end
+
+  # eoe -> ';' (semicolon only)
+  defp compile_eoe(:semi, layout) do
+    {semi_meta, layout} = TokenLayout.stick_right(layout, ";", nil)
+    {[{:";", semi_meta}], layout}
+  end
+
+  # eoe -> eol ';' (newline followed by semicolon)
+  defp compile_eoe(:eol_semi, layout) do
+    eol_meta = TokenLayout.meta(layout, "\n", 1)
+    layout = TokenLayout.newline(layout)
+    {semi_meta, layout} = TokenLayout.stick_right(layout, ";", nil)
+    {[{:eol, eol_meta}, {:";", semi_meta}], layout}
   end
 
   # ===========================================================================

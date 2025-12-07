@@ -73,7 +73,17 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
   # ===========================================================================
 
   @doc """
-  Generate a grammar tree.
+  Generate a grammar tree using category-aware generators.
+
+  Models all grammar variants per elixir_parser.yrl:
+  - `grammar -> expr_list` (no leading/trailing eoe)
+  - `grammar -> expr_list eoe` (trailing eoe)
+  - `grammar -> eoe expr_list` (leading eoe)
+  - `grammar -> eoe expr_list eoe` (both)
+  - `grammar -> eoe` (just eoe, empty program)
+  - `grammar -> '$empty'` (completely empty)
+
+  Uses `{:grammar_v2, leading_eoe, [{expr, eoe|nil}], trailing_eoe}` format.
 
   ## Options
 
@@ -84,6 +94,79 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
   """
   @spec grammar(keyword()) :: StreamData.t(GrammarTree.t())
   def grammar(opts \\ []) do
+    phase = Keyword.get(opts, :phase, 1)
+    max_depth = Keyword.get(opts, :max_depth, 4)
+    max_nodes = Keyword.get(opts, :max_nodes, 100)
+    max_forms = Keyword.get(opts, :max_forms, 3)
+
+    # Set allow_unmatched: true for top-level context
+    context = %{GrammarTree.phase1_context() | allow_unmatched: true, phase: phase}
+    state = %{budget: GrammarTree.initial_budget(max_depth, max_nodes), context: context}
+
+    # Generate all grammar variants with appropriate frequencies
+    StreamData.frequency([
+      # grammar -> expr_list (most common)
+      {5, gen_grammar_expr_list(state, max_forms)},
+      # grammar -> expr_list eoe (trailing newline - common)
+      {3, gen_grammar_expr_list_eoe(state, max_forms)},
+      # grammar -> eoe expr_list (leading newline - less common)
+      {1, gen_grammar_eoe_expr_list(state, max_forms)},
+      # grammar -> eoe expr_list eoe (both - rare)
+      {1, gen_grammar_eoe_expr_list_eoe(state, max_forms)}
+      # Note: grammar -> eoe and grammar -> '$empty' omitted (edge cases)
+    ])
+  end
+
+  # grammar -> expr_list : build_block(reverse('$1')).
+  defp gen_grammar_expr_list(state, max_forms) do
+    StreamData.bind(StreamData.integer(1..max_forms), fn count ->
+      gen_expr_list(state, count)
+    end)
+    |> StreamData.map(fn exprs -> {:grammar_v2, nil, exprs, nil} end)
+  end
+
+  # grammar -> expr_list eoe : build_block(reverse(annotate_eoe('$2', '$1'))).
+  defp gen_grammar_expr_list_eoe(state, max_forms) do
+    StreamData.bind(StreamData.integer(1..max_forms), fn count ->
+      StreamData.bind(gen_expr_list(state, count), fn exprs ->
+        StreamData.bind(gen_eoe(), fn trailing_eoe ->
+          StreamData.constant({:grammar_v2, nil, exprs, trailing_eoe})
+        end)
+      end)
+    end)
+  end
+
+  # grammar -> eoe expr_list : build_block(reverse('$2')).
+  defp gen_grammar_eoe_expr_list(state, max_forms) do
+    StreamData.bind(gen_eoe(), fn leading_eoe ->
+      StreamData.bind(StreamData.integer(1..max_forms), fn count ->
+        gen_expr_list(state, count)
+      end)
+      |> StreamData.map(fn exprs -> {:grammar_v2, leading_eoe, exprs, nil} end)
+    end)
+  end
+
+  # grammar -> eoe expr_list eoe : build_block(reverse(annotate_eoe('$3', '$2'))).
+  defp gen_grammar_eoe_expr_list_eoe(state, max_forms) do
+    StreamData.bind(gen_eoe(), fn leading_eoe ->
+      StreamData.bind(StreamData.integer(1..max_forms), fn count ->
+        StreamData.bind(gen_expr_list(state, count), fn exprs ->
+          StreamData.bind(gen_eoe(), fn trailing_eoe ->
+            StreamData.constant({:grammar_v2, leading_eoe, exprs, trailing_eoe})
+          end)
+        end)
+      end)
+    end)
+  end
+
+  @doc """
+  Generate a grammar tree using legacy format.
+
+  Uses `{:grammar, [expr]}` format for backward compatibility with existing tests.
+  Does not use category-aware generators.
+  """
+  @spec grammar_legacy(keyword()) :: StreamData.t(GrammarTree.t())
+  def grammar_legacy(opts \\ []) do
     _phase = Keyword.get(opts, :phase, 1)
     max_depth = Keyword.get(opts, :max_depth, 4)
     max_nodes = Keyword.get(opts, :max_nodes, 100)
@@ -116,10 +199,65 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
   end
 
   # ===========================================================================
+  # Generator: expr_list (expressions with eoe markers)
+  # ===========================================================================
+
+  # Per grammar rules:
+  #   expr_list -> expr : ['$1'].
+  #   expr_list -> expr_list eoe expr : ['$3' | annotate_eoe('$2', '$1')].
+  #
+  # The eoe goes BETWEEN expressions, not after the last one.
+  # Returns list of {expr, eoe | nil} tuples where last has nil.
+
+  defp gen_expr_list(_state, count) when count <= 0 do
+    StreamData.constant([])
+  end
+
+  defp gen_expr_list(state, 1) do
+    # Single expression, NO eoe (per: expr_list -> expr)
+    StreamData.bind(gen_expr(state), fn expr ->
+      StreamData.constant([{expr, nil}])
+    end)
+  end
+
+  defp gen_expr_list(state, count) when count > 1 do
+    # First expr has eoe after it (between this and next)
+    StreamData.bind(gen_expr(state), fn expr ->
+      StreamData.bind(gen_eoe(), fn eoe ->
+        StreamData.bind(gen_expr_list(GrammarTree.decr_nodes(state), count - 1), fn rest ->
+          StreamData.constant([{expr, eoe} | rest])
+        end)
+      end)
+    end)
+  end
+
+  # ===========================================================================
   # Generator: expressions
   # ===========================================================================
 
+  # Generate expression based on context.
+  # Per grammar rule: expr -> matched_expr | no_parens_expr | unmatched_expr
   defp gen_expr(state) do
+    if GrammarTree.budget_exhausted?(state) do
+      # Literal is a matched_expr
+      gen_fallback_literal()
+    else
+      if state.context.allow_unmatched do
+        # Top-level context: can generate any expression type
+        StreamData.frequency([
+          {6, gen_matched_expr(state)},
+          {3, gen_unmatched_expr(state)}
+          # no_parens_expr deferred to Phase 3+
+        ])
+      else
+        # Restricted context (e.g., operand position): only matched
+        gen_matched_expr(state)
+      end
+    end
+  end
+
+  # Legacy gen_expr for backward compatibility (used by gen_fn_single, etc.)
+  defp gen_expr_legacy(state) do
     if GrammarTree.budget_exhausted?(state) do
       gen_fallback_literal()
     else
@@ -767,5 +905,245 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
       {1, StreamData.constant({:bool_lit, true})},
       {1, StreamData.constant({:bool_lit, false})}
     ])
+  end
+
+  # ===========================================================================
+  # Generator: eoe (end-of-expression)
+  # ===========================================================================
+
+  @doc """
+  Generate end-of-expression marker.
+
+  Per grammar rules 331-333:
+  - `:eol` - newline only
+  - `:semi` - semicolon only
+  - `:eol_semi` - newline followed by semicolon
+  """
+  def gen_eoe do
+    StreamData.frequency([
+      {7, StreamData.constant(:eol)},
+      {2, StreamData.constant(:semi)},
+      {1, StreamData.constant(:eol_semi)}
+    ])
+  end
+
+  # ===========================================================================
+  # Category-Aware Generators (per grammar alignment)
+  # ===========================================================================
+
+  @doc """
+  Generate a matched expression (safe as operands).
+
+  Per grammar lines 155-161, matched expressions include:
+  - matched_op (binary ops with matched operands)
+  - matched_unary (unary ops with matched operands)
+  - call_no_parens_one
+  - sub_matched_expr (access_expr, nullary ops)
+  """
+  def gen_matched_expr(state) do
+    if GrammarTree.budget_exhausted?(state) do
+      gen_sub_matched_expr(state)
+    else
+      StreamData.frequency([
+        {4, gen_sub_matched_expr(state)},
+        {3, gen_matched_op(state)},
+        {2, gen_matched_unary(state)},
+        {1, gen_call_no_parens_one(state)}
+      ])
+    end
+  end
+
+  @doc """
+  Generate an unmatched expression (has trailing do block).
+
+  Per grammar lines 163-171, unmatched expressions include:
+  - call_do (if, unless, case, try, etc.)
+  - unmatched_op (binary op with unmatched right operand)
+  """
+  def gen_unmatched_expr(state) do
+    if GrammarTree.budget_exhausted?(state) do
+      # Fallback to simple call_do when budget exhausted
+      gen_simple_call_do(state)
+    else
+      StreamData.frequency([
+        {5, gen_call_do(state)},
+        {3, gen_unmatched_op(state)}
+      ])
+    end
+  end
+
+  @doc """
+  Generate a sub-matched expression (atomic/access expressions).
+
+  Per grammar lines 263-267, includes:
+  - access_expr (literals, identifiers, fn, calls, etc.)
+  - Nullary range_op (..)
+  - Nullary ellipsis_op (...)
+  """
+  def gen_sub_matched_expr(state) do
+    StreamData.frequency([
+      {10, gen_access_expr(state)},
+      {1, gen_nullary_range()},
+      {1, gen_nullary_ellipsis()}
+    ])
+  end
+
+  @doc """
+  Generate an access expression (leaf nodes).
+
+  Per grammar lines 273-301, includes:
+  - Literals (int, float, char, atom, bool, nil)
+  - Identifiers and aliases
+  - fn expressions
+  - Parenthesized calls
+  - Captures
+  - Parenthesized expressions
+  """
+  def gen_access_expr(state) do
+    if GrammarTree.budget_exhausted?(state) do
+      gen_fallback_literal()
+    else
+      StreamData.frequency([
+        {5, gen_literal()},
+        {3, gen_identifier()},
+        {2, gen_alias()},
+        {2, gen_fn_single(state)},
+        {2, gen_call_parens(state)},
+        {1, gen_capture_int()},
+        {1, gen_paren_expr(state)}
+      ])
+    end
+  end
+
+  # ===========================================================================
+  # Category-Aware: Matched Operators
+  # ===========================================================================
+
+  # Generate matched binary operator: left op right (both matched)
+  defp gen_matched_op(state) do
+    child_state = GrammarTree.decr_depth(state)
+    # Set context to disallow unmatched in operands
+    restricted_state = restrict_unmatched(child_state)
+
+    operand_gen =
+      if child_state.budget.depth <= 1 do
+        gen_sub_matched_expr(restricted_state)
+      else
+        gen_matched_expr(restricted_state)
+      end
+
+    StreamData.bind(operand_gen, fn left ->
+      StreamData.bind(gen_op_eol(), fn op_eol ->
+        StreamData.bind(operand_gen, fn right ->
+          StreamData.constant({:matched_op, left, op_eol, right})
+        end)
+      end)
+    end)
+  end
+
+  # Generate matched unary operator: op operand (operand matched)
+  defp gen_matched_unary(state) do
+    child_state = GrammarTree.decr_depth(state)
+    restricted_state = restrict_unmatched(child_state)
+
+    operand_gen =
+      if child_state.budget.depth <= 1 do
+        gen_sub_matched_expr(restricted_state)
+      else
+        gen_matched_expr(restricted_state)
+      end
+
+    StreamData.bind(StreamData.member_of(@unary_ops), fn {op_kind, op} ->
+      StreamData.bind(operand_gen, fn operand ->
+        StreamData.constant({:matched_unary, {op_kind, op}, operand})
+      end)
+    end)
+  end
+
+  # ===========================================================================
+  # Category-Aware: Unmatched Operators
+  # ===========================================================================
+
+  # Generate unmatched binary operator: left op right (right is unmatched)
+  defp gen_unmatched_op(state) do
+    child_state = GrammarTree.decr_depth(state)
+    restricted_state = restrict_unmatched(child_state)
+
+    left_gen =
+      if child_state.budget.depth <= 1 do
+        gen_sub_matched_expr(restricted_state)
+      else
+        gen_matched_expr(restricted_state)
+      end
+
+    right_gen =
+      if child_state.budget.depth <= 1 do
+        gen_simple_call_do(child_state)
+      else
+        gen_unmatched_expr(child_state)
+      end
+
+    StreamData.bind(left_gen, fn left ->
+      StreamData.bind(gen_op_eol(), fn op_eol ->
+        StreamData.bind(right_gen, fn right ->
+          StreamData.constant({:unmatched_op, left, op_eol, right})
+        end)
+      end)
+    end)
+  end
+
+  # Generate a simple call_do when depth is limited
+  defp gen_simple_call_do(_state) do
+    StreamData.bind(gen_do_condition(), fn cond ->
+      body = [{:atom_lit, :ok}]
+      do_block = {:do_block, body, []}
+      StreamData.constant({:call_do, {:identifier, :if}, [cond], do_block})
+    end)
+  end
+
+  # ===========================================================================
+  # Category-Aware: Nullary Operators
+  # ===========================================================================
+
+  @doc "Generate nullary range operator (..)"
+  def gen_nullary_range do
+    StreamData.constant({:nullary_range, nil})
+  end
+
+  @doc "Generate nullary ellipsis operator (...)"
+  def gen_nullary_ellipsis do
+    StreamData.constant({:nullary_ellipsis, nil})
+  end
+
+  # ===========================================================================
+  # Category-Aware: Parenthesized Expressions
+  # ===========================================================================
+
+  # Generate parenthesized expression: (expr)
+  defp gen_paren_expr(state) do
+    child_state = GrammarTree.decr_depth(state)
+
+    expr_gen =
+      if child_state.budget.depth <= 1 do
+        gen_simple_expr()
+      else
+        gen_matched_expr(child_state)
+      end
+
+    StreamData.map(expr_gen, fn expr -> {:paren_expr, expr} end)
+  end
+
+  @doc "Generate empty parentheses: ()"
+  def gen_empty_paren do
+    StreamData.constant({:empty_paren, nil})
+  end
+
+  # ===========================================================================
+  # Context Helpers
+  # ===========================================================================
+
+  # Restrict context to disallow unmatched expressions
+  defp restrict_unmatched(state) do
+    %{state | context: %{state.context | allow_unmatched: false}}
   end
 end
