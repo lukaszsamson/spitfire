@@ -579,4 +579,18 @@ defmodule SpitfireReproTest do
     """
     assert Spitfire.parse(code) == s2q(code)
   end
+
+  test "repro 64" do
+    code = """
+    @@foo -- 999\
+    """
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
+  test "repro 65" do
+    code = """
+    @@bar.(0x0)\
+    """
+    assert Spitfire.parse(code) == s2q(code)
+  end
 end

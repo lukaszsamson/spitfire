@@ -1184,8 +1184,10 @@ defmodule Spitfire do
 
       effective_precedence =
         cond do
-          token_type == :at_op and
-              (attribute_value_context?(parser) or operand_token_type == :at_op) ->
+          token_type == :at_op and operand_token_type == :at_op ->
+            @at_op
+
+          token_type == :at_op and attribute_value_context?(parser) ->
             @lowest
 
           logical_not_operator?(token) ->
@@ -1196,6 +1198,13 @@ defmodule Spitfire do
         end
 
       {rhs, parser} = parse_expression(parser, effective_precedence, false, false, false)
+
+      {rhs, parser} =
+        if token_type == :at_op and operand_token_type == :at_op and peek_token_type(parser) == :"[" do
+          parse_access_expression(next_token(parser), rhs)
+        else
+          {rhs, parser}
+        end
 
       parser =
         if module_attr_alias_context? do
