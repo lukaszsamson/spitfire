@@ -376,6 +376,7 @@ defmodule Spitfire do
   # Dynamic terminal set selection based on parser context
   defp get_terminals(parser, with_comma) do
     base = if with_comma, do: @terminals_with_comma, else: @terminals
+    base = if parser.nesting > 0, do: MapSet.put(base, :do), else: base
 
     if parser.interpolation_depth > 0 do
       MapSet.put(base, :end_interpolation)
@@ -528,21 +529,23 @@ defmodule Spitfire do
 
             do_block = &parse_do_block/2
 
-            case infix do
-              nil when is_stab and peek_token_type == :stab_op ->
-                parser = Map.put(parser, :stab_state, %{ast: left})
-                # this will be ignored on the return
-                {left, parser}
+             allow_do? = Map.get(parser, :allow_do_in_args, false)
 
-              nil ->
-                {left, parser}
+             case infix do
+               nil when is_stab and peek_token_type == :stab_op ->
+                 parser = Map.put(parser, :stab_state, %{ast: left})
+                 # this will be ignored on the return
+                 {left, parser}
 
-              ^do_block when parser.nesting != 0 ->
-                {left, next_token(parser)}
+               nil ->
+                 {left, parser}
 
-              _ ->
-                infix.(next_token(parser), left)
-            end
+               ^do_block when parser.nesting != 0 and not allow_do? ->
+                 {left, next_token(parser)}
+
+               _ ->
+                 infix.(next_token(parser), left)
+             end
           end
         else
           {left, parser}
@@ -3494,6 +3497,7 @@ defmodule Spitfire do
         parser = next_token(parser)
 
         parser = push_nesting(parser)
+
         {first_arg, first_is_kw, parser} = parse_fn_arg_item(parser)
 
         {rest_items, parser} =
@@ -5591,16 +5595,20 @@ defmodule Spitfire do
     update_in(parser.errors, &[error | &1])
   end
 
-  @braces MapSet.new([:")", :"]", :"}", :">>"])
-  defp validate_peek(parser, current_type) do
+@braces MapSet.new([:")", :"]", :"}", :">>"])
+defp validate_peek(parser, current_type) do
+  if current_type == :do do
+    {parser, true}
+  else
     peek = peek_token_type(parser)
 
     # Inside an interpolation, :end_interpolation is a valid terminal peek.
     # Do not treat it as a syntax error or advance tokens.
-    if parser.interpolation_depth > 0 and peek == :end_interpolation do
-      {parser, true}
-    else
-      if not valid_peek?(current_type, peek) && peek != :no_peek do
+    cond do
+      parser.interpolation_depth > 0 and peek == :end_interpolation ->
+        {parser, true}
+
+      not valid_peek?(current_type, peek) && peek != :no_peek ->
         parser =
           if MapSet.member?(@braces, peek) do
             parser
@@ -5609,11 +5617,12 @@ defmodule Spitfire do
           end
 
         {put_error(parser, {current_meta(parser), "syntax error"}), false}
-      else
+
+      true ->
         {parser, true}
-      end
     end
   end
+end
 
   defp valid_peek?(ctype, _ptype) when ctype in [:identifier, :paren_identifier, :"["] do
     true

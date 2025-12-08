@@ -573,7 +573,6 @@ defmodule SpitfireReproTest do
     assert Spitfire.parse(code) == s2q(code)
   end
 
-  @tag :skip
   test "repro 60" do
     code = """
     ( delta -> spam; baz -> false)
@@ -582,7 +581,7 @@ defmodule SpitfireReproTest do
     ; ...qux(beta, bar, beta) ~>
     ( :bob -> Config)
     ; gamma(baz) ~> ...spam
-    ?\\.(@
+    ?\\\\.(@
     gamma, true != beta, delta[Mod])
     !
     @Context; @ ... ||| (; foo -> 0x0)\
@@ -695,12 +694,21 @@ defmodule SpitfireReproTest do
     assert Spitfire.parse(code) == s2q(code)
   end
 
-  @tag :skip
+  # @tag :skip
   test "repro 69" do
     code = """
     @ foo spam: gamma do Foo.Baz
     beta
     end <~> :one.- gamma ~> bar bar: :bar, gamma: Foo
+    """
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
+  test "repro 69a" do
+    code = """
+    foo gamma do Foo.Baz
+    beta
+    end
     """
     assert Spitfire.parse(code) == s2q(code)
   end
@@ -849,6 +857,219 @@ defmodule SpitfireReproTest do
     spam -> 640
     end
 
+    """
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
+  @tag :skip
+  test "repro 78" do
+    code = """
+    0.\"\"R\
+    """
+    assert Spitfire.parse(code) == s2q(code)
+
+    code = """
+    0.'!'d\
+    """
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
+  @tag :skip
+  test "repro 79" do
+    code = """
+    l[\na]\
+    """
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
+  test "repro 80" do
+    code = """
+    ^?\n*a\
+    """
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
+  @tag :skip
+  test "repro 81" do
+    code = """
+    not/l\
+    """
+    assert Spitfire.parse(code) == s2q(code)
+
+    code = """
+    [not/eoe]\
+    """
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
+  @tag :skip
+  test "repro 82" do
+    code = """
+    (s;)\
+    """
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
+  @tag :skip
+  test "repro 83" do
+    code = """
+    %-e{}\
+    """
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
+  @tag :skip
+  test "repro 84" do
+    # fn end
+    code = """
+    fn ->;t end\
+    """
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
+  test "repro 84a" do
+    # fn end
+    code = """
+    fn d->; end\
+    """
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
+  @tag :skip
+  test "repro 85" do
+    code = """
+    a do -> end\
+    """
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
+  @tag :skip
+  test "repro 85a" do
+    code = """
+    a do (dir;) end\
+    """
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
+  @tag :skip
+  test "repro 86" do
+    code = """
+    {(s=s;)}\
+    """
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
+  @tag :skip
+  test "repro 86a" do
+    code = """
+    a do x -> ;c end\
+    """
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
+  @tag :skip
+  test "repro 87" do
+    code = """
+    a do; @l^h -> 1; end\
+    """
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
+  test "repro 88" do
+    code = """
+    d&c do 1 end\
+    """
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
+  test "repro 89" do
+    code = """
+    dh^:e do 1 end\
+    """
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
+  @tag :skip
+  test "repro 90" do
+    code = """
+    h&A do 1 end\
+    """
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
+  @tag :skip
+  test "repro 91" do
+    code = """
+    not a do 1 end |r;\
+    """
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
+  @tag :skip
+  test "repro 92" do
+    code = """
+    -!d a do 1 end -!d\
+    """
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
+  @tag :skip
+  test "repro 93" do
+    code = """
+    fn a, d\\\\d -> 1 end\
+    """
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
+  @tag :skip
+  test "repro 94" do
+    code = """
+    fn a, d: e -> 1 end\
+    """
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
+  @tag :skip
+  test "repro 95" do
+    code = """
+    fn a, @d^/d -> 1 end\
+    """
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
+  @tag :skip
+  test "repro 95a" do
+    code = """
+    fn a, @d t -> 1 end\
+    """
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
+  @tag :skip
+  test "repro 95b" do
+    code = """
+    << d, >>\
+    """
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
+  @tag :skip
+  test "repro 95c" do
+    code = """
+    <<a, s: d >>\
+    """
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
+  @tag :skip
+  test "repro 96" do
+    code = """
+    a(1, s: (+f) )\
+    """
+    assert Spitfire.parse(code) == s2q(code)
+
+    code = """
+    a 1, (l;)\
     """
     assert Spitfire.parse(code) == s2q(code)
   end
