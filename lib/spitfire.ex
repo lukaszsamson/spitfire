@@ -2225,41 +2225,103 @@ defmodule Spitfire do
 
             _ ->
               # :quoted_identifier_end and any other: behave like plain identifier,
-              # but allow op-identifier style no-parens when a unary op follows.
+              # but allow op-identifier style no-parens when a unary op follows and
+              # parse trailing no-parens arguments when present.
               dot_ast = build_dot_ast.(meta)
               base_ast = {dot_ast, base_call_meta, []}
+              stop_peek? = identifier_stop_peek?(parser)
 
-              if peek_token_type(parser) == :unary_op do
-                # Consume end token to reach the unary op and parse at least one arg
-                parser = next_token(parser)
-                parser = push_nesting(parser)
-                {front, parser} = parse_expression(parser, @lowest, false, false, false)
+              cond do
+                peek_token_type(parser) == :unary_op ->
+                  parser = next_token(parser)
+                  parser = push_nesting(parser)
+                  {front, parser} = parse_expression(parser, @lowest, false, false, false)
 
-                {rest, parser} =
-                  while2 peek_token(parser) == :"," <- parser do
-                    parser = next_token(parser)
-                    parser = next_token(parser)
-                    parse_expression(parser, @lowest, false, false, false)
+                  {rest, parser} =
+                    while2 peek_token(parser) == :"," <- parser do
+                      parser = next_token(parser)
+                      parser = next_token(parser)
+                      parse_expression(parser, @lowest, false, false, false)
+                    end
+
+                  parser = pop_nesting(parser)
+
+                  ast =
+                    base_ast
+                    |> put_elem(2, List.wrap(front) ++ List.wrap(rest))
+                    |> attach_range([
+                      ast_range(dot_ast)
+                      | Enum.map(List.wrap(front) ++ List.wrap(rest), &arg_range/1)
+                    ])
+
+                  {ast, parser}
+
+                stop_peek? ->
+                  parser =
+                    if peek_token_type(parser) in @operators do
+                      parser
+                    else
+                      next_token(parser)
+                    end
+
+                  ast =
+                    base_ast
+                    |> put_elem(1, [no_parens: true] ++ base_call_meta)
+                    |> attach_range([ast_range(dot_ast)])
+
+                  {ast, parser}
+
+                true ->
+                  parser = next_token(parser)
+                  parser = push_nesting(parser)
+                  {first_arg, first_is_kw, parser} = parse_fn_arg_item(parser)
+
+                  {rest_items, parser} =
+                    while2 peek_token(parser) == :"," <- parser do
+                      parser = next_token(parser)
+                      parser = next_token(parser)
+                      {item, is_kw, parser} = parse_fn_arg_item(parser)
+                      {{item, is_kw}, parser}
+                    end
+
+                  items = [{first_arg, first_is_kw} | rest_items]
+
+                  {trailing_kw_rev, rest_rev} =
+                    items
+                    |> Enum.reverse()
+                    |> Enum.split_while(fn {_it, is_kw} -> is_kw end)
+
+                  args =
+                    case trailing_kw_rev do
+                      [] ->
+                        Enum.map(items, &elem(&1, 0))
+
+                      _ ->
+                        trailing_kw = Enum.reverse(trailing_kw_rev) |> Enum.map(&elem(&1, 0))
+                        leading = Enum.reverse(rest_rev) |> Enum.map(&elem(&1, 0))
+                        leading ++ [trailing_kw]
+                    end
+
+                  parser = pop_nesting(parser)
+
+                  parser =
+                    if parser.nesting == 0 and current_token(parser) != :do and
+                         peek_token(parser) == :do do
+                      next_token(parser)
+                    else
+                      parser
+                    end
+
+                  ast =
+                    base_ast
+                    |> put_elem(2, args)
+                    |> attach_range([ast_range(dot_ast) | Enum.map(args, &arg_range/1)])
+
+                  if parser.nesting == 0 && current_token(parser) == :do do
+                    parse_do_block(parser, ast)
+                  else
+                    {ast, parser}
                   end
-
-                parser = pop_nesting(parser)
-
-                ast =
-                  base_ast
-                  |> put_elem(2, List.wrap(front) ++ List.wrap(rest))
-                  |> attach_range([
-                    ast_range(dot_ast)
-                    | Enum.map(List.wrap(front) ++ List.wrap(rest), &arg_range/1)
-                  ])
-
-                {ast, parser}
-              else
-                ast =
-                  base_ast
-                  |> put_elem(1, [no_parens: true] ++ base_call_meta)
-                  |> attach_range([ast_range(dot_ast)])
-
-                {ast, parser}
               end
           end
 
