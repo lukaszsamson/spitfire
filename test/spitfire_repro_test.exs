@@ -455,7 +455,6 @@ defmodule SpitfireReproTest do
     assert Spitfire.parse(code) == s2q(code)
   end
 
-  @tag :skip
   test "repro 54" do
     code = """
     Config && ..
@@ -680,7 +679,6 @@ defmodule SpitfireReproTest do
     assert Spitfire.parse(code) == s2q(code)
   end
 
-  @tag :skip
   test "repro 68" do
     code = """
 
@@ -707,15 +705,11 @@ defmodule SpitfireReproTest do
     assert Spitfire.parse(code) == s2q(code)
   end
 
-  @tag :skip
   test "repro 70" do
     code = """
     ... 481.(true, State) do bar
     :bob
-    else
-    ?h
     end
-    {@ {Remote} .. ... // Config.qux[nil,], &Config.bar -- gamma 0b0}
     """
     assert Spitfire.parse(code) == s2q(code)
   end
@@ -751,7 +745,6 @@ defmodule SpitfireReproTest do
     assert Spitfire.parse(code) == s2q(code)
   end
 
-  # @tag :skip
   test "repro 73" do
     code = """
     ... & if delta do
@@ -782,7 +775,6 @@ defmodule SpitfireReproTest do
     assert Spitfire.parse(code) == s2q(code)
   end
 
-  # @tag :skip
   test "repro 74" do
     code = """
     & delta()() do
@@ -848,7 +840,6 @@ defmodule SpitfireReproTest do
     assert Spitfire.parse(code) == s2q(code)
   end
 
-  @tag :skip
   test "repro 77" do
     code = """
     alpha baz: 0x35 do; Config

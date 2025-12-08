@@ -5107,6 +5107,7 @@ defmodule Spitfire do
     |> normalize_not_pipelines()
     |> normalize_unary_ranges()
     |> normalize_capture_do_blocks()
+    |> normalize_ellipsis_call_do_blocks()
     |> normalize_ellipsis_capture_do_blocks()
     |> normalize_block_sensitive_unary()
     |> split_unary_blocks()
@@ -5306,6 +5307,30 @@ defmodule Spitfire do
           {:&, cap_meta, [{op, op_meta, [lhs, rhs]}]}
         else
           node
+        end
+
+      other ->
+        other
+    end)
+  end
+
+  defp normalize_ellipsis_call_do_blocks(ast) do
+    Macro.postwalk(ast, fn
+      {:..., meta, [{callee, call_meta, args}, [do: block]]} = node
+      when is_list(args) ->
+        {do_meta, meta} = Keyword.pop(meta, :do)
+        {end_meta, meta} = Keyword.pop(meta, :end)
+
+        if is_nil(do_meta) or is_nil(end_meta) do
+          node
+        else
+          meta = Keyword.delete(meta, :closing)
+
+          call_meta =
+            Enum.reject([{:do, do_meta}, {:end, end_meta}], fn {_, v} -> is_nil(v) end) ++
+              call_meta
+
+          {:..., meta, [{callee, call_meta, args ++ [[do: block]]}]}
         end
 
       other ->
