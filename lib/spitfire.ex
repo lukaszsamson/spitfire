@@ -1448,6 +1448,7 @@ defmodule Spitfire do
       {pending, parser} = Map.pop(parser, :pending_newlines)
       newlines = stab_newlines(parser, meta, pending)
 
+      leading_semicolon? = peek_token(parser) == :";"
       parser = eat_at(parser, [:eol, :";"], 1)
       old_nesting = parser.nesting
       parser = Map.put(parser, :nesting, 0)
@@ -1479,6 +1480,13 @@ defmodule Spitfire do
               ast = push_eoe(ast, eoe)
 
               {ast, parser}
+            end
+
+          exprs =
+            if leading_semicolon? do
+              [encode_literal(parser, nil, op_range) | exprs]
+            else
+              exprs
             end
 
           {build_block_nr(exprs), parser}
