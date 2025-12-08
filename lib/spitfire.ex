@@ -629,7 +629,11 @@ defmodule Spitfire do
 
             case infix do
               nil when is_stab and peek_token_type == :stab_op ->
-                parser = Map.put(parser, :stab_state, %{ast: left})
+                parser =
+                  parser
+                  |> next_token()
+                  |> Map.put(:stab_state, %{ast: left})
+
                 # this will be ignored on the return
                 {left, parser}
 
@@ -1287,12 +1291,14 @@ defmodule Spitfire do
           parser
         end
 
+      attr_value_context? = token_type == :at_op and attribute_value_context?(parser)
+
       effective_precedence =
         cond do
           token_type == :at_op and operand_token_type == :at_op ->
             @at_op
 
-          token_type == :at_op and attribute_value_context?(parser) ->
+          attr_value_context? ->
             @lowest
 
           logical_not_operator?(token) ->
@@ -1302,7 +1308,15 @@ defmodule Spitfire do
             precedence
         end
 
-      {rhs, parser} = parse_expression(parser, effective_precedence, false, false, false)
+      {rhs, parser} =
+        parse_expression(
+          parser,
+          effective_precedence,
+          false,
+          false,
+          false,
+          attr_value_context?
+        )
 
       {rhs, parser} =
         while peek_token_type(parser) == :"(" <- {rhs, parser} do
@@ -1365,6 +1379,13 @@ defmodule Spitfire do
             {token, meta, [rhs]}
         end
         |> attach_op_range(op_range)
+
+      parser =
+        if Map.has_key?(parser, :stab_state) do
+          Map.update!(parser, :stab_state, &Map.put(&1, :ast, ast))
+        else
+          parser
+        end
 
       {ast, parser}
     end
@@ -1442,6 +1463,13 @@ defmodule Spitfire do
 
   defp parse_stab_expression(parser) do
     trace "parse_stab_expression", trace_meta(parser) do
+      parser =
+        if current_token_type(parser) != :stab_op and peek_token_type(parser) == :stab_op do
+          next_token(parser)
+        else
+          parser
+        end
+
       token = current_token(parser)
       meta = current_meta(parser)
       op_range = token_range(parser.current_token)
@@ -1528,6 +1556,13 @@ defmodule Spitfire do
 
   defp parse_stab_expression(parser, lhs) do
     trace "parse_stab_expression (with lhs)", trace_meta(parser) do
+      parser =
+        if current_token_type(parser) != :stab_op and peek_token_type(parser) == :stab_op do
+          next_token(parser)
+        else
+          parser
+        end
+
       token = current_token(parser)
       op_range = token_range(parser.current_token)
 
@@ -1562,7 +1597,7 @@ defmodule Spitfire do
 
                 {ast, eat_eol(parser)}
               else
-                {:filter, {nil, next_token(parser)}}
+                {:filter, {nil, parser}}
               end
             end
 
@@ -2082,7 +2117,8 @@ defmodule Spitfire do
   end
 
   defp parse_do_exprs(parser, acc) do
-    if peek_token_eat_eol(parser) in [:end, :block_identifier, :eof] do
+    if Map.get(parser, :stab_state) == nil and
+         peek_token_eat_eol(parser) in [:end, :block_identifier, :eof] do
       {Enum.reverse(acc), parser}
     else
       {ast, parser} =
@@ -2092,7 +2128,26 @@ defmodule Spitfire do
 
           nil ->
             parser = parser |> next_token() |> eat_eol()
-            parse_expression(parser, @lowest, false, false, true)
+
+            parser =
+              if current_token(parser) in [:eol, :";"] do
+                skip_eoe(parser)
+              else
+                parser
+              end
+
+            {ast, parser} = parse_expression(parser, @lowest, false, false, true)
+
+            case {Map.get(parser, :stab_state), ast} do
+              {%{ast: _}, {op, _, _}} when op in [:->, :<-] ->
+                {ast, parser}
+
+              {%{ast: lhs}, _} ->
+                parse_stab_expression(Map.delete(parser, :stab_state), lhs)
+
+              _ ->
+                {ast, parser}
+            end
         end
 
       eoe = peek_eoe(parser)
@@ -5814,30 +5869,35 @@ defmodule Spitfire do
 
   @braces MapSet.new([:")", :"]", :"}", :">>"])
   defp validate_peek(parser, current_type) do
-    if current_type == :do do
-      {parser, true}
-    else
-      peek = peek_token_type(parser)
+    cond do
+      current_type == :do ->
+        {parser, true}
 
-      # Inside an interpolation, :end_interpolation is a valid terminal peek.
-      # Do not treat it as a syntax error or advance tokens.
-      cond do
-        parser.interpolation_depth > 0 and peek == :end_interpolation ->
-          {parser, true}
+      current_type == :stab_op ->
+        {parser, true}
 
-        not valid_peek?(current_type, peek) && peek != :no_peek ->
-          parser =
-            if MapSet.member?(@braces, peek) do
-              parser
-            else
-              next_token(parser)
-            end
+      true ->
+        peek = peek_token_type(parser)
 
-          {put_error(parser, {current_meta(parser), "syntax error"}), false}
+        # Inside an interpolation, :end_interpolation is a valid terminal peek.
+        # Do not treat it as a syntax error or advance tokens.
+        cond do
+          parser.interpolation_depth > 0 and peek == :end_interpolation ->
+            {parser, true}
 
-        true ->
-          {parser, true}
-      end
+          not valid_peek?(current_type, peek) && peek != :no_peek ->
+            parser =
+              if MapSet.member?(@braces, peek) do
+                parser
+              else
+                next_token(parser)
+              end
+
+            {put_error(parser, {current_meta(parser), "syntax error"}), false}
+
+          true ->
+            {parser, true}
+        end
     end
   end
 
