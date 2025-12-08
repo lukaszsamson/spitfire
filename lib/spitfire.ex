@@ -1976,18 +1976,41 @@ defmodule Spitfire do
 
       {sections, type, parser} = parse_do_sections(parser, type, [])
 
-      {parser, end_meta} =
-        if peek_token_eat_eol(parser) == :end do
-          parser = parser |> next_token() |> eat_eol()
-          {parser, current_meta(parser)}
-        else
-          {put_error(parser, {do_meta, "missing `end` for do block"}), do_meta}
-        end
+      {parser, end_meta, end_range} =
+        cond do
+          peek_token_eat_eol(parser) == :end ->
+            parser = parser |> next_token() |> eat_eol()
+            {parser, current_meta(parser), token_range(parser.current_token)}
 
-      end_range =
-        case parser.current_token do
-          {:end, _} -> token_range(parser.current_token)
-          _ -> nil
+          current_token(parser) == :end ->
+            closing_meta = current_meta(parser)
+
+            last_end_meta =
+              case sections do
+                [] ->
+                  nil
+
+                _ ->
+                  sections
+                  |> List.last()
+                  |> elem(1)
+                  |> List.last()
+                  |> case do
+                    {_, meta, _} -> Keyword.get(meta, :end)
+                    _ -> nil
+                  end
+              end
+
+            if last_end_meta && last_end_meta == closing_meta do
+              {put_error(parser, {do_meta, "missing `end` for do block"}), do_meta, nil}
+            else
+              end_range = token_range(parser.current_token)
+              parser = parser |> next_token() |> eat_eol()
+              {parser, closing_meta, end_range}
+            end
+
+          true ->
+            {put_error(parser, {do_meta, "missing `end` for do block"}), do_meta, nil}
         end
 
       exprs =
