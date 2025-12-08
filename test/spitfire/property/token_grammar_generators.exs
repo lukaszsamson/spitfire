@@ -2870,14 +2870,41 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
   end
 
   # Generate @(expr)[key]
+  # Per grammar: bracket_at_expr -> at_op_eol access_expr bracket_arg
+  # The access_expr can be any of: literals, aliases, fn, parens calls, lists, tuples, etc.
+  # We use a subset to avoid deep recursion (excluding bracket_at_expr itself)
   defp gen_bracket_at_access_expr(state) do
     child_state = GrammarTree.decr_depth(state)
 
+    # Generate access_expr variants (excluding bracket_at_expr to avoid recursion)
     expr_gen =
-      StreamData.frequency([
-        {3, gen_simple_expr()},
-        {1, gen_dot_identifier(child_state)}
-      ])
+      if child_state.budget.depth <= 1 do
+        # At shallow depth, use simple expressions
+        gen_simple_expr()
+      else
+        StreamData.frequency([
+          # Simple expressions (literals, identifiers)
+          {4, gen_simple_expr()},
+          # Aliases: @Mod[key]
+          {2, gen_alias()},
+          # Lists: @[1,2,3][0]
+          {2, gen_list(child_state)},
+          # Tuples: @{:ok, val}[0] - note: requires special handling
+          {2, gen_tuple(child_state)},
+          # Parens calls: @foo()[bar]
+          {2, gen_call_parens(child_state)},
+          # fn expressions: @(fn -> :ok end)[x]
+          {1, gen_fn_single(child_state)},
+          # Paren expressions: @(expr)[key]
+          {1, gen_paren_expr(child_state)},
+          # Dot identifiers: @Mod.foo[bar] (covered by dot_bracket_identifier, but also valid here)
+          {1, gen_dot_identifier(child_state)},
+          # Bracket expr: @foo[a][b] (nested bracket access)
+          {1, gen_bracket_expr(child_state)},
+          # Bitstrings: @<<1,2>>[x]
+          {1, gen_bitstring(child_state)}
+        ])
+      end
 
     StreamData.bind(gen_newlines(), fn newlines ->
       StreamData.bind(expr_gen, fn expr ->
