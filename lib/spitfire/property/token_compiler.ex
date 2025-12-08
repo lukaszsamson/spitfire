@@ -1109,6 +1109,34 @@ defmodule Spitfire.Property.TokenCompiler do
   # do_block expressions (Phase 2)
   # ---------------------------------------------------------------------------
 
+  # Backward compatibility: convert old 3-element do_block to new 4-element format
+  # Old format: {:do_block, body, extras}
+  # New format: {:do_block, do_eoe, body, extras}
+  defp do_to_tokens({:call_do, target, args, {:do_block, body, extras}}, layout, opts)
+       when is_list(body) do
+    do_to_tokens({:call_do, target, args, {:do_block, :eol, body, extras}}, layout, opts)
+  end
+
+  defp do_to_tokens({:block_parens, target, args, {:do_block, body, extras}}, layout, opts)
+       when is_list(body) do
+    do_to_tokens({:block_parens, target, args, {:do_block, :eol, body, extras}}, layout, opts)
+  end
+
+  defp do_to_tokens({:block_parens_nested, target, args1, args2, {:do_block, body, extras}}, layout, opts)
+       when is_list(body) do
+    do_to_tokens({:block_parens_nested, target, args1, args2, {:do_block, :eol, body, extras}}, layout, opts)
+  end
+
+  defp do_to_tokens({:block_no_parens_op, target, args, {:do_block, body, extras}}, layout, opts)
+       when is_list(body) do
+    do_to_tokens({:block_no_parens_op, target, args, {:do_block, :eol, body, extras}}, layout, opts)
+  end
+
+  defp do_to_tokens({:block_no_parens, target, args, {:do_block, body, extras}}, layout, opts)
+       when is_list(body) do
+    do_to_tokens({:block_no_parens, target, args, {:do_block, :eol, body, extras}}, layout, opts)
+  end
+
   # call_do: identifier do body end (e.g., if true do :yes end)
   defp do_to_tokens({:call_do, {:identifier, name}, args, {:do_block, do_eoe, body, extras}}, layout, opts) do
     # Compile identifier as do_identifier
