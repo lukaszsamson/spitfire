@@ -1100,15 +1100,42 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
   #   2. do_eoe stab_eoe 'end'         -> stab clauses, no extras
   #   3. do_eoe block_list 'end'       -> empty body, with extras
   #   4. do_eoe stab_eoe block_list 'end' -> stab clauses, with extras
+  #
+  # Per grammar lines 338-339:
+  #   do_eoe -> 'do'         (inline: do expr end)
+  #   do_eoe -> 'do' eoe     (with eoe: do\n expr end or do; expr end)
+  #
+  # The do_eoe field can be:
+  #   :none - inline form, no eol after 'do'
+  #   :eol  - newline after 'do' (most common)
+  #   :semi - semicolon after 'do'
   defp gen_do_block(state) do
     body_gen = gen_do_body(state)
     extras_gen = gen_block_extras(state)
+    do_eoe_gen = gen_do_eoe()
 
-    StreamData.bind(body_gen, fn body ->
-      StreamData.bind(extras_gen, fn extras ->
-        StreamData.constant({:do_block, body, extras})
+    StreamData.bind(do_eoe_gen, fn do_eoe ->
+      StreamData.bind(body_gen, fn body ->
+        StreamData.bind(extras_gen, fn extras ->
+          StreamData.constant({:do_block, do_eoe, body, extras})
+        end)
       end)
     end)
+  end
+
+  # Generate do_eoe variant (whether 'do' is followed by eol, semicolon, or nothing)
+  # Per grammar:
+  #   do_eoe -> 'do'      (inline)
+  #   do_eoe -> 'do' eoe  (eoe = eol | ';' | eol ';')
+  defp gen_do_eoe do
+    StreamData.frequency([
+      # Most common: newline after 'do'
+      {7, StreamData.constant(:eol)},
+      # Inline form: do :expr end (no eol, for simple single expressions)
+      {2, StreamData.constant(:none)},
+      # Semicolon form: do; expr end (rare but valid)
+      {1, StreamData.constant(:semi)}
+    ])
   end
 
   # Generate body for do block - can be:
@@ -2794,9 +2821,41 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
     StreamData.frequency([
       # @identifier[key]: @foo[bar]
       {4, gen_bracket_at_identifier(child_state)},
+      # @expr.foo[key]: @Mod.foo[bar] (dotted bracket identifier)
+      {2, gen_bracket_at_dot_bracket_identifier(child_state)},
       # @(expr)[key]: @(foo)[bar] - less common
       {1, gen_bracket_at_access_expr(child_state)}
     ])
+  end
+
+  # Generate @matched_expr.bracket_identifier[key]
+  defp gen_bracket_at_dot_bracket_identifier(state) do
+    child_state = GrammarTree.decr_depth(state)
+    restricted = restrict_unmatched(child_state)
+
+    left_gen =
+      if child_state.budget.depth <= 1 do
+        StreamData.frequency([
+          {2, gen_alias()},
+          {1, gen_identifier()}
+        ])
+      else
+        StreamData.frequency([
+          {3, gen_alias()},
+          {2, gen_identifier()},
+          {1, gen_sub_matched_expr(restricted)}
+        ])
+      end
+
+    StreamData.bind(gen_newlines(), fn newlines ->
+      StreamData.bind(left_gen, fn left ->
+        StreamData.bind(StreamData.member_of(@identifiers), fn name ->
+          StreamData.bind(gen_bracket_arg(state), fn arg ->
+            StreamData.constant({:bracket_at_expr, newlines, {:dot_bracket_identifier, left, name}, arg})
+          end)
+        end)
+      end)
+    end)
   end
 
   # Generate @identifier[key]
@@ -2855,34 +2914,46 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
     end)
   end
 
-  # Generate bracket argument: the [key] part
-  # Supports multiple variants per elixir_parser.yrl:
-  # - kw_data (keyword list) => {:kw_args, pairs}
-  # - container_expr (single expression)
-  # - container_expr with trailing comma => {:trailing, expr}
-  # NOTE: error_too_many_access_syntax (too many access args) is TODO
+  # Generate bracket argument per grammar lines 307-310:
+  # bracket_arg -> open_bracket kw_data close_bracket            (Rule 1)
+  # bracket_arg -> open_bracket container_expr close_bracket     (Rule 2)
+  # bracket_arg -> open_bracket container_expr ',' close_bracket (Rule 3 - trailing comma)
+  # bracket_arg -> open_bracket container_expr ',' container_args close_bracket (Rule 4 - ERROR)
+  #
+  # Note: Rule 4 is an error case (error_too_many_access_syntax) and is NOT generated.
+  #
+  # Container_expr per grammar (lines 533-535) can be:
+  # - matched_expr
+  # - unmatched_expr (e.g., do-blocks, unary ops with unmatched args)
+  # - no_parens_expr (error case, not generated)
   defp gen_bracket_arg(state) do
     child_state = GrammarTree.decr_depth(state)
+    restricted_state = restrict_unmatched(child_state)
+
+    # Generate a container_expr - can be matched or unmatched
+    # Per grammar: container_expr -> matched_expr | unmatched_expr
+    container_expr_gen =
+      if child_state.budget.depth <= 1 do
+        gen_simple_expr()
+      else
+        StreamData.frequency([
+          # matched_expr - most common case
+          {8, gen_matched_expr(restricted_state)},
+          # unmatched_expr - do-blocks, prefix ops with unmatched args
+          # Use lower frequency as these are more complex constructs
+          {1, gen_unmatched_expr(restricted_state)}
+        ])
+      end
 
     StreamData.frequency([
-      # Single key expression: foo[bar]
-      {5, gen_simple_expr()},
-      # Container expression(s): foo[1, 2]  or foo[[a, b]]
-      {3, StreamData.bind(StreamData.integer(1..3), fn count ->
-        StreamData.bind(gen_container_args(child_state, count), fn args ->
-          # If single element, return the element (container_expr case);
-          # if multiple, return the list to model container_args (too-many case)
-          if length(args) == 1 do
-            StreamData.constant(hd(args))
-          else
-            StreamData.constant(args)
-          end
-        end)
-      end)},
-      # Keyword data: foo[a: 1, b: 2]
-      {1, gen_call_args_no_parens_kw()},
-      # Single key with trailing comma: foo[bar,]
-      {1, StreamData.bind(gen_simple_expr(), fn expr -> StreamData.constant({:trailing, expr}) end)}
+      # Rule 2: Single container expression: foo[bar], foo[x + y], foo[func()]
+      {6, container_expr_gen},
+      # Rule 1: Keyword data: foo[a: 1], foo[a: 1, b: 2]
+      {2, gen_call_args_no_parens_kw()},
+      # Rule 3: Container expr with trailing comma: foo[bar,], foo[x + y,]
+      {1, StreamData.bind(container_expr_gen, fn expr ->
+        StreamData.constant({:trailing, expr})
+      end)}
     ])
   end
 

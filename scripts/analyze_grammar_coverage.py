@@ -207,14 +207,14 @@ def run_agent(prompt: str, model: str, tool: str, cwd: Path) -> Tuple[str, int]:
             capture_output=True,
             text=True,
             cwd=cwd,
-            timeout=600  # 10 minute timeout per nonterminal
+            timeout=1800  # 20 minute timeout per nonterminal
         )
         output = result.stdout
         if result.stderr:
             output += "\n\nSTDERR:\n" + result.stderr
         return output, result.returncode
     except subprocess.TimeoutExpired:
-        return "ERROR: Command timed out after 10 minutes", 1
+        return "ERROR: Command timed out after 20 minutes", 1
     except FileNotFoundError:
         return f"ERROR: {tool} command not found. Is it installed and in PATH?", 1
     except Exception as e:

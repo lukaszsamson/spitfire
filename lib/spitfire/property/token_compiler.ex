@@ -1110,7 +1110,7 @@ defmodule Spitfire.Property.TokenCompiler do
   # ---------------------------------------------------------------------------
 
   # call_do: identifier do body end (e.g., if true do :yes end)
-  defp do_to_tokens({:call_do, {:identifier, name}, args, {:do_block, body, extras}}, layout, opts) do
+  defp do_to_tokens({:call_do, {:identifier, name}, args, {:do_block, do_eoe, body, extras}}, layout, opts) do
     # Compile identifier as do_identifier
     name_str = Atom.to_string(name)
     chars = String.to_charlist(name_str)
@@ -1124,10 +1124,8 @@ defmodule Spitfire.Property.TokenCompiler do
     {do_meta, layout} = TokenLayout.space_before(layout, "do", nil)
     do_token = {:do, do_meta}
 
-    # Newline after do
-    eol_meta = TokenLayout.meta(layout, "\n", 1)
-    eol_token = {:eol, eol_meta}
-    layout = TokenLayout.newline(layout)
+    # Compile do_eoe (newline, semicolon, or inline)
+    {eoe_tokens, layout} = compile_do_eoe(do_eoe, layout, opts)
 
     # Compile body expressions
     {body_tokens, layout} = compile_do_body(body, layout, opts)
@@ -1139,12 +1137,12 @@ defmodule Spitfire.Property.TokenCompiler do
     {end_meta, layout} = TokenLayout.space_before(layout, "end", nil)
     end_token = {:end, end_meta}
 
-    {[id_token] ++ args_tokens ++ [do_token, eol_token] ++ body_tokens ++ extras_tokens ++ [end_token], layout}
+    {[id_token] ++ args_tokens ++ [do_token] ++ eoe_tokens ++ body_tokens ++ extras_tokens ++ [end_token], layout}
   end
 
   # call_do with dot_do_identifier target: Mod.if true do :yes end
   # Per grammar: matched_expr dot_op do_identifier
-  defp do_to_tokens({:call_do, {:dot_do_identifier, left, name}, args, {:do_block, body, extras}}, layout, opts) do
+  defp do_to_tokens({:call_do, {:dot_do_identifier, left, name}, args, {:do_block, do_eoe, body, extras}}, layout, opts) do
     # Compile left side (matched_expr)
     {left_tokens, layout} = do_to_tokens(left, layout, opts)
 
@@ -1165,10 +1163,8 @@ defmodule Spitfire.Property.TokenCompiler do
     {do_meta, layout} = TokenLayout.space_before(layout, "do", nil)
     do_token = {:do, do_meta}
 
-    # Newline after do
-    eol_meta = TokenLayout.meta(layout, "\n", 1)
-    eol_token = {:eol, eol_meta}
-    layout = TokenLayout.newline(layout)
+    # Compile do_eoe (newline, semicolon, or inline)
+    {eoe_tokens, layout} = compile_do_eoe(do_eoe, layout, opts)
 
     # Compile body expressions
     {body_tokens, layout} = compile_do_body(body, layout, opts)
@@ -1180,7 +1176,7 @@ defmodule Spitfire.Property.TokenCompiler do
     {end_meta, layout} = TokenLayout.space_before(layout, "end", nil)
     end_token = {:end, end_meta}
 
-    {left_tokens ++ [dot_token, id_token] ++ args_tokens ++ [do_token, eol_token] ++ body_tokens ++ extras_tokens ++ [end_token], layout}
+    {left_tokens ++ [dot_token, id_token] ++ args_tokens ++ [do_token] ++ eoe_tokens ++ body_tokens ++ extras_tokens ++ [end_token], layout}
   end
 
   # ---------------------------------------------------------------------------
@@ -1188,7 +1184,7 @@ defmodule Spitfire.Property.TokenCompiler do
   # Examples: foo() do end, Mod.func() do end, expr.() do end
   # ---------------------------------------------------------------------------
 
-  defp do_to_tokens({:block_parens, target, args, {:do_block, body, extras}}, layout, opts) do
+  defp do_to_tokens({:block_parens, target, args, {:do_block, do_eoe, body, extras}}, layout, opts) do
     # Compile target (paren_identifier, dot_paren_identifier, or dot_call)
     {target_tokens, layout} = compile_block_parens_target(target, layout, opts)
 
@@ -1207,10 +1203,8 @@ defmodule Spitfire.Property.TokenCompiler do
     {do_meta, layout} = TokenLayout.space_before(layout, "do", nil)
     do_token = {:do, do_meta}
 
-    # Newline after do
-    eol_meta = TokenLayout.meta(layout, "\n", 1)
-    eol_token = {:eol, eol_meta}
-    layout = TokenLayout.newline(layout)
+    # Compile do_eoe (newline, semicolon, or inline)
+    {eoe_tokens, layout} = compile_do_eoe(do_eoe, layout, opts)
 
     # Compile body expressions
     {body_tokens, layout} = compile_do_body(body, layout, opts)
@@ -1222,7 +1216,7 @@ defmodule Spitfire.Property.TokenCompiler do
     {end_meta, layout} = TokenLayout.space_before(layout, "end", nil)
     end_token = {:end, end_meta}
 
-    {target_tokens ++ [lparen_token] ++ args_tokens ++ [rparen_token, do_token, eol_token] ++
+    {target_tokens ++ [lparen_token] ++ args_tokens ++ [rparen_token, do_token] ++ eoe_tokens ++
        body_tokens ++ extras_tokens ++ [end_token], layout}
   end
 
@@ -1231,7 +1225,7 @@ defmodule Spitfire.Property.TokenCompiler do
   # Examples: foo()() do end, Mod.func()() do end
   # ---------------------------------------------------------------------------
 
-  defp do_to_tokens({:block_parens_nested, target, args1, args2, {:do_block, body, extras}}, layout, opts) do
+  defp do_to_tokens({:block_parens_nested, target, args1, args2, {:do_block, do_eoe, body, extras}}, layout, opts) do
     # Compile target (paren_identifier or dot_paren_identifier)
     {target_tokens, layout} = compile_block_parens_target(target, layout, opts)
 
@@ -1257,10 +1251,8 @@ defmodule Spitfire.Property.TokenCompiler do
     {do_meta, layout} = TokenLayout.space_before(layout, "do", nil)
     do_token = {:do, do_meta}
 
-    # Newline after do
-    eol_meta = TokenLayout.meta(layout, "\n", 1)
-    eol_token = {:eol, eol_meta}
-    layout = TokenLayout.newline(layout)
+    # Compile do_eoe (newline, semicolon, or inline)
+    {eoe_tokens, layout} = compile_do_eoe(do_eoe, layout, opts)
 
     # Compile body expressions
     {body_tokens, layout} = compile_do_body(body, layout, opts)
@@ -1273,7 +1265,7 @@ defmodule Spitfire.Property.TokenCompiler do
     end_token = {:end, end_meta}
 
     {target_tokens ++ [lparen1_token] ++ args1_tokens ++ [rparen1_token, lparen2_token] ++
-       args2_tokens ++ [rparen2_token, do_token, eol_token] ++
+       args2_tokens ++ [rparen2_token, do_token] ++ eoe_tokens ++
        body_tokens ++ extras_tokens ++ [end_token], layout}
   end
 
@@ -1282,7 +1274,7 @@ defmodule Spitfire.Property.TokenCompiler do
   # Examples: .+ 1 do end, expr.* arg do end
   # ---------------------------------------------------------------------------
 
-  defp do_to_tokens({:block_no_parens_op, target, args, {:do_block, body, extras}}, layout, opts) do
+  defp do_to_tokens({:block_no_parens_op, target, args, {:do_block, do_eoe, body, extras}}, layout, opts) do
     # Compile target (op_identifier or dot_op_identifier)
     {target_tokens, layout} = compile_op_identifier_target(target, layout, opts)
 
@@ -1293,10 +1285,8 @@ defmodule Spitfire.Property.TokenCompiler do
     {do_meta, layout} = TokenLayout.space_before(layout, "do", nil)
     do_token = {:do, do_meta}
 
-    # Newline after do
-    eol_meta = TokenLayout.meta(layout, "\n", 1)
-    eol_token = {:eol, eol_meta}
-    layout = TokenLayout.newline(layout)
+    # Compile do_eoe (newline, semicolon, or inline)
+    {eoe_tokens, layout} = compile_do_eoe(do_eoe, layout, opts)
 
     # Compile body expressions
     {body_tokens, layout} = compile_do_body(body, layout, opts)
@@ -1308,7 +1298,7 @@ defmodule Spitfire.Property.TokenCompiler do
     {end_meta, layout} = TokenLayout.space_before(layout, "end", nil)
     end_token = {:end, end_meta}
 
-    {target_tokens ++ args_tokens ++ [do_token, eol_token] ++
+    {target_tokens ++ args_tokens ++ [do_token] ++ eoe_tokens ++
        body_tokens ++ extras_tokens ++ [end_token], layout}
   end
 
@@ -1317,7 +1307,7 @@ defmodule Spitfire.Property.TokenCompiler do
   # Examples: foo 1 do end, Mod.func arg do end
   # ---------------------------------------------------------------------------
 
-  defp do_to_tokens({:block_no_parens, target, args, {:do_block, body, extras}}, layout, opts) do
+  defp do_to_tokens({:block_no_parens, target, args, {:do_block, do_eoe, body, extras}}, layout, opts) do
     # Compile target (identifier or dot_identifier)
     {target_tokens, layout} = compile_identifier_target(target, layout, opts)
 
@@ -1328,10 +1318,8 @@ defmodule Spitfire.Property.TokenCompiler do
     {do_meta, layout} = TokenLayout.space_before(layout, "do", nil)
     do_token = {:do, do_meta}
 
-    # Newline after do
-    eol_meta = TokenLayout.meta(layout, "\n", 1)
-    eol_token = {:eol, eol_meta}
-    layout = TokenLayout.newline(layout)
+    # Compile do_eoe (newline, semicolon, or inline)
+    {eoe_tokens, layout} = compile_do_eoe(do_eoe, layout, opts)
 
     # Compile body expressions
     {body_tokens, layout} = compile_do_body(body, layout, opts)
@@ -1343,7 +1331,7 @@ defmodule Spitfire.Property.TokenCompiler do
     {end_meta, layout} = TokenLayout.space_before(layout, "end", nil)
     end_token = {:end, end_meta}
 
-    {target_tokens ++ args_tokens ++ [do_token, eol_token] ++
+    {target_tokens ++ args_tokens ++ [do_token] ++ eoe_tokens ++
        body_tokens ++ extras_tokens ++ [end_token], layout}
   end
 
@@ -2484,6 +2472,30 @@ defmodule Spitfire.Property.TokenCompiler do
   # ===========================================================================
 
   # Compile do block body - can be a list of expressions or stab clauses
+  # Compile do_eoe (what comes after 'do')
+  # Per grammar lines 338-339:
+  #   do_eoe -> 'do'      (inline - no eol)
+  #   do_eoe -> 'do' eoe  (eoe = eol | ';' | eol ';')
+  defp compile_do_eoe(:none, layout, _opts) do
+    # Inline form: do expr end (just a space, no eol)
+    {[], layout}
+  end
+
+  defp compile_do_eoe(:eol, layout, _opts) do
+    # Newline form: do\nexpr\nend
+    eol_meta = TokenLayout.meta(layout, "\n", 1)
+    eol_token = {:eol, eol_meta}
+    layout = TokenLayout.newline(layout)
+    {[eol_token], layout}
+  end
+
+  defp compile_do_eoe(:semi, layout, _opts) do
+    # Semicolon form: do; expr end
+    {semi_meta, layout} = TokenLayout.stick_right(layout, ";", nil)
+    semi_token = {:";", semi_meta}
+    {[semi_token], layout}
+  end
+
   defp compile_do_body([], layout, _opts), do: {[], layout}
 
   # Handle stab clauses (for case expressions)
