@@ -361,7 +361,6 @@ defmodule SpitfireReproTest do
     assert Spitfire.parse(code) == s2q(code)
   end
 
-  @tag :skip
   test "repro 51" do
     code = """
     -not delta 27.51 + if false do
@@ -416,7 +415,6 @@ defmodule SpitfireReproTest do
     assert Spitfire.parse(code) == s2q(code)
   end
 
-  @tag :skip
   test "repro 52" do
     code = """
     not ... - unless true do
@@ -436,7 +434,6 @@ defmodule SpitfireReproTest do
     assert Spitfire.parse(code) == s2q(code)
   end
 
-  @tag :skip
   test "repro 53" do
     code = """
     not foo :baz
@@ -482,7 +479,33 @@ defmodule SpitfireReproTest do
     assert Spitfire.parse(code) == s2q(code)
   end
 
-  @tag :skip
+  test "repro 54a" do
+    code = """
+    &bar >= foo()
+    <>
+    1 <- ...1
+    """
+    assert Spitfire.parse(code) == s2q(code)
+
+    code = """
+    &bar >= unless delta do
+    true
+    end
+    +
+    1 <- ...1
+    """
+    assert Spitfire.parse(code) == s2q(code)
+
+    code = """
+    &bar >= unless delta do
+    true
+    end
+    <>
+    1 <- 2
+    """
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
   test "repro 55" do
     code = """
     ...@@spam[Context]
@@ -490,7 +513,6 @@ defmodule SpitfireReproTest do
     assert Spitfire.parse(code) == s2q(code)
   end
 
-  @tag :skip
   test "repro 56" do
     code = """
 
@@ -505,7 +527,6 @@ defmodule SpitfireReproTest do
     assert Spitfire.parse(code) == s2q(code)
   end
 
-  # @tag :skip
   test "repro 57" do
     # . and @ operator precedence bug
     code = """
@@ -530,7 +551,6 @@ defmodule SpitfireReproTest do
     assert Spitfire.parse(code) == s2q(code)
   end
 
-  @tag :skip
   test "repro 59" do
     code = """
     ... &4 .. for // ...
@@ -571,8 +591,18 @@ defmodule SpitfireReproTest do
     assert Spitfire.parse(code) == s2q(code)
   end
 
-  @tag :skip
   test "repro 61" do
+    code = """
+    .. || @ Bar.Schema + 198
+    ( alpha -> Default; qux -> qux)
+    -16.(fn eggs -> delta - beta end)
+    ![ ... .. (;) // eggs, beta < [beta, eggs], (; :bar -> 2.78) \\\\ foo]\
+    """
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
+  @tag :skip
+  test "repro 61a" do
     code = """
     .. || @ Bar.Schema + 198
     ( alpha -> Default; qux -> qux)
@@ -582,7 +612,6 @@ defmodule SpitfireReproTest do
     assert Spitfire.parse(code) == s2q(code)
   end
 
-  @tag :skip
   test "repro 62" do
     code = """
     nil .. nil
@@ -595,7 +624,6 @@ defmodule SpitfireReproTest do
     assert Spitfire.parse(code) == s2q(code)
   end
 
-  # @tag :skip
   test "repro 63" do
     code = """
     @@delta[?a]\
