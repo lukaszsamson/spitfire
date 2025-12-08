@@ -5101,8 +5101,10 @@ defmodule Spitfire do
     |> normalize_not_pipelines()
     |> normalize_unary_ranges()
     |> normalize_capture_do_blocks()
+    |> normalize_ellipsis_capture_do_blocks()
     |> normalize_block_sensitive_unary()
     |> split_unary_blocks()
+    |> normalize_unary_capture_infix()
   end
 
   defp normalize_not_in(ast) do
@@ -5296,6 +5298,53 @@ defmodule Spitfire do
           cap_meta = if is_nil(eoe), do: cap_meta, else: [{:end_of_expression, eoe} | cap_meta]
 
           {:&, cap_meta, [{op, op_meta, [lhs, rhs]}]}
+        else
+          node
+        end
+
+      other ->
+        other
+    end)
+  end
+
+  @unary_capture_reassoc MapSet.new([:&, :@, :+, :-, :!, :not, :"~~~"])
+
+  defp normalize_unary_capture_infix(ast) do
+    Macro.postwalk(ast, fn
+      {unary_op, u_meta, [{:"<-", op_meta, [{:&, cap_meta, [lhs]}, rhs]}]} = node ->
+        if MapSet.member?(@unary_capture_reassoc, unary_op) and
+             not Keyword.has_key?(op_meta, :parens) do
+          {eoe, op_meta} = Keyword.pop(op_meta, :end_of_expression)
+          u_meta = if is_nil(eoe), do: u_meta, else: [{:end_of_expression, eoe} | u_meta]
+
+          {unary_op, u_meta, [{:&, cap_meta, [{:"<-", op_meta, [lhs, rhs]}]}]}
+        else
+          node
+        end
+
+      {:"<-", op_meta, [{:@, at_meta, [{:&, cap_meta, [lhs]}]}, rhs]} ->
+        if Keyword.has_key?(op_meta, :parens) do
+          {:"<-", op_meta, [{:@, at_meta, [{:&, cap_meta, [lhs]}]}, rhs]}
+        else
+          {eoe, op_meta} = Keyword.pop(op_meta, :end_of_expression)
+          at_meta = if is_nil(eoe), do: at_meta, else: [{:end_of_expression, eoe} | at_meta]
+
+          {:@, at_meta, [{:&, cap_meta, [{:"<-", op_meta, [lhs, rhs]}]}]}
+        end
+
+      other ->
+        other
+    end)
+  end
+
+  defp normalize_ellipsis_capture_do_blocks(ast) do
+    Macro.postwalk(ast, fn
+      {:"<-", op_meta, [{:..., range_meta, [{:&, cap_meta, [lhs]}]}, rhs]} = node ->
+        if contains_block_with_do?(lhs) do
+          {eoe, op_meta} = Keyword.pop(op_meta, :end_of_expression)
+          range_meta = if is_nil(eoe), do: range_meta, else: [{:end_of_expression, eoe} | range_meta]
+
+          {:..., range_meta, [{:&, cap_meta, [{:"<-", op_meta, [lhs, rhs]}]}]}
         else
           node
         end

@@ -719,4 +719,146 @@ defmodule SpitfireReproTest do
     """
     assert Spitfire.parse(code) == s2q(code)
   end
+
+  @tag :skip
+  test "repro 71" do
+    code = """
+    @ & if true do
+    :ok
+    end when if false do
+    qux
+    alpha
+    else
+    Default
+    Context.Remote.Foo
+    end
+    """
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
+  @tag :skip
+  test "repro 72" do
+    code = """
+    ; ... gamma.if true do
+    baz -> 358
+    qux -> nil
+    9 -> Mod
+    end \\ receive true do; gamma
+    Remote.Config.Qux
+    end; !
+    ...qux.eggs <~ foo
+    """
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
+  # @tag :skip
+  test "repro 73" do
+    code = """
+    ... & if delta do
+    :ok
+    end <- foo
+    """
+    assert Spitfire.parse(code) == s2q(code)
+
+    code = """
+    & & if delta do
+    :ok
+    end <- foo
+    """
+    assert Spitfire.parse(code) == s2q(code)
+
+    code = """
+    + & if delta do
+    :ok
+    end <- foo
+    """
+    assert Spitfire.parse(code) == s2q(code)
+
+    code = """
+    @ & if delta do
+    :ok
+    end <- foo
+    """
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
+  # @tag :skip
+  test "repro 74" do
+    code = """
+    & delta()() do
+      baz
+    end
+    """
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
+  @tag :skip
+  test "repro 75" do
+    code = """
+    ; Mod.baz spam: 0o11 do
+    :two
+    :foo
+    rescue
+    beta -> Qux
+    end
+    nil.~>> eggs: false, qux: spam do Remote
+    Context
+    rescue
+    alpha -> alpha
+    after
+    Schema
+    end
+
+    """
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
+  @tag :skip
+  test "repro 75a" do
+    code = """
+    & baz eggs do Context.Qux.Baz
+    beta
+    rescue
+    :error -> spam
+    1 -> Baz.Foo.Bar
+    after
+    gamma
+    State
+    end
+    eggs &&
+    @ ( beta -> bar) <|> qux spam: Mod.Remote.Bar, eggs: eggs
+
+    """
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
+  @tag :skip
+  test "repro 76" do
+    code = """
+    gamma.if baz do false
+    rescue
+    spam -> -679
+    :ok -> ?q
+    after
+    baz
+    0b111
+    end
+    not gamma .. baz // (;) <|> qux +foo
+    """
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
+  @tag :skip
+  test "repro 77" do
+    code = """
+    alpha baz: 0x35 do; Config
+    ?a
+    end ..
+    & baz(95.84)(:three) do 2 -> :bar
+    spam -> 640
+    end
+
+    """
+    assert Spitfire.parse(code) == s2q(code)
+  end
 end
