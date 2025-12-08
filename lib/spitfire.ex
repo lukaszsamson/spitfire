@@ -165,7 +165,9 @@ defmodule Spitfire do
     :when_op
   ]
 
-  @peeks MapSet.new([:";", :eol, :eof, :end, :",", :")", :do, :., :"}", :"]", :">>"] ++ @operators)
+  @peeks MapSet.new(
+           [:";", :eol, :eof, :end, :",", :")", :do, :., :"}", :"]", :">>"] ++ @operators
+         )
 
   @doc """
   Parses the given code into Elixir AST.
@@ -414,54 +416,148 @@ defmodule Spitfire do
               _ ->
                 &parse_identifier/1
             end
-          :do_identifier -> &parse_do_identifier/1
-          :paren_identifier -> &parse_paren_identifier/1
-          :bracket_identifier -> &parse_lone_identifier/1
-          :op_identifier -> &parse_identifier/1
-          :alias -> &parse_alias/1
-          :"<<" -> &parse_bitstring/1
-          :kw_identifier when is_list or is_map -> &parse_kw_identifier/1
-          :kw_identifier_unsafe when is_list or is_map -> &parse_kw_identifier/1
-          :kw_identifier when not is_list and not is_map -> &parse_bracketless_kw_list/1
-          :kw_identifier_unsafe when not is_list and not is_map -> &parse_bracketless_kw_list/1
-          :int -> &parse_int/1
-          :flt -> &parse_float/1
-          :atom -> &parse_atom/1
-          :atom_quoted -> &parse_atom/1
-          :atom_unsafe -> &parse_atom/1
-          true -> &parse_boolean/1
-          false -> &parse_boolean/1
-          :bin_string -> &parse_string/1
-          :bin_heredoc -> &parse_string/1
-          :list_string -> &parse_string/1
-          :list_heredoc -> &parse_string/1
-          :char -> &parse_char/1
-          :sigil -> &parse_sigil/1
-          :fn -> &parse_anon_function/1
-          :at_op -> &parse_prefix_expression/1
-          :unary_op -> &parse_prefix_expression/1
-          :capture_op -> &parse_capture_expression/1
-          :dual_op -> &parse_prefix_expression/1
-          :ternary_op -> &parse_prefix_expression/1
-          :capture_int -> &parse_capture_int/1
-          :stab_op -> &parse_stab_expression/1
-          :range_op -> &parse_range_expression/1
-          :"[" -> &parse_list_literal/1
-          :"(" -> &parse_grouped_expression/1
-          :"{" -> &parse_tuple_literal/1
-          :%{} -> &parse_map_literal/1
-          :% -> &parse_struct_literal/1
-          :ellipsis_op -> &parse_ellipsis_op/1
-          nil -> &parse_nil_literal/1
+
+          :do_identifier ->
+            &parse_do_identifier/1
+
+          :paren_identifier ->
+            &parse_paren_identifier/1
+
+          :bracket_identifier ->
+            &parse_lone_identifier/1
+
+          :op_identifier ->
+            &parse_identifier/1
+
+          :alias ->
+            &parse_alias/1
+
+          :"<<" ->
+            &parse_bitstring/1
+
+          :kw_identifier when is_list or is_map ->
+            &parse_kw_identifier/1
+
+          :kw_identifier_unsafe when is_list or is_map ->
+            &parse_kw_identifier/1
+
+          :kw_identifier when not is_list and not is_map ->
+            &parse_bracketless_kw_list/1
+
+          :kw_identifier_unsafe when not is_list and not is_map ->
+            &parse_bracketless_kw_list/1
+
+          :int ->
+            &parse_int/1
+
+          :flt ->
+            &parse_float/1
+
+          :atom ->
+            &parse_atom/1
+
+          :atom_quoted ->
+            &parse_atom/1
+
+          :atom_unsafe ->
+            &parse_atom/1
+
+          true ->
+            &parse_boolean/1
+
+          false ->
+            &parse_boolean/1
+
+          :bin_string ->
+            &parse_string/1
+
+          :bin_heredoc ->
+            &parse_string/1
+
+          :list_string ->
+            &parse_string/1
+
+          :list_heredoc ->
+            &parse_string/1
+
+          :char ->
+            &parse_char/1
+
+          :sigil ->
+            &parse_sigil/1
+
+          :fn ->
+            &parse_anon_function/1
+
+          :at_op ->
+            &parse_prefix_expression/1
+
+          :unary_op ->
+            &parse_prefix_expression/1
+
+          :capture_op ->
+            &parse_capture_expression/1
+
+          :dual_op ->
+            &parse_prefix_expression/1
+
+          :ternary_op ->
+            &parse_prefix_expression/1
+
+          :capture_int ->
+            &parse_capture_int/1
+
+          :stab_op ->
+            &parse_stab_expression/1
+
+          :range_op ->
+            &parse_range_expression/1
+
+          :"[" ->
+            &parse_list_literal/1
+
+          :"(" ->
+            &parse_grouped_expression/1
+
+          :"{" ->
+            &parse_tuple_literal/1
+
+          :%{} ->
+            &parse_map_literal/1
+
+          :% ->
+            &parse_struct_literal/1
+
+          :ellipsis_op ->
+            &parse_ellipsis_op/1
+
+          nil ->
+            &parse_nil_literal/1
+
           # Linearized token handlers
-          :bin_string_start -> &parse_linearized_string(&1, :binary)
-          :list_string_start -> &parse_linearized_string(&1, :charlist)
-          :bin_heredoc_start -> &parse_linearized_heredoc(&1, :binary)
-          :list_heredoc_start -> &parse_linearized_heredoc(&1, :charlist)
-          :sigil_start -> &parse_linearized_sigil/1
-          :atom_safe_start -> &parse_linearized_atom(&1, :safe)
-          :atom_unsafe_start -> &parse_linearized_atom(&1, :unsafe)
-          _ -> nil
+          :bin_string_start ->
+            &parse_linearized_string(&1, :binary)
+
+          :list_string_start ->
+            &parse_linearized_string(&1, :charlist)
+
+          :bin_heredoc_start ->
+            &parse_linearized_heredoc(&1, :binary)
+
+          :list_heredoc_start ->
+            &parse_linearized_heredoc(&1, :charlist)
+
+          :sigil_start ->
+            &parse_linearized_sigil/1
+
+          :atom_safe_start ->
+            &parse_linearized_atom(&1, :safe)
+
+          :atom_unsafe_start ->
+            &parse_linearized_atom(&1, :unsafe)
+
+          _ ->
+            nil
         end
 
       if prefix == nil do
@@ -529,23 +625,23 @@ defmodule Spitfire do
 
             do_block = &parse_do_block/2
 
-             allow_do? = Map.get(parser, :allow_do_in_args, false)
+            allow_do? = Map.get(parser, :allow_do_in_args, false)
 
-             case infix do
-               nil when is_stab and peek_token_type == :stab_op ->
-                 parser = Map.put(parser, :stab_state, %{ast: left})
-                 # this will be ignored on the return
-                 {left, parser}
+            case infix do
+              nil when is_stab and peek_token_type == :stab_op ->
+                parser = Map.put(parser, :stab_state, %{ast: left})
+                # this will be ignored on the return
+                {left, parser}
 
-               nil ->
-                 {left, parser}
+              nil ->
+                {left, parser}
 
-               ^do_block when parser.nesting != 0 and not allow_do? ->
-                 {left, next_token(parser)}
+              ^do_block when parser.nesting != 0 and not allow_do? ->
+                {left, next_token(parser)}
 
-               _ ->
-                 infix.(next_token(parser), left)
-             end
+              _ ->
+                infix.(next_token(parser), left)
+            end
           end
         else
           {left, parser}
@@ -641,7 +737,8 @@ defmodule Spitfire do
                 case expression do
                   # unquote splicing is special cased, if it has one expression as an arg, its wrapped in a block
                   {:unquote_splicing, _, [_]} ->
-                    {:__block__, [{:closing, current_meta(parser)} | opening_paren_meta], [expression]}
+                    {:__block__, [{:closing, current_meta(parser)} | opening_paren_meta],
+                     [expression]}
 
                   # not and ! are special cased, if it has one expression as an arg, its wrapped in a block
                   {op, _, [_]} when op in [:not, :!] ->
@@ -682,7 +779,8 @@ defmodule Spitfire do
                   {ast, parser} =
                     case Map.get(parser, :stab_state) do
                       %{ast: lhs} ->
-                        {ast, parser} = parse_stab_expression(Map.delete(parser, :stab_state), lhs)
+                        {ast, parser} =
+                          parse_stab_expression(Map.delete(parser, :stab_state), lhs)
 
                         {ast, parser} =
                           if current_token(parser) == :-> do
@@ -758,8 +856,10 @@ defmodule Spitfire do
                       child_ranges = if is_list(args), do: Enum.map(args, &arg_range/1), else: []
 
                       {f,
-                       put_meta_range(meta, merge_ranges([open_range, close_range | child_ranges])),
-                       args}
+                       put_meta_range(
+                         meta,
+                         merge_ranges([open_range, close_range | child_ranges])
+                       ), args}
 
                     _ ->
                       ast
@@ -1148,7 +1248,8 @@ defmodule Spitfire do
   end
 
   defp attribute_value_context?(parser) do
-    current_token_type(parser) in [:identifier, :op_identifier] and not identifier_stop_peek?(parser)
+    current_token_type(parser) in [:identifier, :op_identifier] and
+      not identifier_stop_peek?(parser)
   end
 
   defp parse_prefix_expression(parser) do
@@ -1208,7 +1309,8 @@ defmodule Spitfire do
         end
 
       {rhs, parser} =
-        if token_type == :at_op and operand_token_type == :at_op and peek_token_type(parser) == :"[" do
+        if token_type == :at_op and operand_token_type == :at_op and
+             peek_token_type(parser) == :"[" do
           parse_access_expression(next_token(parser), rhs)
         else
           {rhs, parser}
@@ -1857,6 +1959,7 @@ defmodule Spitfire do
       type = encode_literal(parser, :do)
 
       old_nesting = parser.nesting
+
       parser =
         parser
         |> Map.put(:nesting, 0)
@@ -2021,8 +2124,13 @@ defmodule Spitfire do
               case current_token(parser1) do
                 :"(" ->
                   old_nesting = parser1.nesting
-                  parser_for_call = if old_nesting == 0, do: parser1, else: %{parser1 | nesting: 0}
-                  {{lhs_dot, call_meta, args}, parser2} = parse_call_expression(parser_for_call, dot_ast)
+
+                  parser_for_call =
+                    if old_nesting == 0, do: parser1, else: %{parser1 | nesting: 0}
+
+                  {{lhs_dot, call_meta, args}, parser2} =
+                    parse_call_expression(parser_for_call, dot_ast)
+
                   parser2 = %{parser2 | nesting: old_nesting}
 
                   # Preserve newlines and closing from call_meta, but replace base meta with base_call_meta
@@ -2385,6 +2493,7 @@ defmodule Spitfire do
               {:->, _, _} -> ast
               _ -> maybe_inject_leading_newlines(ast, clause_newlines)
             end
+
           {ast, parser} = finalize_anon_function_clause(ast, parser)
 
           {rest, parser} =
@@ -4131,7 +4240,11 @@ defmodule Spitfire do
           line = Keyword.fetch!(start_meta, :line)
           column = Keyword.fetch!(start_meta, :column)
           delimiter_code = if kind == :binary, do: ?", else: ?'
-          literal_parser = %{parser | current_token: {:kw_identifier, {line, column, delimiter_code}, nil}}
+
+          literal_parser = %{
+            parser
+            | current_token: {:kw_identifier, {line, column, delimiter_code}, nil}
+          }
 
           key_ast =
             if has_only_fragments do
@@ -5154,7 +5267,7 @@ defmodule Spitfire do
       when unary_op in [:not, :!] ->
         inner_meta =
           case Keyword.get(inner_meta, :range) do
-            {{line, col}, _} -> Keyword.merge(inner_meta, [line: line, column: col])
+            {{line, col}, _} -> Keyword.merge(inner_meta, line: line, column: col)
             _ -> inner_meta
           end
 
@@ -5346,25 +5459,25 @@ defmodule Spitfire do
 
   defp normalize_unary_capture_infix(ast) do
     Macro.postwalk(ast, fn
-      {unary_op, u_meta, [{:"<-", op_meta, [{:&, cap_meta, [lhs]}, rhs]}]} = node ->
+      {unary_op, u_meta, [{:<-, op_meta, [{:&, cap_meta, [lhs]}, rhs]}]} = node ->
         if MapSet.member?(@unary_capture_reassoc, unary_op) and
              not Keyword.has_key?(op_meta, :parens) do
           {eoe, op_meta} = Keyword.pop(op_meta, :end_of_expression)
           u_meta = if is_nil(eoe), do: u_meta, else: [{:end_of_expression, eoe} | u_meta]
 
-          {unary_op, u_meta, [{:&, cap_meta, [{:"<-", op_meta, [lhs, rhs]}]}]}
+          {unary_op, u_meta, [{:&, cap_meta, [{:<-, op_meta, [lhs, rhs]}]}]}
         else
           node
         end
 
-      {:"<-", op_meta, [{:@, at_meta, [{:&, cap_meta, [lhs]}]}, rhs]} ->
+      {:<-, op_meta, [{:@, at_meta, [{:&, cap_meta, [lhs]}]}, rhs]} ->
         if Keyword.has_key?(op_meta, :parens) do
-          {:"<-", op_meta, [{:@, at_meta, [{:&, cap_meta, [lhs]}]}, rhs]}
+          {:<-, op_meta, [{:@, at_meta, [{:&, cap_meta, [lhs]}]}, rhs]}
         else
           {eoe, op_meta} = Keyword.pop(op_meta, :end_of_expression)
           at_meta = if is_nil(eoe), do: at_meta, else: [{:end_of_expression, eoe} | at_meta]
 
-          {:@, at_meta, [{:&, cap_meta, [{:"<-", op_meta, [lhs, rhs]}]}]}
+          {:@, at_meta, [{:&, cap_meta, [{:<-, op_meta, [lhs, rhs]}]}]}
         end
 
       other ->
@@ -5374,12 +5487,14 @@ defmodule Spitfire do
 
   defp normalize_ellipsis_capture_do_blocks(ast) do
     Macro.postwalk(ast, fn
-      {:"<-", op_meta, [{:..., range_meta, [{:&, cap_meta, [lhs]}]}, rhs]} = node ->
+      {:<-, op_meta, [{:..., range_meta, [{:&, cap_meta, [lhs]}]}, rhs]} = node ->
         if contains_block_with_do?(lhs) do
           {eoe, op_meta} = Keyword.pop(op_meta, :end_of_expression)
-          range_meta = if is_nil(eoe), do: range_meta, else: [{:end_of_expression, eoe} | range_meta]
 
-          {:..., range_meta, [{:&, cap_meta, [{:"<-", op_meta, [lhs, rhs]}]}]}
+          range_meta =
+            if is_nil(eoe), do: range_meta, else: [{:end_of_expression, eoe} | range_meta]
+
+          {:..., range_meta, [{:&, cap_meta, [{:<-, op_meta, [lhs, rhs]}]}]}
         else
           node
         end
@@ -5595,34 +5710,34 @@ defmodule Spitfire do
     update_in(parser.errors, &[error | &1])
   end
 
-@braces MapSet.new([:")", :"]", :"}", :">>"])
-defp validate_peek(parser, current_type) do
-  if current_type == :do do
-    {parser, true}
-  else
-    peek = peek_token_type(parser)
+  @braces MapSet.new([:")", :"]", :"}", :">>"])
+  defp validate_peek(parser, current_type) do
+    if current_type == :do do
+      {parser, true}
+    else
+      peek = peek_token_type(parser)
 
-    # Inside an interpolation, :end_interpolation is a valid terminal peek.
-    # Do not treat it as a syntax error or advance tokens.
-    cond do
-      parser.interpolation_depth > 0 and peek == :end_interpolation ->
-        {parser, true}
+      # Inside an interpolation, :end_interpolation is a valid terminal peek.
+      # Do not treat it as a syntax error or advance tokens.
+      cond do
+        parser.interpolation_depth > 0 and peek == :end_interpolation ->
+          {parser, true}
 
-      not valid_peek?(current_type, peek) && peek != :no_peek ->
-        parser =
-          if MapSet.member?(@braces, peek) do
-            parser
-          else
-            next_token(parser)
-          end
+        not valid_peek?(current_type, peek) && peek != :no_peek ->
+          parser =
+            if MapSet.member?(@braces, peek) do
+              parser
+            else
+              next_token(parser)
+            end
 
-        {put_error(parser, {current_meta(parser), "syntax error"}), false}
+          {put_error(parser, {current_meta(parser), "syntax error"}), false}
 
-      true ->
-        {parser, true}
+        true ->
+          {parser, true}
+      end
     end
   end
-end
 
   defp valid_peek?(ctype, _ptype) when ctype in [:identifier, :paren_identifier, :"["] do
     true

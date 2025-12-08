@@ -304,7 +304,11 @@ defmodule Spitfire.Property.TokenCompiler do
   # Range with step: left..middle//step
   # Per grammar lines 739-746: ternary_op (//) is only valid immediately after range_op (..)
   # Produces: left .. middle // step
-  defp do_to_tokens({:range_step, left, range_newlines, middle, step_newlines, step}, layout, opts) do
+  defp do_to_tokens(
+         {:range_step, left, range_newlines, middle, step_newlines, step},
+         layout,
+         opts
+       ) do
     # Compile left operand
     {left_tokens, layout} = do_to_tokens(left, layout, opts)
 
@@ -342,7 +346,10 @@ defmodule Spitfire.Property.TokenCompiler do
     # Compile step operand
     {step_tokens, layout} = do_to_tokens(step, layout, opts)
 
-    {left_tokens ++ [range_token] ++ range_eol_tokens ++ middle_tokens ++
+    {left_tokens ++
+       [range_token] ++
+       range_eol_tokens ++
+       middle_tokens ++
        [ternary_token] ++ ternary_eol_tokens ++ step_tokens, layout}
   end
 
@@ -577,7 +584,11 @@ defmodule Spitfire.Property.TokenCompiler do
   end
 
   # Bracket at with dotted bracket identifier: @expr.foo[bar]
-  defp do_to_tokens({:bracket_at_expr, newlines, {:dot_bracket_identifier, left, name}, arg}, layout, opts)
+  defp do_to_tokens(
+         {:bracket_at_expr, newlines, {:dot_bracket_identifier, left, name}, arg},
+         layout,
+         opts
+       )
        when is_integer(newlines) do
     # Compile @ operator
     {at_meta, layout} = TokenLayout.space_before(layout, "@", nil)
@@ -674,7 +685,7 @@ defmodule Spitfire.Property.TokenCompiler do
   defp do_to_tokens({:map, []}, layout, _opts) do
     # Empty map: %{}
     {map_meta, layout} = TokenLayout.space_before(layout, "%{}", nil)
-    map_token = {:"%{}", map_meta}
+    map_token = {:%{}, map_meta}
 
     {[map_token], layout}
   end
@@ -682,7 +693,7 @@ defmodule Spitfire.Property.TokenCompiler do
   defp do_to_tokens({:map, {:kw, pairs}}, layout, opts) do
     # Map with keyword syntax: %{foo: 1, bar: 2}
     {map_meta, layout} = TokenLayout.space_before(layout, "%{", nil)
-    map_token = {:"%{}", map_meta}
+    map_token = {:%{}, map_meta}
 
     # Compile keyword pairs
     {pairs_tokens, layout} = compile_kw_pairs(pairs, layout, opts)
@@ -697,7 +708,7 @@ defmodule Spitfire.Property.TokenCompiler do
   defp do_to_tokens({:map, {:assoc, pairs}}, layout, opts) do
     # Map with arrow syntax: %{:foo => 1, :bar => 2}
     {map_meta, layout} = TokenLayout.space_before(layout, "%{", nil)
-    map_token = {:"%{}", map_meta}
+    map_token = {:%{}, map_meta}
 
     # Compile association pairs
     {pairs_tokens, layout} = compile_assoc_pairs(pairs, layout, opts)
@@ -816,9 +827,13 @@ defmodule Spitfire.Property.TokenCompiler do
     {rparen2_meta, layout} = TokenLayout.stick_right(layout, ")", nil)
     rparen2_token = {:")", rparen2_meta}
 
-    {target_tokens ++ [lparen1_token] ++ args1_tokens ++ [rparen1_token, lparen2_token] ++
+    {target_tokens ++
+       [lparen1_token] ++
+       args1_tokens ++
+       [rparen1_token, lparen2_token] ++
        args2_tokens ++ [rparen2_token], layout}
   end
+
   # No-parens call with one argument: foo bar
   defp do_to_tokens({:call_no_parens_one, {:identifier, name}, arg}, layout, opts) do
     # Compile identifier
@@ -899,7 +914,11 @@ defmodule Spitfire.Property.TokenCompiler do
 
   # no_parens_op: matched_expr op no_parens_expr
   # Per grammar line 173
-  defp do_to_tokens({:no_parens_op, left, {:op_eol, {op_kind, op}, newlines}, right}, layout, opts) do
+  defp do_to_tokens(
+         {:no_parens_op, left, {:op_eol, {op_kind, op}, newlines}, right},
+         layout,
+         opts
+       ) do
     # Compile left side (matched_expr)
     {left_tokens, layout} = do_to_tokens(left, layout, opts)
 
@@ -1051,7 +1070,8 @@ defmodule Spitfire.Property.TokenCompiler do
 
   # paren_stab: (clause) or (clause1; clause2)
   # Grammar: open_paren stab_eoe ')' : build_paren_stab
-  defp do_to_tokens({:paren_stab, clauses}, layout, opts) when is_list(clauses) and length(clauses) >= 1 do
+  defp do_to_tokens({:paren_stab, clauses}, layout, opts)
+       when is_list(clauses) and length(clauses) >= 1 do
     # Compile '(' - with space before
     {open_meta, layout} = TokenLayout.space_before(layout, "(", nil)
     open_token = {:"(", open_meta}
@@ -1068,7 +1088,8 @@ defmodule Spitfire.Property.TokenCompiler do
 
   # paren_stab_semi: (; clause) or (; clause1; clause2)
   # Grammar: open_paren ';' stab_eoe ')' : build_paren_stab
-  defp do_to_tokens({:paren_stab_semi, clauses}, layout, opts) when is_list(clauses) and length(clauses) >= 1 do
+  defp do_to_tokens({:paren_stab_semi, clauses}, layout, opts)
+       when is_list(clauses) and length(clauses) >= 1 do
     # Compile '(' - with space before
     {open_meta, layout} = TokenLayout.space_before(layout, "(", nil)
     open_token = {:"(", open_meta}
@@ -1122,14 +1143,26 @@ defmodule Spitfire.Property.TokenCompiler do
     do_to_tokens({:block_parens, target, args, {:do_block, :eol, body, extras}}, layout, opts)
   end
 
-  defp do_to_tokens({:block_parens_nested, target, args1, args2, {:do_block, body, extras}}, layout, opts)
+  defp do_to_tokens(
+         {:block_parens_nested, target, args1, args2, {:do_block, body, extras}},
+         layout,
+         opts
+       )
        when is_list(body) do
-    do_to_tokens({:block_parens_nested, target, args1, args2, {:do_block, :eol, body, extras}}, layout, opts)
+    do_to_tokens(
+      {:block_parens_nested, target, args1, args2, {:do_block, :eol, body, extras}},
+      layout,
+      opts
+    )
   end
 
   defp do_to_tokens({:block_no_parens_op, target, args, {:do_block, body, extras}}, layout, opts)
        when is_list(body) do
-    do_to_tokens({:block_no_parens_op, target, args, {:do_block, :eol, body, extras}}, layout, opts)
+    do_to_tokens(
+      {:block_no_parens_op, target, args, {:do_block, :eol, body, extras}},
+      layout,
+      opts
+    )
   end
 
   defp do_to_tokens({:block_no_parens, target, args, {:do_block, body, extras}}, layout, opts)
@@ -1138,7 +1171,11 @@ defmodule Spitfire.Property.TokenCompiler do
   end
 
   # call_do: identifier do body end (e.g., if true do :yes end)
-  defp do_to_tokens({:call_do, {:identifier, name}, args, {:do_block, do_eoe, body, extras}}, layout, opts) do
+  defp do_to_tokens(
+         {:call_do, {:identifier, name}, args, {:do_block, do_eoe, body, extras}},
+         layout,
+         opts
+       ) do
     # Compile identifier as do_identifier
     name_str = Atom.to_string(name)
     chars = String.to_charlist(name_str)
@@ -1165,12 +1202,18 @@ defmodule Spitfire.Property.TokenCompiler do
     {end_meta, layout} = TokenLayout.space_before(layout, "end", nil)
     end_token = {:end, end_meta}
 
-    {[id_token] ++ args_tokens ++ [do_token] ++ eoe_tokens ++ body_tokens ++ extras_tokens ++ [end_token], layout}
+    {[id_token] ++
+       args_tokens ++ [do_token] ++ eoe_tokens ++ body_tokens ++ extras_tokens ++ [end_token],
+     layout}
   end
 
   # call_do with dot_do_identifier target: Mod.if true do :yes end
   # Per grammar: matched_expr dot_op do_identifier
-  defp do_to_tokens({:call_do, {:dot_do_identifier, left, name}, args, {:do_block, do_eoe, body, extras}}, layout, opts) do
+  defp do_to_tokens(
+         {:call_do, {:dot_do_identifier, left, name}, args, {:do_block, do_eoe, body, extras}},
+         layout,
+         opts
+       ) do
     # Compile left side (matched_expr)
     {left_tokens, layout} = do_to_tokens(left, layout, opts)
 
@@ -1204,7 +1247,10 @@ defmodule Spitfire.Property.TokenCompiler do
     {end_meta, layout} = TokenLayout.space_before(layout, "end", nil)
     end_token = {:end, end_meta}
 
-    {left_tokens ++ [dot_token, id_token] ++ args_tokens ++ [do_token] ++ eoe_tokens ++ body_tokens ++ extras_tokens ++ [end_token], layout}
+    {left_tokens ++
+       [dot_token, id_token] ++
+       args_tokens ++ [do_token] ++ eoe_tokens ++ body_tokens ++ extras_tokens ++ [end_token],
+     layout}
   end
 
   # ---------------------------------------------------------------------------
@@ -1212,7 +1258,11 @@ defmodule Spitfire.Property.TokenCompiler do
   # Examples: foo() do end, Mod.func() do end, expr.() do end
   # ---------------------------------------------------------------------------
 
-  defp do_to_tokens({:block_parens, target, args, {:do_block, do_eoe, body, extras}}, layout, opts) do
+  defp do_to_tokens(
+         {:block_parens, target, args, {:do_block, do_eoe, body, extras}},
+         layout,
+         opts
+       ) do
     # Compile target (paren_identifier, dot_paren_identifier, or dot_call)
     {target_tokens, layout} = compile_block_parens_target(target, layout, opts)
 
@@ -1244,7 +1294,11 @@ defmodule Spitfire.Property.TokenCompiler do
     {end_meta, layout} = TokenLayout.space_before(layout, "end", nil)
     end_token = {:end, end_meta}
 
-    {target_tokens ++ [lparen_token] ++ args_tokens ++ [rparen_token, do_token] ++ eoe_tokens ++
+    {target_tokens ++
+       [lparen_token] ++
+       args_tokens ++
+       [rparen_token, do_token] ++
+       eoe_tokens ++
        body_tokens ++ extras_tokens ++ [end_token], layout}
   end
 
@@ -1253,7 +1307,11 @@ defmodule Spitfire.Property.TokenCompiler do
   # Examples: foo()() do end, Mod.func()() do end
   # ---------------------------------------------------------------------------
 
-  defp do_to_tokens({:block_parens_nested, target, args1, args2, {:do_block, do_eoe, body, extras}}, layout, opts) do
+  defp do_to_tokens(
+         {:block_parens_nested, target, args1, args2, {:do_block, do_eoe, body, extras}},
+         layout,
+         opts
+       ) do
     # Compile target (paren_identifier or dot_paren_identifier)
     {target_tokens, layout} = compile_block_parens_target(target, layout, opts)
 
@@ -1292,8 +1350,13 @@ defmodule Spitfire.Property.TokenCompiler do
     {end_meta, layout} = TokenLayout.space_before(layout, "end", nil)
     end_token = {:end, end_meta}
 
-    {target_tokens ++ [lparen1_token] ++ args1_tokens ++ [rparen1_token, lparen2_token] ++
-       args2_tokens ++ [rparen2_token, do_token] ++ eoe_tokens ++
+    {target_tokens ++
+       [lparen1_token] ++
+       args1_tokens ++
+       [rparen1_token, lparen2_token] ++
+       args2_tokens ++
+       [rparen2_token, do_token] ++
+       eoe_tokens ++
        body_tokens ++ extras_tokens ++ [end_token], layout}
   end
 
@@ -1302,7 +1365,11 @@ defmodule Spitfire.Property.TokenCompiler do
   # Examples: .+ 1 do end, expr.* arg do end
   # ---------------------------------------------------------------------------
 
-  defp do_to_tokens({:block_no_parens_op, target, args, {:do_block, do_eoe, body, extras}}, layout, opts) do
+  defp do_to_tokens(
+         {:block_no_parens_op, target, args, {:do_block, do_eoe, body, extras}},
+         layout,
+         opts
+       ) do
     # Compile target (op_identifier or dot_op_identifier)
     {target_tokens, layout} = compile_op_identifier_target(target, layout, opts)
 
@@ -1326,7 +1393,10 @@ defmodule Spitfire.Property.TokenCompiler do
     {end_meta, layout} = TokenLayout.space_before(layout, "end", nil)
     end_token = {:end, end_meta}
 
-    {target_tokens ++ args_tokens ++ [do_token] ++ eoe_tokens ++
+    {target_tokens ++
+       args_tokens ++
+       [do_token] ++
+       eoe_tokens ++
        body_tokens ++ extras_tokens ++ [end_token], layout}
   end
 
@@ -1335,7 +1405,11 @@ defmodule Spitfire.Property.TokenCompiler do
   # Examples: foo 1 do end, Mod.func arg do end
   # ---------------------------------------------------------------------------
 
-  defp do_to_tokens({:block_no_parens, target, args, {:do_block, do_eoe, body, extras}}, layout, opts) do
+  defp do_to_tokens(
+         {:block_no_parens, target, args, {:do_block, do_eoe, body, extras}},
+         layout,
+         opts
+       ) do
     # Compile target (identifier or dot_identifier)
     {target_tokens, layout} = compile_identifier_target(target, layout, opts)
 
@@ -1359,7 +1433,10 @@ defmodule Spitfire.Property.TokenCompiler do
     {end_meta, layout} = TokenLayout.space_before(layout, "end", nil)
     end_token = {:end, end_meta}
 
-    {target_tokens ++ args_tokens ++ [do_token] ++ eoe_tokens ++
+    {target_tokens ++
+       args_tokens ++
+       [do_token] ++
+       eoe_tokens ++
        body_tokens ++ extras_tokens ++ [end_token], layout}
   end
 
@@ -1993,14 +2070,14 @@ defmodule Spitfire.Property.TokenCompiler do
   # Map stuck to previous token
   defp compile_arg_with_adhesion({:map, []}, layout, _opts) do
     {map_meta, layout} = TokenLayout.stick_right(layout, "%{}", nil)
-    map_token = {:"%{}", map_meta}
+    map_token = {:%{}, map_meta}
 
     {[map_token], layout}
   end
 
   defp compile_arg_with_adhesion({:map, {:kw, pairs}}, layout, opts) do
     {map_meta, layout} = TokenLayout.stick_right(layout, "%{", nil)
-    map_token = {:"%{}", map_meta}
+    map_token = {:%{}, map_meta}
 
     {pairs_tokens, layout} = compile_kw_pairs(pairs, layout, opts)
 
@@ -2012,7 +2089,7 @@ defmodule Spitfire.Property.TokenCompiler do
 
   defp compile_arg_with_adhesion({:map, {:assoc, pairs}}, layout, opts) do
     {map_meta, layout} = TokenLayout.stick_right(layout, "%{", nil)
-    map_token = {:"%{}", map_meta}
+    map_token = {:%{}, map_meta}
 
     {pairs_tokens, layout} = compile_assoc_pairs(pairs, layout, opts)
 
@@ -2081,7 +2158,11 @@ defmodule Spitfire.Property.TokenCompiler do
   end
 
   # Bracket at with identifier stuck to previous token: @foo[bar]
-  defp compile_arg_with_adhesion({:bracket_at_expr, newlines, {:bracket_identifier, name}, arg}, layout, opts)
+  defp compile_arg_with_adhesion(
+         {:bracket_at_expr, newlines, {:bracket_identifier, name}, arg},
+         layout,
+         opts
+       )
        when is_integer(newlines) do
     # @ stuck to previous
     {at_meta, layout} = TokenLayout.stick_right(layout, "@", nil)
@@ -2138,7 +2219,8 @@ defmodule Spitfire.Property.TokenCompiler do
   # At operator stuck to previous token: used in contexts like `foo @bar` or
   # in operator adhesion positions. This mirrors do_to_tokens/3 for at_op but
   # preserves stickiness when compiling into a larger stuck expression.
-  defp compile_arg_with_adhesion({:at_op, newlines, operand}, layout, opts) when is_integer(newlines) do
+  defp compile_arg_with_adhesion({:at_op, newlines, operand}, layout, opts)
+       when is_integer(newlines) do
     # @ stuck to previous
     {at_meta, layout} = TokenLayout.stick_right(layout, "@", nil)
     at_token = {:at_op, at_meta, :@}
@@ -2380,7 +2462,8 @@ defmodule Spitfire.Property.TokenCompiler do
   # Guard can be nil or an expression
 
   # Stab clause with guard: pattern when guard -> body
-  defp compile_stab_clause({:stab_clause, pattern, guard, body}, layout, opts) when guard != nil do
+  defp compile_stab_clause({:stab_clause, pattern, guard, body}, layout, opts)
+       when guard != nil do
     # Compile pattern (if any)
     {pattern_tokens, layout} = compile_pattern(pattern, layout, opts)
 

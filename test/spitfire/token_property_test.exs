@@ -90,7 +90,7 @@ defmodule Spitfire.TokenPropertyTest do
             ) do
         tokens = TokenCompiler.to_tokens(tree, phase: 1)
         code = Toxic.ToString.to_string(tokens)
-        IO.puts(">>>>>\n"<>code<>"\n<<<<<")
+        IO.puts(">>>>>\n" <> code <> "\n<<<<<")
 
         # Use Code.with_diagnostics to capture warnings
         {result, _diagnostics} =
@@ -135,34 +135,25 @@ defmodule Spitfire.TokenPropertyTest do
       cases = [
         "not a in b",
         "! a in b",
-
         "not\na in b",
         "!\na in b",
-
         "not a\nin b",
         "! a\nin b",
-
         "not a in\nb",
         "! a in\nb",
-
         "not a in b\n",
         "! a in b\n",
-
         "not (a in b)",
         "! (a in b)",
-
         "not (a) in b",
         "! (a) in b",
-
         "not a in (b)",
         "! a in (b)",
-
         "(not a in b)",
-        "(! a in b)",
+        "(! a in b)"
       ]
 
       for code <- cases do
-
         # Use Code.with_diagnostics to capture warnings
         {result, _diagnostics} =
           Code.with_diagnostics(fn ->
@@ -246,7 +237,8 @@ defmodule Spitfire.TokenPropertyTest do
             spitfire_meta == [] -> :oracle
             not oracle_points_to_in -> :oracle
             not spitfire_points_to_in -> :spitfire
-            true -> :same  # Both point to `in`, they likely match
+            # Both point to `in`, they likely match
+            true -> :same
           end
 
         {key, {better, oracle_meta, spitfire_meta}}
@@ -286,7 +278,11 @@ defmodule Spitfire.TokenPropertyTest do
                  Keyword.has_key?(spitfire_in_meta, :end_of_expression) do
               {
                 Keyword.delete(fixed_op_meta, :end_of_expression),
-                Keyword.put(fixed_in_meta, :end_of_expression, Keyword.get(fixed_op_meta, :end_of_expression))
+                Keyword.put(
+                  fixed_in_meta,
+                  :end_of_expression,
+                  Keyword.get(fixed_op_meta, :end_of_expression)
+                )
               }
             else
               {fixed_op_meta, fixed_in_meta}

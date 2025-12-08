@@ -355,162 +355,162 @@ defmodule SpitfireGrammarTest do
       assert Spitfire.parse(code) == s2q(code)
     end
 
-      test "bracket_at_expr" do
-        code = "@foo[1]"
-        assert Spitfire.parse(code) == s2q(code)
-        code = "@\nfoo[1]"
-        assert Spitfire.parse(code) == s2q(code)
+    test "bracket_at_expr" do
+      code = "@foo[1]"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "@\nfoo[1]"
+      assert Spitfire.parse(code) == s2q(code)
 
-        code = "@foo.bar[1]"
-        assert Spitfire.parse(code) == s2q(code)
-        code = "@\nfoo.bar[1]"
-        assert Spitfire.parse(code) == s2q(code)
-      end
+      code = "@foo.bar[1]"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "@\nfoo.bar[1]"
+      assert Spitfire.parse(code) == s2q(code)
+    end
 
-      test "capture_int int" do
-        code = "&1"
-        assert Spitfire.parse(code) == s2q(code)
-      end
+    test "capture_int int" do
+      code = "&1"
+      assert Spitfire.parse(code) == s2q(code)
+    end
 
-      test "fn_eoe stab_eoe 'end'" do
-        code = "fn -> :ok end"
-        assert Spitfire.parse(code) == s2q(code)
-        code = "fn; -> :ok end"
-        assert Spitfire.parse(code) == s2q(code)
-        code = "fn\n-> :ok end"
-        assert Spitfire.parse(code) == s2q(code)
-        code = "fn\n;-> :ok end"
-        assert Spitfire.parse(code) == s2q(code)
+    test "fn_eoe stab_eoe 'end'" do
+      code = "fn -> :ok end"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "fn; -> :ok end"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "fn\n-> :ok end"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "fn\n;-> :ok end"
+      assert Spitfire.parse(code) == s2q(code)
 
-        code = "fn x -> x end"
-        assert Spitfire.parse(code) == s2q(code)
-        code = "fn x -> x; end"
-        assert Spitfire.parse(code) == s2q(code)
-        code = "fn x -> x\nend"
-        assert Spitfire.parse(code) == s2q(code)
-        code = "fn x -> x\n;end"
-        assert Spitfire.parse(code) == s2q(code)
+      code = "fn x -> x end"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "fn x -> x; end"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "fn x -> x\nend"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "fn x -> x\n;end"
+      assert Spitfire.parse(code) == s2q(code)
 
-        code = "fn x -> x; y -> y end"
-        assert Spitfire.parse(code) == s2q(code)
-        code = "fn x -> x\ny -> y end"
-        assert Spitfire.parse(code) == s2q(code)
-        code = "fn x -> x\n;y -> y end"
-        assert Spitfire.parse(code) == s2q(code)
+      code = "fn x -> x; y -> y end"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "fn x -> x\ny -> y end"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "fn x -> x\n;y -> y end"
+      assert Spitfire.parse(code) == s2q(code)
 
-        code = "fn -> end"
-        assert Spitfire.parse(code) == s2q(code)
-        code = "fn ->\nend"
-        assert Spitfire.parse(code) == s2q(code)
-        code = "fn ->\n1 end"
-        assert Spitfire.parse(code) == s2q(code)
+      code = "fn -> end"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "fn ->\nend"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "fn ->\n1 end"
+      assert Spitfire.parse(code) == s2q(code)
 
-        code = "fn () -> end"
-        assert Spitfire.parse(code) == s2q(code)
-        code = "fn () when 1 -> end"
-        assert Spitfire.parse(code) == s2q(code)
-        code = "fn (1, 2) -> end"
-        assert Spitfire.parse(code) == s2q(code)
-        code = "fn (3, 2) when 1 -> end"
-        assert Spitfire.parse(code) == s2q(code)
+      code = "fn () -> end"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "fn () when 1 -> end"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "fn (1, 2) -> end"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "fn (3, 2) when 1 -> end"
+      assert Spitfire.parse(code) == s2q(code)
 
-        code = "fn a -> end"
-        assert Spitfire.parse(code) == s2q(code)
-        code = "fn a, b -> end"
-        assert Spitfire.parse(code) == s2q(code)
-        code = "fn a b -> end"
-        assert Spitfire.parse(code) == s2q(code)
-        code = "fn a b, c -> end"
-        assert Spitfire.parse(code) == s2q(code)
-        code = "fn a b c -> end"
-        assert Spitfire.parse(code) == s2q(code)
-      end
+      code = "fn a -> end"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "fn a, b -> end"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "fn a b -> end"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "fn a b, c -> end"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "fn a b c -> end"
+      assert Spitfire.parse(code) == s2q(code)
+    end
 
-      test "open_paren stab_eoe ')'" do
-        code = "(1)"
-        assert Spitfire.parse(code) == s2q(code)
+    test "open_paren stab_eoe ')'" do
+      code = "(1)"
+      assert Spitfire.parse(code) == s2q(code)
 
-        code = "(->)"
-        assert Spitfire.parse(code) == s2q(code)
-        code = "(\n->)"
-        assert Spitfire.parse(code) == s2q(code)
+      code = "(->)"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "(\n->)"
+      assert Spitfire.parse(code) == s2q(code)
 
-        code = "(1 -> 2)"
-        assert Spitfire.parse(code) == s2q(code)
-        code = "(1 -> 2;)"
-        assert Spitfire.parse(code) == s2q(code)
-        code = "(1 -> 2\n)"
-        assert Spitfire.parse(code) == s2q(code)
-        code = "(1 -> 2\n;)"
-        assert Spitfire.parse(code) == s2q(code)
+      code = "(1 -> 2)"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "(1 -> 2;)"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "(1 -> 2\n)"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "(1 -> 2\n;)"
+      assert Spitfire.parse(code) == s2q(code)
 
-        code = "(a, b -> 2)"
-        assert Spitfire.parse(code) == s2q(code)
-      end
+      code = "(a, b -> 2)"
+      assert Spitfire.parse(code) == s2q(code)
+    end
 
-      test "open_paren ';' stab_eoe ')'" do
-        code = "(;1 -> 2)"
-        assert Spitfire.parse(code) == s2q(code)
+    test "open_paren ';' stab_eoe ')'" do
+      code = "(;1 -> 2)"
+      assert Spitfire.parse(code) == s2q(code)
 
-        code = "(\n;1 -> 2)"
-        assert Spitfire.parse(code) == s2q(code)
-      end
+      code = "(\n;1 -> 2)"
+      assert Spitfire.parse(code) == s2q(code)
+    end
 
-      test "open_paren ';' close_paren" do
-        code = "(;)"
-        assert Spitfire.parse(code) == s2q(code)
-        code = "(\n;)"
-        assert Spitfire.parse(code) == s2q(code)
-        code = "(;\n)"
-        assert Spitfire.parse(code) == s2q(code)
-        code = "(\n;\n)"
-        assert Spitfire.parse(code) == s2q(code)
-      end
+    test "open_paren ';' close_paren" do
+      code = "(;)"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "(\n;)"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "(;\n)"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "(\n;\n)"
+      assert Spitfire.parse(code) == s2q(code)
+    end
 
-      test "empty_paren" do
-        code = "()"
-        assert Spitfire.parse(code) == s2q(code)
-        code = "(\n)"
-        assert Spitfire.parse(code) == s2q(code)
-      end
+    test "empty_paren" do
+      code = "()"
+      assert Spitfire.parse(code) == s2q(code)
+      code = "(\n)"
+      assert Spitfire.parse(code) == s2q(code)
+    end
 
-      test "literals" do
-        assert Spitfire.parse("1") == s2q("1")
-        assert Spitfire.parse("1.0") == s2q("1.0")
-        assert Spitfire.parse("?a") == s2q("?a")
-        assert Spitfire.parse("[1, 2]") == s2q("[1, 2]")
-        assert Spitfire.parse("%{a: 1}") == s2q("%{a: 1}")
-        assert Spitfire.parse("{1, 2}") == s2q("{1, 2}")
-        assert Spitfire.parse("{1, 2, 3}") == s2q("{1, 2, 3}")
-        assert Spitfire.parse("true") == s2q("true")
-        assert Spitfire.parse("false") == s2q("false")
-        assert Spitfire.parse("nil") == s2q("nil")
-        assert Spitfire.parse(":foo") == s2q(":foo")
-        assert Spitfire.parse(":\"foo\"") == s2q(":\"foo\"")
-      end
+    test "literals" do
+      assert Spitfire.parse("1") == s2q("1")
+      assert Spitfire.parse("1.0") == s2q("1.0")
+      assert Spitfire.parse("?a") == s2q("?a")
+      assert Spitfire.parse("[1, 2]") == s2q("[1, 2]")
+      assert Spitfire.parse("%{a: 1}") == s2q("%{a: 1}")
+      assert Spitfire.parse("{1, 2}") == s2q("{1, 2}")
+      assert Spitfire.parse("{1, 2, 3}") == s2q("{1, 2, 3}")
+      assert Spitfire.parse("true") == s2q("true")
+      assert Spitfire.parse("false") == s2q("false")
+      assert Spitfire.parse("nil") == s2q("nil")
+      assert Spitfire.parse(":foo") == s2q(":foo")
+      assert Spitfire.parse(":\"foo\"") == s2q(":\"foo\"")
+    end
 
-      test "strings and sigils" do
-        assert Spitfire.parse("\"foo\"") == s2q("\"foo\"")
-        assert Spitfire.parse("'foo'") == s2q("'foo'")
-        assert Spitfire.parse("\"\"\"\nfoo\n\"\"\"") == s2q("\"\"\"\nfoo\n\"\"\"")
-        assert Spitfire.parse("'''\nfoo\n'''") == s2q("'''\nfoo\n'''")
-        assert Spitfire.parse("<<1>>") == s2q("<<1>>")
-        assert Spitfire.parse("~s(foo)") == s2q("~s(foo)")
-      end
+    test "strings and sigils" do
+      assert Spitfire.parse("\"foo\"") == s2q("\"foo\"")
+      assert Spitfire.parse("'foo'") == s2q("'foo'")
+      assert Spitfire.parse("\"\"\"\nfoo\n\"\"\"") == s2q("\"\"\"\nfoo\n\"\"\"")
+      assert Spitfire.parse("'''\nfoo\n'''") == s2q("'''\nfoo\n'''")
+      assert Spitfire.parse("<<1>>") == s2q("<<1>>")
+      assert Spitfire.parse("~s(foo)") == s2q("~s(foo)")
+    end
 
-      test "dot_alias" do
-        assert Spitfire.parse("Foo") == s2q("Foo")
-        assert Spitfire.parse("foo.Bar") == s2q("foo.Bar")
-        assert Spitfire.parse("foo.{}") == s2q("foo.{}")
-        assert Spitfire.parse("foo.{\n}") == s2q("foo.{\n}")
-        assert Spitfire.parse("foo.{A}") == s2q("foo.{A}")
-      end
+    test "dot_alias" do
+      assert Spitfire.parse("Foo") == s2q("Foo")
+      assert Spitfire.parse("foo.Bar") == s2q("foo.Bar")
+      assert Spitfire.parse("foo.{}") == s2q("foo.{}")
+      assert Spitfire.parse("foo.{\n}") == s2q("foo.{\n}")
+      assert Spitfire.parse("foo.{A}") == s2q("foo.{A}")
+    end
 
-      test "parens_call" do
-        assert Spitfire.parse("foo()") == s2q("foo()")
-        assert Spitfire.parse("foo(1)") == s2q("foo(1)")
-        assert Spitfire.parse("foo.bar()") == s2q("foo.bar()")
-      end
+    test "parens_call" do
+      assert Spitfire.parse("foo()") == s2q("foo()")
+      assert Spitfire.parse("foo(1)") == s2q("foo(1)")
+      assert Spitfire.parse("foo.bar()") == s2q("foo.bar()")
+    end
   end
 
   describe "unmatched_expr" do

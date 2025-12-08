@@ -51,7 +51,8 @@ defmodule Spitfire.Property.GrammarTree do
   - `format`: `:dec`, `:hex`, `:bin`, or `:oct`
   - `chars`: the original charlist representation (e.g., `~c"123"`, `~c"0xFF"`)
   """
-  @type int_t :: {:int, value :: integer(), format :: :dec | :hex | :bin | :oct, chars :: charlist()}
+  @type int_t ::
+          {:int, value :: integer(), format :: :dec | :hex | :bin | :oct, chars :: charlist()}
 
   @typedoc """
   Float literal.

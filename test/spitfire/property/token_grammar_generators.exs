@@ -286,7 +286,13 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
     max_forms = Keyword.get(opts, :max_forms, 3)
 
     # Set allow_unmatched: true for top-level context
-    context = %{GrammarTree.phase1_context() | allow_unmatched: true, allow_no_parens: true, phase: phase}
+    context = %{
+      GrammarTree.phase1_context()
+      | allow_unmatched: true,
+        allow_no_parens: true,
+        phase: phase
+    }
+
     state = %{budget: GrammarTree.initial_budget(max_depth, max_nodes), context: context}
 
     # Generate all grammar variants with appropriate frequencies
@@ -443,10 +449,13 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
       if state.context.allow_unmatched or state.context.allow_no_parens do
         # Top-level context: can generate any expression type
         # Per grammar: expr -> matched_expr | no_parens_expr | unmatched_expr
-        StreamData.frequency([
-          {6, gen_matched_expr(state)}
-        ] ++ if(state.context.allow_unmatched, do: [{3, gen_unmatched_expr(state)}], else: [])
-        ++ if(state.context.allow_no_parens, do: [{2, gen_no_parens_expr(state)}], else: []))
+        StreamData.frequency(
+          [
+            {6, gen_matched_expr(state)}
+          ] ++
+            if(state.context.allow_unmatched, do: [{3, gen_unmatched_expr(state)}], else: []) ++
+            if(state.context.allow_no_parens, do: [{2, gen_no_parens_expr(state)}], else: [])
+        )
       else
         # Restricted context (e.g., operand position): only matched
         gen_matched_expr(state)
@@ -736,7 +745,10 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
         # Dotted operator identifier: Expr.+ bar (rare)
         {1, gen_dot_op_identifier_for_call(child_state)},
         # Operator-as-identifier: +/2, -/2 (op_identifier)
-        {1, StreamData.bind(StreamData.member_of(@binary_ops), fn {_, op} -> StreamData.constant({:op_identifier, op}) end)}
+        {1,
+         StreamData.bind(StreamData.member_of(@binary_ops), fn {_, op} ->
+           StreamData.constant({:op_identifier, op})
+         end)}
       ])
 
     # Args can be a single matched_expr or keyword arguments
@@ -920,7 +932,9 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
   # Generate a single literal pattern for fn clauses: {:single, literal}
   defp gen_single_literal_pattern do
     StreamData.frequency([
-      {3, StreamData.integer(0..10) |> StreamData.map(fn n -> {:single, {:int, n, :dec, Integer.to_charlist(n)}} end)},
+      {3,
+       StreamData.integer(0..10)
+       |> StreamData.map(fn n -> {:single, {:int, n, :dec, Integer.to_charlist(n)}} end)},
       {2, StreamData.member_of(@atoms) |> StreamData.map(fn a -> {:single, {:atom_lit, a}} end)}
     ])
   end
@@ -1041,7 +1055,9 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
       StreamData.bind(StreamData.member_of(@do_identifiers), fn name ->
         StreamData.bind(gen_do_condition(), fn cond_expr ->
           StreamData.bind(gen_do_block(state), fn do_block ->
-            StreamData.constant({:call_do, {:dot_do_identifier, left, name}, [cond_expr], do_block})
+            StreamData.constant(
+              {:call_do, {:dot_do_identifier, left, name}, [cond_expr], do_block}
+            )
           end)
         end)
       end)
@@ -1072,8 +1088,11 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
   defp gen_case_clause do
     pattern_gen =
       StreamData.frequency([
-        {3, StreamData.member_of(@atoms) |> StreamData.map(fn a -> {:single, {:atom_lit, a}} end)},
-        {2, StreamData.member_of(@identifiers) |> StreamData.map(fn i -> {:single, {:identifier, i}} end)},
+        {3,
+         StreamData.member_of(@atoms) |> StreamData.map(fn a -> {:single, {:atom_lit, a}} end)},
+        {2,
+         StreamData.member_of(@identifiers)
+         |> StreamData.map(fn i -> {:single, {:identifier, i}} end)},
         {1, StreamData.constant({:single, {:identifier, :_}})}
       ])
 
@@ -1387,9 +1406,10 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
     # dot_op_identifier: op_identifier | matched_expr dot_op op_identifier
     target_gen =
       StreamData.frequency([
-        {2, StreamData.bind(StreamData.member_of(@binary_ops), fn {_, op} ->
-          StreamData.constant({:op_identifier, op})
-        end)},
+        {2,
+         StreamData.bind(StreamData.member_of(@binary_ops), fn {_, op} ->
+           StreamData.constant({:op_identifier, op})
+         end)},
         {1, gen_dot_op_identifier_for_call(child_state)}
       ])
 
@@ -1568,7 +1588,9 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
   # Generate a simple literal value for guard RHS
   defp gen_simple_literal_value do
     StreamData.frequency([
-      {3, StreamData.integer(0..100) |> StreamData.map(fn n -> {:int, n, :dec, Integer.to_charlist(n)} end)},
+      {3,
+       StreamData.integer(0..100)
+       |> StreamData.map(fn n -> {:int, n, :dec, Integer.to_charlist(n)} end)},
       {2, StreamData.member_of(@atoms) |> StreamData.map(fn a -> {:atom_lit, a} end)},
       {1, StreamData.constant({:bool_lit, true})},
       {1, StreamData.constant({:bool_lit, false})}
@@ -1934,7 +1956,9 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
         StreamData.bind(operand_gen, fn middle ->
           StreamData.bind(gen_newlines(), fn step_newlines ->
             StreamData.bind(operand_gen, fn step ->
-              StreamData.constant({:range_step, left, range_newlines, middle, step_newlines, step})
+              StreamData.constant(
+                {:range_step, left, range_newlines, middle, step_newlines, step}
+              )
             end)
           end)
         end)
@@ -1965,7 +1989,9 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
         StreamData.bind(gen_newlines(), fn newlines ->
           StreamData.bind(right_gen, fn right ->
             # Use :matched_op_warn_pipe to signal this is the warn_pipe pattern
-            StreamData.constant({:matched_op_warn_pipe, left, {:op_eol, {op_kind, op}, newlines}, right})
+            StreamData.constant(
+              {:matched_op_warn_pipe, left, {:op_eol, {op_kind, op}, newlines}, right}
+            )
           end)
         end)
       end)
@@ -2119,19 +2145,23 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
       StreamData.frequency([
         # General case: op_eol followed by no_parens_expr (covers grammar rules 1-18)
         # Per grammar lines 230-247: no_parens_op_expr -> *_op_eol no_parens_expr
-        {8, StreamData.bind(gen_op_eol(), fn op_eol ->
-          StreamData.bind(right_gen, fn right ->
-            StreamData.constant({:no_parens_op, left, op_eol, right})
-          end)
-        end)},
+        {8,
+         StreamData.bind(gen_op_eol(), fn op_eol ->
+           StreamData.bind(right_gen, fn right ->
+             StreamData.constant({:no_parens_op, left, op_eol, right})
+           end)
+         end)},
 
         # Special case: when_op_eol followed by call_args_no_parens_kw (grammar rule 19)
         # Per grammar line 250: no_parens_op_expr -> when_op_eol call_args_no_parens_kw
-        {2, StreamData.bind(gen_newlines(), fn newlines ->
-          StreamData.bind(gen_call_args_no_parens_kw(), fn kw_args ->
-            StreamData.constant({:no_parens_op, left, {:op_eol, {:when_op, :when}, newlines}, kw_args})
-          end)
-        end)}
+        {2,
+         StreamData.bind(gen_newlines(), fn newlines ->
+           StreamData.bind(gen_call_args_no_parens_kw(), fn kw_args ->
+             StreamData.constant(
+               {:no_parens_op, left, {:op_eol, {:when_op, :when}, newlines}, kw_args}
+             )
+           end)
+         end)}
       ])
     end)
   end
@@ -2233,7 +2263,10 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
       StreamData.frequency([
         {4, StreamData.member_of(@identifiers) |> StreamData.map(&{:identifier, &1})},
         {1, gen_dot_identifier(child_state)},
-        {1, StreamData.bind(StreamData.member_of(@binary_ops), fn {_, op} -> StreamData.constant({:op_identifier, op}) end)},
+        {1,
+         StreamData.bind(StreamData.member_of(@binary_ops), fn {_, op} ->
+           StreamData.constant({:op_identifier, op})
+         end)},
         {1, gen_dot_op_identifier_for_call(child_state)}
       ])
 
@@ -2280,7 +2313,10 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
         {4, StreamData.member_of(@identifiers) |> StreamData.map(&{:identifier, &1})},
         {1, gen_dot_identifier(child_state)},
         # Operator-as-identifier targets (e.g., +/2) and dotted operator targets (expr.+)
-        {1, StreamData.bind(StreamData.member_of(@binary_ops), fn {_, op} -> StreamData.constant({:op_identifier, op}) end)},
+        {1,
+         StreamData.bind(StreamData.member_of(@binary_ops), fn {_, op} ->
+           StreamData.constant({:op_identifier, op})
+         end)},
         {1, gen_dot_op_identifier_for_call(child_state)}
       ])
 
@@ -2549,7 +2585,9 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
           StreamData.bind(StreamData.member_of(@arrow_ops), fn {op_kind, op} ->
             StreamData.bind(gen_newlines(), fn newlines ->
               StreamData.bind(gen_call_no_parens_one(child_state), fn right ->
-                StreamData.constant({:matched_op_warn_pipe, left, {:op_eol, {op_kind, op}, newlines}, right})
+                StreamData.constant(
+                  {:matched_op_warn_pipe, left, {:op_eol, {op_kind, op}, newlines}, right}
+                )
               end)
             end)
           end)
@@ -2851,7 +2889,9 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
       StreamData.bind(left_gen, fn left ->
         StreamData.bind(StreamData.member_of(@identifiers), fn name ->
           StreamData.bind(gen_bracket_arg(state), fn arg ->
-            StreamData.constant({:bracket_at_expr, newlines, {:dot_bracket_identifier, left, name}, arg})
+            StreamData.constant(
+              {:bracket_at_expr, newlines, {:dot_bracket_identifier, left, name}, arg}
+            )
           end)
         end)
       end)
@@ -2978,9 +3018,10 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
       # Rule 1: Keyword data: foo[a: 1], foo[a: 1, b: 2]
       {2, gen_call_args_no_parens_kw()},
       # Rule 3: Container expr with trailing comma: foo[bar,], foo[x + y,]
-      {1, StreamData.bind(container_expr_gen, fn expr ->
-        StreamData.constant({:trailing, expr})
-      end)}
+      {1,
+       StreamData.bind(container_expr_gen, fn expr ->
+         StreamData.constant({:trailing, expr})
+       end)}
     ])
   end
 

@@ -216,7 +216,8 @@ defmodule Spitfire.TokenGrammarTest do
       tree =
         {:grammar,
          [
-           {:binary_op, {:int, 1, :dec, ~c"1"}, {:op_eol, {:dual_op, :+}, 0}, {:int, 2, :dec, ~c"2"}}
+           {:binary_op, {:int, 1, :dec, ~c"1"}, {:op_eol, {:dual_op, :+}, 0},
+            {:int, 2, :dec, ~c"2"}}
          ]}
 
       assert_roundtrip(tree, "1 + 2")
@@ -236,7 +237,8 @@ defmodule Spitfire.TokenGrammarTest do
       tree =
         {:grammar,
          [
-           {:binary_op, {:int, 3, :dec, ~c"3"}, {:op_eol, {:mult_op, :*}, 0}, {:int, 4, :dec, ~c"4"}}
+           {:binary_op, {:int, 3, :dec, ~c"3"}, {:op_eol, {:mult_op, :*}, 0},
+            {:int, 4, :dec, ~c"4"}}
          ]}
 
       assert_roundtrip(tree, "3 * 4")
@@ -474,7 +476,10 @@ defmodule Spitfire.TokenGrammarTest do
     test "dot call with multiple args foo.(a, b)" do
       tree =
         {:grammar,
-         [{:call_parens, {:dot_call, {:identifier, :foo}}, [{:identifier, :a}, {:identifier, :b}]}]}
+         [
+           {:call_parens, {:dot_call, {:identifier, :foo}},
+            [{:identifier, :a}, {:identifier, :b}]}
+         ]}
 
       assert_roundtrip(tree, "foo.(a, b)")
     end
@@ -954,7 +959,10 @@ defmodule Spitfire.TokenGrammarTest do
          [
            {:call_do, {:identifier, :try}, [],
             {:do_block, [{:identifier, :x}],
-             [{:block_item, :rescue, [{:stab_clause, {:single, {:identifier, :_}}, nil, {:atom_lit, :error}}]}]}}
+             [
+               {:block_item, :rescue,
+                [{:stab_clause, {:single, {:identifier, :_}}, nil, {:atom_lit, :error}}]}
+             ]}}
          ]}
 
       assert_roundtrip(tree, "try do\nx\nrescue\n_ -> :error\nend")
@@ -978,8 +986,13 @@ defmodule Spitfire.TokenGrammarTest do
          [
            {:call_do, {:identifier, :try}, [],
             {:do_block, [{:identifier, :x}],
-             [{:block_item, :catch,
-               [{:stab_clause, {:many, [{:atom_lit, :exit}, {:identifier, :_}]}, nil, {:atom_lit, :caught}}]}]}}
+             [
+               {:block_item, :catch,
+                [
+                  {:stab_clause, {:many, [{:atom_lit, :exit}, {:identifier, :_}]}, nil,
+                   {:atom_lit, :caught}}
+                ]}
+             ]}}
          ]}
 
       assert_roundtrip(tree, "try do\nx\ncatch\n:exit, _ -> :caught\nend")
@@ -992,7 +1005,8 @@ defmodule Spitfire.TokenGrammarTest do
            {:call_do, {:identifier, :try}, [],
             {:do_block, [{:identifier, :x}],
              [
-               {:block_item, :rescue, [{:stab_clause, {:single, {:identifier, :_}}, nil, {:atom_lit, :error}}]},
+               {:block_item, :rescue,
+                [{:stab_clause, {:single, {:identifier, :_}}, nil, {:atom_lit, :error}}]},
                {:block_item, :after, [{:identifier, :cleanup}]}
              ]}}
          ]}
@@ -1006,7 +1020,10 @@ defmodule Spitfire.TokenGrammarTest do
          [
            {:call_do, {:identifier, :try}, [],
             {:do_block, [{:identifier, :x}],
-             [{:block_item, :rescue, [{:stab_clause, {:single, {:identifier, :_}}, nil, {:atom_lit, :error}}]}]}}
+             [
+               {:block_item, :rescue,
+                [{:stab_clause, {:single, {:identifier, :_}}, nil, {:atom_lit, :error}}]}
+             ]}}
          ]}
 
       tokens = TokenCompiler.to_tokens(tree)
@@ -1132,9 +1149,8 @@ defmodule Spitfire.TokenGrammarTest do
          [
            {:fn_single,
             [
-              {:stab_clause,
-               {:many, [{:identifier, :a}, {:identifier, :b}, {:identifier, :c}]}, nil,
-               {:identifier, :a}}
+              {:stab_clause, {:many, [{:identifier, :a}, {:identifier, :b}, {:identifier, :c}]},
+               nil, {:identifier, :a}}
             ]}
          ]}
 

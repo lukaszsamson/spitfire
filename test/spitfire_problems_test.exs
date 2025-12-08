@@ -41,10 +41,10 @@ defmodule SpitfireProblemsTest do
     test "Keyword keys retain delimiter/format metadata" do
       code = ~S(["hello 🐈": 1])
 
-      {:ok, {:__block__, _, [[{ {:__block__, spitfire_meta, _}, _value }]]}, _} =
+      {:ok, {:__block__, _, [[{{:__block__, spitfire_meta, _}, _value}]]}, _} =
         Spitfire.parse_with_comments(code, spitfire_opts())
 
-      {{:__block__, _, [[{ {:__block__, code_meta, _}, _value }]]}, _comments} =
+      {{:__block__, _, [[{{:__block__, code_meta, _}, _value}]]}, _comments} =
         Code.string_to_quoted_with_comments!(code, code_opts())
 
       assert Keyword.get(spitfire_meta, :delimiter) == "\""
@@ -55,42 +55,42 @@ defmodule SpitfireProblemsTest do
   end
 
   test "Spitfire empty function" do
-      code = ~S"""
-      fn -> end
-      """
+    code = ~S"""
+    fn -> end
+    """
 
-      {:ok, spitfire_ast, _comments} = Spitfire.parse_with_comments(code, spitfire_opts())
-      {code_ast, _comments} = Code.string_to_quoted_with_comments!(code, code_opts())
+    {:ok, spitfire_ast, _comments} = Spitfire.parse_with_comments(code, spitfire_opts())
+    {code_ast, _comments} = Code.string_to_quoted_with_comments!(code, code_opts())
 
-      assert spitfire_ast == code_ast
+    assert spitfire_ast == code_ast
   end
 
   test "Spitfire empty function 1" do
-      code = ~S"""
-      fn x -> end
-      """
+    code = ~S"""
+    fn x -> end
+    """
 
-      {:ok, spitfire_ast, _comments} = Spitfire.parse_with_comments(code, spitfire_opts())
-      {code_ast, _comments} = Code.string_to_quoted_with_comments!(code, code_opts())
+    {:ok, spitfire_ast, _comments} = Spitfire.parse_with_comments(code, spitfire_opts())
+    {code_ast, _comments} = Code.string_to_quoted_with_comments!(code, code_opts())
 
-      assert spitfire_ast == code_ast
+    assert spitfire_ast == code_ast
   end
 
-#   describe "problem 2 – range invariants" do
-#     test "Heredoc ranges start at column 1 regardless of indentation" do
-#       code = ~S'''
-#     """
-#   hello
-#   """
-# '''
+  #   describe "problem 2 – range invariants" do
+  #     test "Heredoc ranges start at column 1 regardless of indentation" do
+  #       code = ~S'''
+  #     """
+  #   hello
+  #   """
+  # '''
 
-#       {:ok, {:__block__, meta, _}, _} = Spitfire.parse_with_comments(code, spitfire_opts())
-#       {{:__block__, code_meta, _}, _comments} = Code.string_to_quoted_with_comments!(code, code_opts())
+  #       {:ok, {:__block__, meta, _}, _} = Spitfire.parse_with_comments(code, spitfire_opts())
+  #       {{:__block__, code_meta, _}, _comments} = Code.string_to_quoted_with_comments!(code, code_opts())
 
-#       dbg(code_meta)
+  #       dbg(code_meta)
 
-#       assert meta[:column] == 5
-#       assert {{1, 1}, _} = meta[:range]
-#     end
+  #       assert meta[:column] == 5
+  #       assert {{1, 1}, _} = meta[:range]
+  #     end
   # end
 end

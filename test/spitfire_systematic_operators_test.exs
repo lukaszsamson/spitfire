@@ -42,41 +42,95 @@ defmodule SpitfireSystematicOperatorsTest do
   @binary_ops [
     :.,
     :**,
-    :*, :/,
-    :+, :-,
-    :++, :--, :+++, :---, :.., :<>,
-    :^^^,
-    :in, :"not in",
-    :|>, :<<<, :>>>, :<<~, :~>>, :<~, :~>, :<~>,
-    :<, :>, :<=, :>=,
-    :==, :!=, :=~, :===, :!==,
-    :&&, :&&&, :and,
-    :||, :|||, :or,
+    :*,
+    :/,
+    :+,
+    :-,
+    :++,
+    :--,
+    :+++,
+    :---,
+    :..,
+    :<>,
+    :"^^^",
+    :in,
+    :"not in",
+    :|>,
+    :<<<,
+    :>>>,
+    :<<~,
+    :~>>,
+    :<~,
+    :~>,
+    :<~>,
+    :<,
+    :>,
+    :<=,
+    :>=,
+    :==,
+    :!=,
+    :=~,
+    :===,
+    :!==,
+    :&&,
+    :&&&,
+    :and,
+    :||,
+    :|||,
+    :or,
     :=,
     :|,
     :"::",
     :when,
-    :<-, :\\
+    :<-,
+    :\\
   ]
 
   # Binary operators that work with simple variable operands
   @simple_binary_ops [
     :**,
-    :*, :/,
-    :+, :-,
-    :++, :--, :+++, :---, :.., :<>,
-    :^^^,
-    :in, :"not in",
-    :|>, :<<<, :>>>, :<<~, :~>>, :<~, :~>, :<~>,
-    :<, :>, :<=, :>=,
-    :==, :!=, :=~, :===, :!==,
-    :&&, :&&&, :and,
-    :||, :|||, :or,
+    :*,
+    :/,
+    :+,
+    :-,
+    :++,
+    :--,
+    :+++,
+    :---,
+    :..,
+    :<>,
+    :"^^^",
+    :in,
+    :"not in",
+    :|>,
+    :<<<,
+    :>>>,
+    :<<~,
+    :~>>,
+    :<~,
+    :~>,
+    :<~>,
+    :<,
+    :>,
+    :<=,
+    :>=,
+    :==,
+    :!=,
+    :=~,
+    :===,
+    :!==,
+    :&&,
+    :&&&,
+    :and,
+    :||,
+    :|||,
+    :or,
     :=,
     :|,
     :"::",
     :when,
-    :<-, :\\
+    :<-,
+    :\\
   ]
 
   # Right-associative binary operators
@@ -144,10 +198,12 @@ defmodule SpitfireSystematicOperatorsTest do
                   else
                     nil
                   end
+
                 {:error, _} ->
                   # If Spitfire fails but Code succeeds, that's a failure
                   {code, expected, :error}
               end
+
             {:error, _} ->
               # If Code fails, we skip (or we could assert Spitfire also fails or recovers gracefully)
               # For now we focus on valid precedence.
@@ -156,7 +212,8 @@ defmodule SpitfireSystematicOperatorsTest do
         end
         |> Enum.reject(&is_nil/1)
 
-      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+      assert failures == [],
+             "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
 
     test "unary - binary combinations (op1 a op2 b)" do
@@ -172,14 +229,19 @@ defmodule SpitfireSystematicOperatorsTest do
               case Spitfire.parse(code) do
                 {:ok, actual} ->
                   if actual != expected, do: {code, expected, actual}, else: nil
-                {:error, _} -> {code, expected, :error}
+
+                {:error, _} ->
+                  {code, expected, :error}
               end
-            {:error, _} -> nil
+
+            {:error, _} ->
+              nil
           end
         end
         |> Enum.reject(&is_nil/1)
 
-      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+      assert failures == [],
+             "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
 
     test "binary - unary combinations (a op1 op2 b)" do
@@ -195,21 +257,26 @@ defmodule SpitfireSystematicOperatorsTest do
               case Spitfire.parse(code) do
                 {:ok, actual} ->
                   if actual != expected, do: {code, expected, actual}, else: nil
-                {:error, _} -> {code, expected, :error}
+
+                {:error, _} ->
+                  {code, expected, :error}
               end
-            {:error, _} -> nil
+
+            {:error, _} ->
+              nil
           end
         end
         |> Enum.reject(&is_nil/1)
 
-      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+      assert failures == [],
+             "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
 
     test "ternary range (a..b//c) combinations" do
-       # a op b..c//d
-       # a..b//c op d
+      # a op b..c//d
+      # a..b//c op d
 
-       failures =
+      failures =
         for op <- @binary_ops do
           s_op = op_to_string(op)
 
@@ -224,15 +291,16 @@ defmodule SpitfireSystematicOperatorsTest do
         |> List.flatten()
         |> Enum.reject(&is_nil/1)
 
-       assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+      assert failures == [],
+             "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
 
     test "ternary range with unary operators" do
-       # op a..b//c
-       # a..op b//c
-       # a..b//op c
+      # op a..b//c
+      # a..op b//c
+      # a..b//op c
 
-       failures =
+      failures =
         for op <- @unary_ops do
           s_op = op_to_string(op)
 
@@ -245,30 +313,31 @@ defmodule SpitfireSystematicOperatorsTest do
         |> List.flatten()
         |> Enum.reject(&is_nil/1)
 
-       assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+      assert failures == [],
+             "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
 
     test "map update (op a | b => c) combinations" do
-       # This is tricky because | and => are operators too.
-       # %{map | key => val}
-       # We want to test if operators inside/outside bind correctly.
-       # e.g. %{a | b => c + d}
-       # e.g. %{a | b + c => d}
-       # e.g. %{a + b | c => d}
-       # e.g. %{a | b => c} + d
+      # This is tricky because | and => are operators too.
+      # %{map | key => val}
+      # We want to test if operators inside/outside bind correctly.
+      # e.g. %{a | b => c + d}
+      # e.g. %{a | b + c => d}
+      # e.g. %{a + b | c => d}
+      # e.g. %{a | b => c} + d
 
-       # Base cases
-       base_failures =
-         [
-           check("%{a | b => c}"),
-           check("%{a | b :: c => d}"),
-           check("%{a | b => c :: d}"),
-           check("%{a | b => c} + d"),
-           check("d + %{a | b => c}")
-         ]
-         |> Enum.reject(&is_nil/1)
+      # Base cases
+      base_failures =
+        [
+          check("%{a | b => c}"),
+          check("%{a | b :: c => d}"),
+          check("%{a | b => c :: d}"),
+          check("%{a | b => c} + d"),
+          check("d + %{a | b => c}")
+        ]
+        |> Enum.reject(&is_nil/1)
 
-       failures =
+      failures =
         for op <- @binary_ops do
           s_op = op_to_string(op)
 
@@ -291,8 +360,10 @@ defmodule SpitfireSystematicOperatorsTest do
         |> List.flatten()
         |> Enum.reject(&is_nil/1)
 
-       all_failures = base_failures ++ failures
-       assert all_failures == [], "Failed combinations: #{inspect(all_failures, pretty: true, limit: :infinity)}"
+      all_failures = base_failures ++ failures
+
+      assert all_failures == [],
+             "Failed combinations: #{inspect(all_failures, pretty: true, limit: :infinity)}"
     end
 
     test "ternary range between two binary operators (a op1 b..c//d op2 e)" do
@@ -305,7 +376,8 @@ defmodule SpitfireSystematicOperatorsTest do
         end
         |> Enum.reject(&is_nil/1)
 
-      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+      assert failures == [],
+             "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
 
     test "map update between two binary operators (a op1 %{m | k => v} op2 b)" do
@@ -318,7 +390,8 @@ defmodule SpitfireSystematicOperatorsTest do
         end
         |> Enum.reject(&is_nil/1)
 
-      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+      assert failures == [],
+             "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
 
     test "map update with unary operators" do
@@ -335,9 +408,9 @@ defmodule SpitfireSystematicOperatorsTest do
         |> List.flatten()
         |> Enum.reject(&is_nil/1)
 
-      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+      assert failures == [],
+             "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
-
   end
 
   defp check(code) do
@@ -346,9 +419,13 @@ defmodule SpitfireSystematicOperatorsTest do
         case Spitfire.parse(code) do
           {:ok, actual} ->
             if actual != expected, do: {code, expected, actual}, else: nil
-          {:error, _} -> {code, expected, :error}
+
+          {:error, _} ->
+            {code, expected, :error}
         end
-      {:error, _} -> nil
+
+      {:error, _} ->
+        nil
     end
   end
 
@@ -375,7 +452,8 @@ defmodule SpitfireSystematicOperatorsTest do
         |> List.flatten()
         |> Enum.reject(&is_nil/1)
 
-      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+      assert failures == [],
+             "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
 
     test "binary operators with mixed literals and variables" do
@@ -394,7 +472,8 @@ defmodule SpitfireSystematicOperatorsTest do
         |> List.flatten()
         |> Enum.reject(&is_nil/1)
 
-      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+      assert failures == [],
+             "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
   end
 
@@ -428,7 +507,8 @@ defmodule SpitfireSystematicOperatorsTest do
         end
         |> Enum.reject(&is_nil/1)
 
-      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+      assert failures == [],
+             "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
 
     test "do/end blocks followed by binary operators" do
@@ -444,7 +524,8 @@ defmodule SpitfireSystematicOperatorsTest do
         |> List.flatten()
         |> Enum.reject(&is_nil/1)
 
-      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+      assert failures == [],
+             "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
 
     test "do/end blocks with operators inside" do
@@ -463,7 +544,8 @@ defmodule SpitfireSystematicOperatorsTest do
         |> List.flatten()
         |> Enum.reject(&is_nil/1)
 
-      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+      assert failures == [],
+             "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
   end
 
@@ -475,17 +557,28 @@ defmodule SpitfireSystematicOperatorsTest do
   describe "triple binary operator combinations" do
     # Use a representative subset to avoid combinatorial explosion
     @precedence_representatives [
-      :**,        # highest among simple binary
-      :*,         # mult/div level
-      :+,         # add/sub level
-      :++,        # right-associative list ops
-      :<>,        # binary concat
-      :|>,        # pipe
-      :<,         # comparison
-      :==,        # equality
-      :&&,        # logical and
-      :||,        # logical or
-      :=          # match
+      # highest among simple binary
+      :**,
+      # mult/div level
+      :*,
+      # add/sub level
+      :+,
+      # right-associative list ops
+      :++,
+      # binary concat
+      :<>,
+      # pipe
+      :|>,
+      # comparison
+      :<,
+      # equality
+      :==,
+      # logical and
+      :&&,
+      # logical or
+      :||,
+      # match
+      :=
     ]
 
     test "a op1 b op2 c op3 d" do
@@ -501,7 +594,8 @@ defmodule SpitfireSystematicOperatorsTest do
         end
         |> Enum.reject(&is_nil/1)
 
-      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+      assert failures == [],
+             "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
 
     test "unary op1 a op2 b op3 c" do
@@ -517,7 +611,8 @@ defmodule SpitfireSystematicOperatorsTest do
         end
         |> Enum.reject(&is_nil/1)
 
-      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+      assert failures == [],
+             "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
   end
 
@@ -540,7 +635,8 @@ defmodule SpitfireSystematicOperatorsTest do
         |> List.flatten()
         |> Enum.reject(&is_nil/1)
 
-      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+      assert failures == [],
+             "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
 
     test "triple unary operators" do
@@ -554,7 +650,8 @@ defmodule SpitfireSystematicOperatorsTest do
         end
         |> Enum.reject(&is_nil/1)
 
-      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+      assert failures == [],
+             "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
   end
 
@@ -577,7 +674,8 @@ defmodule SpitfireSystematicOperatorsTest do
         |> List.flatten()
         |> Enum.reject(&is_nil/1)
 
-      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+      assert failures == [],
+             "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
 
     test "left-associative operators chain correctly" do
@@ -593,7 +691,8 @@ defmodule SpitfireSystematicOperatorsTest do
         |> List.flatten()
         |> Enum.reject(&is_nil/1)
 
-      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+      assert failures == [],
+             "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
   end
 
@@ -616,7 +715,8 @@ defmodule SpitfireSystematicOperatorsTest do
         |> List.flatten()
         |> Enum.reject(&is_nil/1)
 
-      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+      assert failures == [],
+             "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
 
     test "heredocs with operators" do
@@ -632,7 +732,8 @@ defmodule SpitfireSystematicOperatorsTest do
         |> List.flatten()
         |> Enum.reject(&is_nil/1)
 
-      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+      assert failures == [],
+             "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
 
     test "charlists with interpolation and operators" do
@@ -648,7 +749,8 @@ defmodule SpitfireSystematicOperatorsTest do
         |> List.flatten()
         |> Enum.reject(&is_nil/1)
 
-      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+      assert failures == [],
+             "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
   end
 
@@ -672,7 +774,8 @@ defmodule SpitfireSystematicOperatorsTest do
         |> List.flatten()
         |> Enum.reject(&is_nil/1)
 
-      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+      assert failures == [],
+             "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
 
     test "operators in tuples" do
@@ -689,7 +792,8 @@ defmodule SpitfireSystematicOperatorsTest do
         |> List.flatten()
         |> Enum.reject(&is_nil/1)
 
-      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+      assert failures == [],
+             "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
 
     test "operators in maps" do
@@ -707,7 +811,8 @@ defmodule SpitfireSystematicOperatorsTest do
         |> List.flatten()
         |> Enum.reject(&is_nil/1)
 
-      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+      assert failures == [],
+             "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
 
     test "operators in structs" do
@@ -724,7 +829,8 @@ defmodule SpitfireSystematicOperatorsTest do
         |> List.flatten()
         |> Enum.reject(&is_nil/1)
 
-      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+      assert failures == [],
+             "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
 
     test "operators in keyword lists" do
@@ -741,7 +847,8 @@ defmodule SpitfireSystematicOperatorsTest do
         |> List.flatten()
         |> Enum.reject(&is_nil/1)
 
-      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+      assert failures == [],
+             "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
   end
 
@@ -765,7 +872,8 @@ defmodule SpitfireSystematicOperatorsTest do
         |> List.flatten()
         |> Enum.reject(&is_nil/1)
 
-      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+      assert failures == [],
+             "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
 
     test "capture followed by binary operator" do
@@ -782,7 +890,8 @@ defmodule SpitfireSystematicOperatorsTest do
         |> List.flatten()
         |> Enum.reject(&is_nil/1)
 
-      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+      assert failures == [],
+             "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
   end
 
@@ -805,7 +914,8 @@ defmodule SpitfireSystematicOperatorsTest do
         |> List.flatten()
         |> Enum.reject(&is_nil/1)
 
-      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+      assert failures == [],
+             "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
 
     test "@attr with do/end blocks" do
@@ -820,7 +930,8 @@ defmodule SpitfireSystematicOperatorsTest do
         |> List.flatten()
         |> Enum.reject(&is_nil/1)
 
-      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+      assert failures == [],
+             "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
   end
 
@@ -842,7 +953,8 @@ defmodule SpitfireSystematicOperatorsTest do
         ]
         |> Enum.reject(&is_nil/1)
 
-      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+      assert failures == [],
+             "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
 
     test "bitstring with operators inside" do
@@ -859,7 +971,8 @@ defmodule SpitfireSystematicOperatorsTest do
         |> List.flatten()
         |> Enum.reject(&is_nil/1)
 
-      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+      assert failures == [],
+             "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
 
     test "bitstring with operators outside" do
@@ -875,7 +988,8 @@ defmodule SpitfireSystematicOperatorsTest do
         |> List.flatten()
         |> Enum.reject(&is_nil/1)
 
-      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+      assert failures == [],
+             "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
   end
 
@@ -898,7 +1012,8 @@ defmodule SpitfireSystematicOperatorsTest do
         |> List.flatten()
         |> Enum.reject(&is_nil/1)
 
-      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+      assert failures == [],
+             "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
 
     test "when with multiple guards" do
@@ -915,7 +1030,8 @@ defmodule SpitfireSystematicOperatorsTest do
         |> List.flatten()
         |> Enum.reject(&is_nil/1)
 
-      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+      assert failures == [],
+             "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
   end
 
@@ -938,7 +1054,8 @@ defmodule SpitfireSystematicOperatorsTest do
         |> List.flatten()
         |> Enum.reject(&is_nil/1)
 
-      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+      assert failures == [],
+             "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
   end
 
@@ -960,7 +1077,8 @@ defmodule SpitfireSystematicOperatorsTest do
         |> List.flatten()
         |> Enum.reject(&is_nil/1)
 
-      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+      assert failures == [],
+             "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
   end
 
@@ -984,7 +1102,8 @@ defmodule SpitfireSystematicOperatorsTest do
         |> List.flatten()
         |> Enum.reject(&is_nil/1)
 
-      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+      assert failures == [],
+             "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
 
     test "sigils with interpolation and operators" do
@@ -1000,7 +1119,8 @@ defmodule SpitfireSystematicOperatorsTest do
         |> List.flatten()
         |> Enum.reject(&is_nil/1)
 
-      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+      assert failures == [],
+             "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
   end
 
@@ -1027,7 +1147,8 @@ defmodule SpitfireSystematicOperatorsTest do
         |> List.flatten()
         |> Enum.reject(&is_nil/1)
 
-      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+      assert failures == [],
+             "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
 
     test "quoted function names with operators" do
@@ -1044,7 +1165,8 @@ defmodule SpitfireSystematicOperatorsTest do
         |> List.flatten()
         |> Enum.reject(&is_nil/1)
 
-      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+      assert failures == [],
+             "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
   end
 
@@ -1068,7 +1190,8 @@ defmodule SpitfireSystematicOperatorsTest do
         |> List.flatten()
         |> Enum.reject(&is_nil/1)
 
-      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+      assert failures == [],
+             "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
   end
 
@@ -1092,7 +1215,8 @@ defmodule SpitfireSystematicOperatorsTest do
         |> List.flatten()
         |> Enum.reject(&is_nil/1)
 
-      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+      assert failures == [],
+             "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
   end
 
@@ -1111,7 +1235,8 @@ defmodule SpitfireSystematicOperatorsTest do
         ]
         |> Enum.reject(&is_nil/1)
 
-      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+      assert failures == [],
+             "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
 
     test "map inside range" do
@@ -1123,7 +1248,8 @@ defmodule SpitfireSystematicOperatorsTest do
         ]
         |> Enum.reject(&is_nil/1)
 
-      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+      assert failures == [],
+             "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
 
     test "complex range and map combinations" do
@@ -1141,7 +1267,8 @@ defmodule SpitfireSystematicOperatorsTest do
         |> List.flatten()
         |> Enum.reject(&is_nil/1)
 
-      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+      assert failures == [],
+             "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
 
     test "binary operators between two ternaries" do
@@ -1159,7 +1286,8 @@ defmodule SpitfireSystematicOperatorsTest do
         |> List.flatten()
         |> Enum.reject(&is_nil/1)
 
-      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+      assert failures == [],
+             "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
   end
 
@@ -1186,7 +1314,8 @@ defmodule SpitfireSystematicOperatorsTest do
         |> List.flatten()
         |> Enum.reject(&is_nil/1)
 
-      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+      assert failures == [],
+             "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
 
     test "unary with pipe operators" do
@@ -1205,7 +1334,8 @@ defmodule SpitfireSystematicOperatorsTest do
         |> List.flatten()
         |> Enum.reject(&is_nil/1)
 
-      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+      assert failures == [],
+             "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
 
     test "unary with comparison and logical operators" do
@@ -1226,7 +1356,8 @@ defmodule SpitfireSystematicOperatorsTest do
         |> List.flatten()
         |> Enum.reject(&is_nil/1)
 
-      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+      assert failures == [],
+             "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
 
     test "range with step and other operators" do
@@ -1244,7 +1375,8 @@ defmodule SpitfireSystematicOperatorsTest do
         |> List.flatten()
         |> Enum.reject(&is_nil/1)
 
-      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+      assert failures == [],
+             "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
 
     test "capture with do/end blocks" do
@@ -1257,7 +1389,8 @@ defmodule SpitfireSystematicOperatorsTest do
         ]
         |> Enum.reject(&is_nil/1)
 
-      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+      assert failures == [],
+             "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
 
     test "@ with call and do/end blocks" do
@@ -1271,7 +1404,8 @@ defmodule SpitfireSystematicOperatorsTest do
         ]
         |> Enum.reject(&is_nil/1)
 
-      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+      assert failures == [],
+             "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
   end
 
@@ -1292,7 +1426,8 @@ defmodule SpitfireSystematicOperatorsTest do
         ]
         |> Enum.reject(&is_nil/1)
 
-      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+      assert failures == [],
+             "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
   end
 
@@ -1312,7 +1447,8 @@ defmodule SpitfireSystematicOperatorsTest do
         ]
         |> Enum.reject(&is_nil/1)
 
-      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+      assert failures == [],
+             "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
 
     test "deeply nested operators" do
@@ -1326,7 +1462,8 @@ defmodule SpitfireSystematicOperatorsTest do
         ]
         |> Enum.reject(&is_nil/1)
 
-      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+      assert failures == [],
+             "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
   end
 
@@ -1352,7 +1489,8 @@ defmodule SpitfireSystematicOperatorsTest do
         |> List.flatten()
         |> Enum.reject(&is_nil/1)
 
-      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+      assert failures == [],
+             "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
 
     test "&(expr) followed by range operators" do
@@ -1367,7 +1505,8 @@ defmodule SpitfireSystematicOperatorsTest do
         ]
         |> Enum.reject(&is_nil/1)
 
-      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+      assert failures == [],
+             "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
 
     test "&(expr) with keyword list followed by binary operators" do
@@ -1383,7 +1522,8 @@ defmodule SpitfireSystematicOperatorsTest do
         |> List.flatten()
         |> Enum.reject(&is_nil/1)
 
-      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+      assert failures == [],
+             "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
 
     test "&(expr) with struct/map followed by binary operators" do
@@ -1400,7 +1540,8 @@ defmodule SpitfireSystematicOperatorsTest do
         |> List.flatten()
         |> Enum.reject(&is_nil/1)
 
-      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+      assert failures == [],
+             "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
   end
 
@@ -1420,7 +1561,8 @@ defmodule SpitfireSystematicOperatorsTest do
         ]
         |> Enum.reject(&is_nil/1)
 
-      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+      assert failures == [],
+             "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
 
     test "nested capture with struct" do
@@ -1432,7 +1574,8 @@ defmodule SpitfireSystematicOperatorsTest do
         ]
         |> Enum.reject(&is_nil/1)
 
-      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+      assert failures == [],
+             "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
 
     test "nested capture inside interpolation" do
@@ -1443,7 +1586,8 @@ defmodule SpitfireSystematicOperatorsTest do
         ]
         |> Enum.reject(&is_nil/1)
 
-      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+      assert failures == [],
+             "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
   end
 
@@ -1468,7 +1612,8 @@ defmodule SpitfireSystematicOperatorsTest do
         |> List.flatten()
         |> Enum.reject(&is_nil/1)
 
-      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+      assert failures == [],
+             "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
 
     test "capture with char literal in map" do
@@ -1481,7 +1626,8 @@ defmodule SpitfireSystematicOperatorsTest do
         ]
         |> Enum.reject(&is_nil/1)
 
-      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+      assert failures == [],
+             "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
   end
 
@@ -1506,7 +1652,8 @@ defmodule SpitfireSystematicOperatorsTest do
         |> List.flatten()
         |> Enum.reject(&is_nil/1)
 
-      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+      assert failures == [],
+             "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
 
     test "fn followed by &&& and then capture with pipe" do
@@ -1519,7 +1666,8 @@ defmodule SpitfireSystematicOperatorsTest do
         ]
         |> Enum.reject(&is_nil/1)
 
-      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+      assert failures == [],
+             "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
   end
 
@@ -1546,7 +1694,8 @@ defmodule SpitfireSystematicOperatorsTest do
         |> List.flatten()
         |> Enum.reject(&is_nil/1)
 
-      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+      assert failures == [],
+             "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
 
     test "unary + case followed by pipe and power operators" do
@@ -1559,7 +1708,8 @@ defmodule SpitfireSystematicOperatorsTest do
         ]
         |> Enum.reject(&is_nil/1)
 
-      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+      assert failures == [],
+             "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
   end
 
@@ -1580,7 +1730,8 @@ defmodule SpitfireSystematicOperatorsTest do
         ]
         |> Enum.reject(&is_nil/1)
 
-      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+      assert failures == [],
+             "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
 
     test "charlist piped to struct in function call" do
@@ -1592,7 +1743,8 @@ defmodule SpitfireSystematicOperatorsTest do
         ]
         |> Enum.reject(&is_nil/1)
 
-      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+      assert failures == [],
+             "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
   end
 
@@ -1613,7 +1765,8 @@ defmodule SpitfireSystematicOperatorsTest do
         ]
         |> Enum.reject(&is_nil/1)
 
-      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+      assert failures == [],
+             "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
 
     test "complex expressions in bitstring" do
@@ -1626,7 +1779,8 @@ defmodule SpitfireSystematicOperatorsTest do
         ]
         |> Enum.reject(&is_nil/1)
 
-      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+      assert failures == [],
+             "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
   end
 
@@ -1650,7 +1804,8 @@ defmodule SpitfireSystematicOperatorsTest do
         |> List.flatten()
         |> Enum.reject(&is_nil/1)
 
-      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+      assert failures == [],
+             "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
 
     test "unary + do/end blocks inside bitstring" do
@@ -1663,7 +1818,8 @@ defmodule SpitfireSystematicOperatorsTest do
         ]
         |> Enum.reject(&is_nil/1)
 
-      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+      assert failures == [],
+             "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
   end
 
@@ -1684,7 +1840,8 @@ defmodule SpitfireSystematicOperatorsTest do
         ]
         |> Enum.reject(&is_nil/1)
 
-      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+      assert failures == [],
+             "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
 
     test "capture followed by in and fn with pipe" do
@@ -1697,7 +1854,8 @@ defmodule SpitfireSystematicOperatorsTest do
         ]
         |> Enum.reject(&is_nil/1)
 
-      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+      assert failures == [],
+             "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
   end
 
@@ -1717,7 +1875,8 @@ defmodule SpitfireSystematicOperatorsTest do
         ]
         |> Enum.reject(&is_nil/1)
 
-      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+      assert failures == [],
+             "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
 
     test "heredoc charlist with interpolation containing operators" do
@@ -1730,7 +1889,8 @@ defmodule SpitfireSystematicOperatorsTest do
         ]
         |> Enum.reject(&is_nil/1)
 
-      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+      assert failures == [],
+             "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
   end
 
@@ -1748,7 +1908,8 @@ defmodule SpitfireSystematicOperatorsTest do
         ]
         |> Enum.reject(&is_nil/1)
 
-      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+      assert failures == [],
+             "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
 
     test "atoms as quoted keys with operators" do
@@ -1761,7 +1922,8 @@ defmodule SpitfireSystematicOperatorsTest do
         ]
         |> Enum.reject(&is_nil/1)
 
-      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+      assert failures == [],
+             "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
 
     test "with expression inside capture" do
@@ -1773,7 +1935,8 @@ defmodule SpitfireSystematicOperatorsTest do
         ]
         |> Enum.reject(&is_nil/1)
 
-      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+      assert failures == [],
+             "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
   end
 
@@ -1794,7 +1957,8 @@ defmodule SpitfireSystematicOperatorsTest do
         ]
         |> Enum.reject(&is_nil/1)
 
-      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+      assert failures == [],
+             "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
 
     test "range with keyword list in case expression" do
@@ -1806,7 +1970,8 @@ defmodule SpitfireSystematicOperatorsTest do
         ]
         |> Enum.reject(&is_nil/1)
 
-      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+      assert failures == [],
+             "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
 
     test "range with heredoc in keyword list" do
@@ -1817,7 +1982,8 @@ defmodule SpitfireSystematicOperatorsTest do
         ]
         |> Enum.reject(&is_nil/1)
 
-      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+      assert failures == [],
+             "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
   end
 
@@ -1838,7 +2004,8 @@ defmodule SpitfireSystematicOperatorsTest do
         ]
         |> Enum.reject(&is_nil/1)
 
-      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+      assert failures == [],
+             "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
 
     test "pipe with heredoc in struct inside function call" do
@@ -1850,7 +2017,8 @@ defmodule SpitfireSystematicOperatorsTest do
         ]
         |> Enum.reject(&is_nil/1)
 
-      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+      assert failures == [],
+             "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
 
     test "multiple pipes in function call arguments" do
@@ -1863,7 +2031,8 @@ defmodule SpitfireSystematicOperatorsTest do
         ]
         |> Enum.reject(&is_nil/1)
 
-      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+      assert failures == [],
+             "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
 
     test "pipe with operators in function call" do
@@ -1879,7 +2048,8 @@ defmodule SpitfireSystematicOperatorsTest do
         |> List.flatten()
         |> Enum.reject(&is_nil/1)
 
-      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+      assert failures == [],
+             "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
   end
 
@@ -1899,7 +2069,8 @@ defmodule SpitfireSystematicOperatorsTest do
         ]
         |> Enum.reject(&is_nil/1)
 
-      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+      assert failures == [],
+             "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
 
     test "pipe into struct with heredoc" do
@@ -1911,7 +2082,8 @@ defmodule SpitfireSystematicOperatorsTest do
         ]
         |> Enum.reject(&is_nil/1)
 
-      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+      assert failures == [],
+             "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
   end
 
@@ -1930,7 +2102,8 @@ defmodule SpitfireSystematicOperatorsTest do
         end
         |> Enum.reject(&is_nil/1)
 
-      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+      assert failures == [],
+             "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
 
     test "case with string concatenation and range" do
@@ -1943,7 +2116,8 @@ defmodule SpitfireSystematicOperatorsTest do
         ]
         |> Enum.reject(&is_nil/1)
 
-      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+      assert failures == [],
+             "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
 
     test "case with range and keyword list" do
@@ -1955,7 +2129,8 @@ defmodule SpitfireSystematicOperatorsTest do
         ]
         |> Enum.reject(&is_nil/1)
 
-      assert failures == [], "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
+      assert failures == [],
+             "Failed combinations: #{inspect(failures, pretty: true, limit: :infinity)}"
     end
   end
 end

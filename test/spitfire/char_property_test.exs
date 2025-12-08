@@ -38,20 +38,100 @@ defmodule Spitfire.CharPropertyTest do
     @tag timeout: 120_000
     property "grammar trees round-trip through Spitfire" do
       check all(
-              code <- StreamData.string([
-              ?d, ?o, ?e, ?n, ?d, ?c, ?a, ?t, ?c, ?h, ?r, ?e, ?s, ?c, ?u, ?e, ?a, ?f, ?t, ?e, ?r, ?e, ?l, ?s, ?e,
-                ?f, ?n,
-                  ?w, ?h, ?e, ?n, ?a, ?n, ?d, ?o, ?r, ?n, ?o, ?t, ?i, ?n,
-                  ?t, ?r, ?u, ?e, ?f, ?a, ?l, ?s, ?e, ?n, ?i, ?l,
-              ?A,
-              ?!, ?@, ?^, ?&, ?*, ?(, ?), ?-, ?+, ?[, ?], ?{, ?}, ?;, ?:, ?', ?", ?\\, ?|, ?~, ?<, ?>, ?,, ?., ?/, ??, ?$, ?%, ?_, ?=, ?\s
-              # ?#, #\n
-              ], min_length: 0, max_length: 16),
-              max_runs: 5000000,
+              code <-
+                StreamData.string(
+                  [
+                    ?d,
+                    ?o,
+                    ?e,
+                    ?n,
+                    ?d,
+                    ?c,
+                    ?a,
+                    ?t,
+                    ?c,
+                    ?h,
+                    ?r,
+                    ?e,
+                    ?s,
+                    ?c,
+                    ?u,
+                    ?e,
+                    ?a,
+                    ?f,
+                    ?t,
+                    ?e,
+                    ?r,
+                    ?e,
+                    ?l,
+                    ?s,
+                    ?e,
+                    ?f,
+                    ?n,
+                    ?w,
+                    ?h,
+                    ?e,
+                    ?n,
+                    ?a,
+                    ?n,
+                    ?d,
+                    ?o,
+                    ?r,
+                    ?n,
+                    ?o,
+                    ?t,
+                    ?i,
+                    ?n,
+                    ?t,
+                    ?r,
+                    ?u,
+                    ?e,
+                    ?f,
+                    ?a,
+                    ?l,
+                    ?s,
+                    ?e,
+                    ?n,
+                    ?i,
+                    ?l,
+                    ?A,
+                    ?!,
+                    ?@,
+                    ?^,
+                    ?&,
+                    ?*,
+                    ?(,
+                    ?),
+                    ?-,
+                    ?+,
+                    ?[,
+                    ?],
+                    ?{,
+                    ?},
+                    ?;,
+                    ?:,
+                    ?',
+                    ?",
+                    ?\\,
+                    ?|,
+                    ?~,
+                    ?<,
+                    ?>,
+                    ?,,
+                    ?.,
+                    ?/,
+                    ??,
+                    ?$,
+                    ?%,
+                    ?_,
+                    ?=,
+                    ?\s
+                    # ?#, #\n
+                  ], min_length: 0, max_length: 16),
+              max_runs: 5_000_000,
               max_shrinking_steps: 50
             ) do
-              code = "<<a, s: " <> code <> " >>"
-
+        code = "<<a, s: " <> code <> " >>"
 
         # Use Code.with_diagnostics to capture warnings
         {result, _diagnostics} =
@@ -60,9 +140,11 @@ defmodule Spitfire.CharPropertyTest do
           end)
 
         case result do
-          {:ok, {:__block__, _, []}} -> :ok
+          {:ok, {:__block__, _, []}} ->
+            :ok
+
           {:ok, oracle_ast} ->
-            IO.puts(">>>>>\n"<>code<>"\n<<<<<")
+            IO.puts(">>>>>\n" <> code <> "\n<<<<<")
             # Parse with Spitfire
             assert {:ok, spitfire_ast} = Spitfire.parse(code)
 
@@ -138,7 +220,8 @@ defmodule Spitfire.CharPropertyTest do
             spitfire_meta == [] -> :oracle
             not oracle_points_to_in -> :oracle
             not spitfire_points_to_in -> :spitfire
-            true -> :same  # Both point to `in`, they likely match
+            # Both point to `in`, they likely match
+            true -> :same
           end
 
         {key, {better, oracle_meta, spitfire_meta}}
@@ -178,7 +261,11 @@ defmodule Spitfire.CharPropertyTest do
                  Keyword.has_key?(spitfire_in_meta, :end_of_expression) do
               {
                 Keyword.delete(fixed_op_meta, :end_of_expression),
-                Keyword.put(fixed_in_meta, :end_of_expression, Keyword.get(fixed_op_meta, :end_of_expression))
+                Keyword.put(
+                  fixed_in_meta,
+                  :end_of_expression,
+                  Keyword.get(fixed_op_meta, :end_of_expression)
+                )
               }
             else
               {fixed_op_meta, fixed_in_meta}

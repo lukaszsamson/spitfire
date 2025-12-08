@@ -82,12 +82,16 @@ defmodule SpitfireReproTest do
   end
 
   test "repro 10" do
-    code = "[@spec foo() :: term(), with gamma <- beta do\n  Bar\nelse\n  _ -> 0\nend |> {-7, qux} + ~s\"\"\"\nfoo \#{0.0} bar\n\"\"\"]"
+    code =
+      "[@spec foo() :: term(), with gamma <- beta do\n  Bar\nelse\n  _ -> 0\nend |> {-7, qux} + ~s\"\"\"\nfoo \#{0.0} bar\n\"\"\"]"
+
     assert Spitfire.parse(code) == s2q(code)
   end
 
   test "repro 10a" do
-    code = "[@foobar foo() :: term(), with gamma <- beta do\n  Bar\nelse\n  _ -> 0\nend |> {-7, qux} + ~s\"\"\"\nfoo \#{0.0} bar\n\"\"\"]"
+    code =
+      "[@foobar foo() :: term(), with gamma <- beta do\n  Bar\nelse\n  _ -> 0\nend |> {-7, qux} + ~s\"\"\"\nfoo \#{0.0} bar\n\"\"\"]"
+
     assert Spitfire.parse(code) == s2q(code)
   end
 
@@ -102,12 +106,16 @@ defmodule SpitfireReproTest do
   end
 
   test "repro 13" do
-    code = "%{\"z9H\" => not 'foo\#{beta}bar'} |> \"foo\#{spam |> Context}bar\"..%Qux{\"one\": :one}..\"\" <> \"\"//1"
+    code =
+      "%{\"z9H\" => not 'foo\#{beta}bar'} |> \"foo\#{spam |> Context}bar\"..%Qux{\"one\": :one}..\"\" <> \"\"//1"
+
     assert Spitfire.parse(code) == s2q(code)
   end
 
   test "repro 14" do
-    code = "{{[qux, :error, beta] - ?l..gamma, %Remote{'alice': \"foo\#{qux}bar\" <> \"\"}}, {%{\"N\" => 41.0 >>> ?m}, [Default |> ?k, ?i ** qux]}, \"foo\#{[\"two\": spam]}bar\"}"
+    code =
+      "{{[qux, :error, beta] - ?l..gamma, %Remote{'alice': \"foo\#{qux}bar\" <> \"\"}}, {%{\"N\" => 41.0 >>> ?m}, [Default |> ?k, ?i ** qux]}, \"foo\#{[\"two\": spam]}bar\"}"
+
     assert Spitfire.parse(code) == s2q(code)
   end
 
@@ -122,7 +130,9 @@ defmodule SpitfireReproTest do
   end
 
   test "repro 17" do
-    code = "quote do: case \"foo\#{gamma}bar\" <> \"foo\#{14.0}bar\"..\"\" <> \"foo\#{eggs}bar\" do\n  ?t -> [opts: gamma]\n  _ -> %Baz{\"ok\": Bar}\nend"
+    code =
+      "quote do: case \"foo\#{gamma}bar\" <> \"foo\#{14.0}bar\"..\"\" <> \"foo\#{eggs}bar\" do\n  ?t -> [opts: gamma]\n  _ -> %Baz{\"ok\": Bar}\nend"
+
     assert Spitfire.parse(code) == s2q(code)
   end
 
@@ -137,7 +147,9 @@ defmodule SpitfireReproTest do
   end
 
   test "repro 20" do
-    code = "case <<[\"two\": case beta do\n  38.0 -> qux\n  _ -> ?d\nend]>> do\n  [\"three\": ?m] -> Bar.eggs()\n  _ -> 0.0\nend"
+    code =
+      "case <<[\"two\": case beta do\n  38.0 -> qux\n  _ -> ?d\nend]>> do\n  [\"three\": ?m] -> Bar.eggs()\n  _ -> 0.0\nend"
+
     assert Spitfire.parse(code) == s2q(code)
   end
 
@@ -174,7 +186,9 @@ defmodule SpitfireReproTest do
   end
 
   test "repro 22" do
-    code = "case State.\"two\"(quote do\n  %Mod{'alice': :baz}\nend) do\n  ['three': :\"ok\"] -> %{\"end\": ?z} |> delta\n  _ -> %Foo{'error': %Foo{label: baz}}\nend"
+    code =
+      "case State.\"two\"(quote do\n  %Mod{'alice': :baz}\nend) do\n  ['three': :\"ok\"] -> %{\"end\": ?z} |> delta\n  _ -> %Foo{'error': %Foo{label: baz}}\nend"
+
     assert Spitfire.parse(code) == s2q(code)
   end
 
@@ -229,7 +243,9 @@ defmodule SpitfireReproTest do
   end
 
   test "repro 27" do
-    code = "fn ['end': baz], ^qux -> &({-5, foo} + 1) in Remote.\"three\"(\"foo\#{foo}bar\", not spam) end"
+    code =
+      "fn ['end': baz], ^qux -> &({-5, foo} + 1) in Remote.\"three\"(\"foo\#{foo}bar\", not spam) end"
+
     assert Spitfire.parse(code) == s2q(code)
   end
 
@@ -249,7 +265,9 @@ defmodule SpitfireReproTest do
   end
 
   test "repro 31" do
-    code = "case \"\" <> \"foo\#{9.0}bar\"..['do': \"\"\"\nfoo \#{spam} bar\n\"\"\"] do\n  <<:\"bar\">> -> ~S/\#{spam}/i\n  _ -> <<?a..foo>>\nend"
+    code =
+      "case \"\" <> \"foo\#{9.0}bar\"..['do': \"\"\"\nfoo \#{spam} bar\n\"\"\"] do\n  <<:\"bar\">> -> ~S/\#{spam}/i\n  _ -> <<?a..foo>>\nend"
+
     assert Spitfire.parse(code) == s2q(code)
   end
 
@@ -312,7 +330,9 @@ defmodule SpitfireReproTest do
   end
 
   test "repro 41" do
-    code = "case not \"foo\#{:do}bar\" <> \"foo\#{State}bar\" do\n  {alpha, ^alpha} -> \"\"\"\nfoo \#{baz} bar\n\"\"\"\n  _ -> foo()\nend |> \"\"\"\nfoo \#{foo + Foo |> +delta} bar\n\"\"\""
+    code =
+      "case not \"foo\#{:do}bar\" <> \"foo\#{State}bar\" do\n  {alpha, ^alpha} -> \"\"\"\nfoo \#{baz} bar\n\"\"\"\n  _ -> foo()\nend |> \"\"\"\nfoo \#{foo + Foo |> +delta} bar\n\"\"\""
+
     assert Spitfire.parse(code) == s2q(code)
   end
 
@@ -322,12 +342,16 @@ defmodule SpitfireReproTest do
   end
 
   test "repro 43" do
-    code = "&('foo\#{Context |> 22.0}bar' + 1) in fn -> with ^spam <- bar do\n  Bar\nelse\n  _ -> gamma\nend end |> quote do\n  20.0\nend"
+    code =
+      "&('foo\#{Context |> 22.0}bar' + 1) in fn -> with ^spam <- bar do\n  Bar\nelse\n  _ -> gamma\nend end |> quote do\n  20.0\nend"
+
     assert Spitfire.parse(code) == s2q(code)
   end
 
   test "repro 44" do
-    code = "+case {delta, -4} do\n  foo -> gamma\n  _ -> :error\nend |> :alice ** foo >>> %Default{\"bar\": alpha}"
+    code =
+      "+case {delta, -4} do\n  foo -> gamma\n  _ -> :error\nend |> :alice ** foo >>> %Default{\"bar\": alpha}"
+
     assert Spitfire.parse(code) == s2q(code)
   end
 
@@ -347,7 +371,9 @@ defmodule SpitfireReproTest do
   end
 
   test "repro 48" do
-    code = "not gamma |> :foo > [\"alice\": alpha] |> case &1 do\n  ^delta -> ?v\n  _ -> delta\nend"
+    code =
+      "not gamma |> :foo > [\"alice\": alpha] |> case &1 do\n  ^delta -> ?v\n  _ -> delta\nend"
+
     assert Spitfire.parse(code) == s2q(code)
   end
 
@@ -367,6 +393,7 @@ defmodule SpitfireReproTest do
     148
     end; !:alice
     """
+
     assert Spitfire.parse(code) == s2q(code)
   end
 
@@ -376,6 +403,7 @@ defmodule SpitfireReproTest do
     148
     end; :alice
     """
+
     assert Spitfire.parse(code) == s2q(code)
 
     code = """
@@ -383,6 +411,7 @@ defmodule SpitfireReproTest do
     148
     end; :alice
     """
+
     assert Spitfire.parse(code) == s2q(code)
 
     code = """
@@ -391,6 +420,7 @@ defmodule SpitfireReproTest do
     end
     :alice
     """
+
     assert Spitfire.parse(code) == s2q(code)
 
     code = """
@@ -398,6 +428,7 @@ defmodule SpitfireReproTest do
     148
     end; :alice
     """
+
     assert Spitfire.parse(code) == s2q(code)
 
     code = """
@@ -405,6 +436,7 @@ defmodule SpitfireReproTest do
     148
     end; :alice
     """
+
     assert Spitfire.parse(code) == s2q(code)
 
     code = """
@@ -412,6 +444,7 @@ defmodule SpitfireReproTest do
     148
     end; :alice
     """
+
     assert Spitfire.parse(code) == s2q(code)
   end
 
@@ -431,6 +464,7 @@ defmodule SpitfireReproTest do
     end
     0
     """
+
     assert Spitfire.parse(code) == s2q(code)
   end
 
@@ -452,6 +486,7 @@ defmodule SpitfireReproTest do
     Foo
     end
     """
+
     assert Spitfire.parse(code) == s2q(code)
   end
 
@@ -475,6 +510,7 @@ defmodule SpitfireReproTest do
     ..
     -343 - 0b11.(beta, ?n) <- ...&1
     """
+
     assert Spitfire.parse(code) == s2q(code)
   end
 
@@ -484,6 +520,7 @@ defmodule SpitfireReproTest do
     <>
     1 <- ...1
     """
+
     assert Spitfire.parse(code) == s2q(code)
 
     code = """
@@ -493,6 +530,7 @@ defmodule SpitfireReproTest do
     +
     1 <- ...1
     """
+
     assert Spitfire.parse(code) == s2q(code)
 
     code = """
@@ -502,6 +540,7 @@ defmodule SpitfireReproTest do
     <>
     1 <- 2
     """
+
     assert Spitfire.parse(code) == s2q(code)
   end
 
@@ -509,6 +548,7 @@ defmodule SpitfireReproTest do
     code = """
     ...@@spam[Context]
     """
+
     assert Spitfire.parse(code) == s2q(code)
   end
 
@@ -523,6 +563,7 @@ defmodule SpitfireReproTest do
     @foo[foo] <~ delta beta: 0o50 |> foo.delta gamma
     <~> -[0o36, 729, Foo]
     """
+
     assert Spitfire.parse(code) == s2q(code)
   end
 
@@ -531,6 +572,7 @@ defmodule SpitfireReproTest do
     code = """
     @Foo.Bar
     """
+
     assert Spitfire.parse(code) == s2q(code)
   end
 
@@ -547,6 +589,7 @@ defmodule SpitfireReproTest do
     fn -> State end == false when State.Context.Default.bar; eggs \\ @ ( alpha -> Baz; delta -> Bar)
     ; ... <> fn spam, qux when gamma and true -> Remote.Foo end\
     """
+
     assert Spitfire.parse(code) == s2q(code)
   end
 
@@ -570,6 +613,7 @@ defmodule SpitfireReproTest do
     - (:two)
     qux fn -> true end <~> spam ?a\
     """
+
     assert Spitfire.parse(code) == s2q(code)
   end
 
@@ -586,6 +630,7 @@ defmodule SpitfireReproTest do
     !
     @Context; @ ... ||| (; foo -> 0x0)\
     """
+
     assert Spitfire.parse(code) == s2q(code)
   end
 
@@ -596,6 +641,7 @@ defmodule SpitfireReproTest do
     -16.(fn eggs -> delta - beta end)
     ![ ... .. (;) // eggs, beta < [beta, eggs], (; :bar -> 2.78) \\\\ foo]\
     """
+
     assert Spitfire.parse(code) == s2q(code)
   end
 
@@ -607,6 +653,7 @@ defmodule SpitfireReproTest do
     -16.(fn eggs -> delta - beta end)
     ![ ... .. (;) // eggs, beta < [beta, eggs], (; :bar -> 2.78) \\ foo]\
     """
+
     assert Spitfire.parse(code) == s2q(code)
   end
 
@@ -619,6 +666,7 @@ defmodule SpitfireReproTest do
     @
     Config.State.gamma
     """
+
     assert Spitfire.parse(code) == s2q(code)
   end
 
@@ -626,6 +674,7 @@ defmodule SpitfireReproTest do
     code = """
     @@delta[?a]\
     """
+
     assert Spitfire.parse(code) == s2q(code)
   end
 
@@ -633,6 +682,7 @@ defmodule SpitfireReproTest do
     code = """
     @@foo -- 999\
     """
+
     assert Spitfire.parse(code) == s2q(code)
   end
 
@@ -640,6 +690,7 @@ defmodule SpitfireReproTest do
     code = """
     @@bar.(0x0)\
     """
+
     assert Spitfire.parse(code) == s2q(code)
   end
 
@@ -653,6 +704,7 @@ defmodule SpitfireReproTest do
     @spam()()
     1..2//spam()()
     """
+
     assert Spitfire.parse(code) == s2q(code)
   end
 
@@ -675,6 +727,7 @@ defmodule SpitfireReproTest do
     end
 
     """
+
     assert Spitfire.parse(code) == s2q(code)
   end
 
@@ -691,6 +744,7 @@ defmodule SpitfireReproTest do
     end
 
     """
+
     assert Spitfire.parse(code) == s2q(code)
   end
 
@@ -701,6 +755,7 @@ defmodule SpitfireReproTest do
     beta
     end <~> :one.- gamma ~> bar bar: :bar, gamma: Foo
     """
+
     assert Spitfire.parse(code) == s2q(code)
   end
 
@@ -710,6 +765,7 @@ defmodule SpitfireReproTest do
     beta
     end
     """
+
     assert Spitfire.parse(code) == s2q(code)
   end
 
@@ -719,6 +775,7 @@ defmodule SpitfireReproTest do
     :bob
     end
     """
+
     assert Spitfire.parse(code) == s2q(code)
   end
 
@@ -735,6 +792,7 @@ defmodule SpitfireReproTest do
     Context.Remote.Foo
     end
     """
+
     assert Spitfire.parse(code) == s2q(code)
   end
 
@@ -750,6 +808,7 @@ defmodule SpitfireReproTest do
     end; !
     ...qux.eggs <~ foo
     """
+
     assert Spitfire.parse(code) == s2q(code)
   end
 
@@ -759,6 +818,7 @@ defmodule SpitfireReproTest do
     :ok
     end <- foo
     """
+
     assert Spitfire.parse(code) == s2q(code)
 
     code = """
@@ -766,6 +826,7 @@ defmodule SpitfireReproTest do
     :ok
     end <- foo
     """
+
     assert Spitfire.parse(code) == s2q(code)
 
     code = """
@@ -773,6 +834,7 @@ defmodule SpitfireReproTest do
     :ok
     end <- foo
     """
+
     assert Spitfire.parse(code) == s2q(code)
 
     code = """
@@ -780,6 +842,7 @@ defmodule SpitfireReproTest do
     :ok
     end <- foo
     """
+
     assert Spitfire.parse(code) == s2q(code)
   end
 
@@ -789,6 +852,7 @@ defmodule SpitfireReproTest do
       baz
     end
     """
+
     assert Spitfire.parse(code) == s2q(code)
   end
 
@@ -810,6 +874,7 @@ defmodule SpitfireReproTest do
     end
 
     """
+
     assert Spitfire.parse(code) == s2q(code)
   end
 
@@ -829,6 +894,7 @@ defmodule SpitfireReproTest do
     @ ( beta -> bar) <|> qux spam: Mod.Remote.Bar, eggs: eggs
 
     """
+
     assert Spitfire.parse(code) == s2q(code)
   end
 
@@ -845,6 +911,7 @@ defmodule SpitfireReproTest do
     end
     not gamma .. baz // (;) <|> qux +foo
     """
+
     assert Spitfire.parse(code) == s2q(code)
   end
 
@@ -858,6 +925,7 @@ defmodule SpitfireReproTest do
     end
 
     """
+
     assert Spitfire.parse(code) == s2q(code)
   end
 
@@ -866,11 +934,13 @@ defmodule SpitfireReproTest do
     code = """
     0.\"\"R\
     """
+
     assert Spitfire.parse(code) == s2q(code)
 
     code = """
     0.'!'d\
     """
+
     assert Spitfire.parse(code) == s2q(code)
   end
 
@@ -879,6 +949,7 @@ defmodule SpitfireReproTest do
     code = """
     l[\na]\
     """
+
     assert Spitfire.parse(code) == s2q(code)
   end
 
@@ -886,6 +957,7 @@ defmodule SpitfireReproTest do
     code = """
     ^?\n*a\
     """
+
     assert Spitfire.parse(code) == s2q(code)
   end
 
@@ -894,11 +966,13 @@ defmodule SpitfireReproTest do
     code = """
     not/l\
     """
+
     assert Spitfire.parse(code) == s2q(code)
 
     code = """
     [not/eoe]\
     """
+
     assert Spitfire.parse(code) == s2q(code)
   end
 
@@ -907,6 +981,7 @@ defmodule SpitfireReproTest do
     code = """
     (s;)\
     """
+
     assert Spitfire.parse(code) == s2q(code)
   end
 
@@ -915,6 +990,7 @@ defmodule SpitfireReproTest do
     code = """
     %-e{}\
     """
+
     assert Spitfire.parse(code) == s2q(code)
   end
 
@@ -924,6 +1000,7 @@ defmodule SpitfireReproTest do
     code = """
     fn ->;t end\
     """
+
     assert Spitfire.parse(code) == s2q(code)
   end
 
@@ -932,6 +1009,7 @@ defmodule SpitfireReproTest do
     code = """
     fn d->; end\
     """
+
     assert Spitfire.parse(code) == s2q(code)
   end
 
@@ -940,6 +1018,7 @@ defmodule SpitfireReproTest do
     code = """
     a do -> end\
     """
+
     assert Spitfire.parse(code) == s2q(code)
   end
 
@@ -948,6 +1027,7 @@ defmodule SpitfireReproTest do
     code = """
     a do (dir;) end\
     """
+
     assert Spitfire.parse(code) == s2q(code)
   end
 
@@ -956,6 +1036,7 @@ defmodule SpitfireReproTest do
     code = """
     {(s=s;)}\
     """
+
     assert Spitfire.parse(code) == s2q(code)
   end
 
@@ -964,6 +1045,7 @@ defmodule SpitfireReproTest do
     code = """
     a do x -> ;c end\
     """
+
     assert Spitfire.parse(code) == s2q(code)
   end
 
@@ -972,6 +1054,7 @@ defmodule SpitfireReproTest do
     code = """
     a do; @l^h -> 1; end\
     """
+
     assert Spitfire.parse(code) == s2q(code)
   end
 
@@ -979,6 +1062,7 @@ defmodule SpitfireReproTest do
     code = """
     d&c do 1 end\
     """
+
     assert Spitfire.parse(code) == s2q(code)
   end
 
@@ -986,6 +1070,7 @@ defmodule SpitfireReproTest do
     code = """
     dh^:e do 1 end\
     """
+
     assert Spitfire.parse(code) == s2q(code)
   end
 
@@ -994,6 +1079,7 @@ defmodule SpitfireReproTest do
     code = """
     h&A do 1 end\
     """
+
     assert Spitfire.parse(code) == s2q(code)
   end
 
@@ -1002,6 +1088,7 @@ defmodule SpitfireReproTest do
     code = """
     not a do 1 end |r;\
     """
+
     assert Spitfire.parse(code) == s2q(code)
   end
 
@@ -1010,6 +1097,7 @@ defmodule SpitfireReproTest do
     code = """
     -!d a do 1 end -!d\
     """
+
     assert Spitfire.parse(code) == s2q(code)
   end
 
@@ -1018,6 +1106,7 @@ defmodule SpitfireReproTest do
     code = """
     fn a, d\\\\d -> 1 end\
     """
+
     assert Spitfire.parse(code) == s2q(code)
   end
 
@@ -1026,6 +1115,7 @@ defmodule SpitfireReproTest do
     code = """
     fn a, d: e -> 1 end\
     """
+
     assert Spitfire.parse(code) == s2q(code)
   end
 
@@ -1034,6 +1124,7 @@ defmodule SpitfireReproTest do
     code = """
     fn a, @d^/d -> 1 end\
     """
+
     assert Spitfire.parse(code) == s2q(code)
   end
 
@@ -1042,6 +1133,7 @@ defmodule SpitfireReproTest do
     code = """
     fn a, @d t -> 1 end\
     """
+
     assert Spitfire.parse(code) == s2q(code)
   end
 
@@ -1050,6 +1142,7 @@ defmodule SpitfireReproTest do
     code = """
     << d, >>\
     """
+
     assert Spitfire.parse(code) == s2q(code)
   end
 
@@ -1058,6 +1151,7 @@ defmodule SpitfireReproTest do
     code = """
     <<a, s: d >>\
     """
+
     assert Spitfire.parse(code) == s2q(code)
   end
 
@@ -1066,11 +1160,13 @@ defmodule SpitfireReproTest do
     code = """
     a(1, s: (+f) )\
     """
+
     assert Spitfire.parse(code) == s2q(code)
 
     code = """
     a 1, (l;)\
     """
+
     assert Spitfire.parse(code) == s2q(code)
   end
 end

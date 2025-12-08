@@ -328,7 +328,8 @@ defmodule Spitfire.Property.Generators do
   end
 
   defp guard_call(depth, interp_depth, block_depth) do
-    funcs = ~w(is_atom is_binary is_bitstring is_boolean is_float is_function is_integer is_list is_map is_nil is_number is_pid is_port is_reference is_tuple abs bit_size byte_size ceil div floor hd length map_size max min node rem round tl trunc tuple_size)
+    funcs =
+      ~w(is_atom is_binary is_bitstring is_boolean is_float is_function is_integer is_list is_map is_nil is_number is_pid is_port is_reference is_tuple abs bit_size byte_size ceil div floor hd length map_size max min node rem round tl trunc tuple_size)
 
     identifier = member_of(funcs)
     args = list_of(expr(:guard, depth, interp_depth, block_depth), length: 1..2)
@@ -411,17 +412,33 @@ defmodule Spitfire.Property.Generators do
         :expr ->
           [
             # Arithmetic
-            "+", "-", "*", "**",
+            "+",
+            "-",
+            "*",
+            "**",
             # Comparison
-            "==", "!=", "<", ">", "<=", ">=", "===", "!==",
+            "==",
+            "!=",
+            "<",
+            ">",
+            "<=",
+            ">=",
+            "===",
+            "!==",
             # Boolean
-            "and", "or",
+            "and",
+            "or",
             # Pipe
             "|>",
             # List
-            "++", "--",
+            "++",
+            "--",
             # Bitwise
-            "<<<", ">>>", "&&&", "|||", "^^^",
+            "<<<",
+            ">>>",
+            "&&&",
+            "|||",
+            "^^^",
             # In
             "in"
           ]
@@ -545,13 +562,16 @@ defmodule Spitfire.Property.Generators do
           bind(expr(:expr, max(depth - 1, 0), interp_depth, block_depth), fn else_body ->
             one_of([
               constant("with #{pattern} <- #{match_expr}, do: #{body}"),
-              constant("""
-              with #{pattern} <- #{match_expr} do
-                #{body}
-              else
-                _ -> #{else_body}
-              end
-              """ |> String.trim())
+              constant(
+                """
+                with #{pattern} <- #{match_expr} do
+                  #{body}
+                else
+                  _ -> #{else_body}
+                end
+                """
+                |> String.trim()
+              )
             ])
           end)
         end)
