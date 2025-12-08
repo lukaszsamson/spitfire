@@ -5100,6 +5100,7 @@ defmodule Spitfire do
     |> normalize_map_pipe_keys()
     |> normalize_not_pipelines()
     |> normalize_unary_ranges()
+    |> normalize_capture_do_blocks()
     |> normalize_block_sensitive_unary()
     |> split_unary_blocks()
   end
@@ -5287,6 +5288,23 @@ defmodule Spitfire do
     end)
   end
 
+  defp normalize_capture_do_blocks(ast) do
+    Macro.postwalk(ast, fn
+      {op, op_meta, [{:&, cap_meta, [lhs]}, rhs]} = node when op in [:<-] ->
+        if contains_block_with_do?(lhs) do
+          {eoe, op_meta} = Keyword.pop(op_meta, :end_of_expression)
+          cap_meta = if is_nil(eoe), do: cap_meta, else: [{:end_of_expression, eoe} | cap_meta]
+
+          {:&, cap_meta, [{op, op_meta, [lhs, rhs]}]}
+        else
+          node
+        end
+
+      other ->
+        other
+    end)
+  end
+
   @block_sensitive_unaries MapSet.new([:not, :!, :+, :-, :^, :"~~~"])
 
   @block_split_unaries MapSet.union(@block_sensitive_unaries, MapSet.new([:@, :&]))
@@ -5357,6 +5375,18 @@ defmodule Spitfire do
   end
 
   defp block_with_do?(_), do: false
+
+  defp contains_block_with_do?(expr) do
+    {_node, acc} =
+      Macro.traverse(
+        expr,
+        false,
+        fn node, acc -> {node, acc or block_with_do?(node)} end,
+        fn node, acc -> {node, acc} end
+      )
+
+    acc
+  end
 
   defp leftmost_block_with_do?({op, _meta, [lhs | _]} = node) when is_atom(op) do
     block_with_do?(node) or leftmost_block_with_do?(lhs)

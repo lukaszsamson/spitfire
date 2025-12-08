@@ -286,7 +286,7 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
     max_forms = Keyword.get(opts, :max_forms, 3)
 
     # Set allow_unmatched: true for top-level context
-    context = %{GrammarTree.phase1_context() | allow_unmatched: false, allow_no_parens: true, phase: phase}
+    context = %{GrammarTree.phase1_context() | allow_unmatched: true, allow_no_parens: true, phase: phase}
     state = %{budget: GrammarTree.initial_budget(max_depth, max_nodes), context: context}
 
     # Generate all grammar variants with appropriate frequencies

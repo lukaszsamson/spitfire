@@ -657,4 +657,66 @@ defmodule SpitfireReproTest do
     """
     assert Spitfire.parse(code) == s2q(code)
   end
+
+  @tag :skip
+  test "repro 67" do
+    code = """
+
+    baz foo: false do 3 -> :two
+    2 -> false
+    else
+    Context.Mod.Qux
+    end
+    ... .. ... // @
+    Foo.State.spam[:error] ^^^ &
+    bar !== Baz.Foo.Context.(0xC7, 34.39) do
+    bar
+    Default
+    catch
+    6 -> :foo
+    end
+
+    """
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
+  @tag :skip
+  test "repro 68" do
+    code = """
+
+    ... alpha()(delta) do; end
+    @ Foo.eggs(false, gamma) do
+    baz
+    delta
+    else
+    :alice
+    859
+    end
+
+    """
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
+  @tag :skip
+  test "repro 69" do
+    code = """
+    @ foo spam: gamma do Foo.Baz
+    beta
+    end <~> :one.- gamma ~> bar bar: :bar, gamma: Foo
+    """
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
+  @tag :skip
+  test "repro 70" do
+    code = """
+    ... 481.(true, State) do bar
+    :bob
+    else
+    ?h
+    end
+    {@ {Remote} .. ... // Config.qux[nil,], &Config.bar -- gamma 0b0}
+    """
+    assert Spitfire.parse(code) == s2q(code)
+  end
 end
