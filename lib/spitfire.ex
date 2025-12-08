@@ -1276,6 +1276,12 @@ defmodule Spitfire do
       {rhs, parser} = parse_expression(parser, @capture_op, false, false, false)
       parser = pop_capture_name_context(parser)
 
+      {rhs, parser} =
+        case peek_token_type(parser) do
+          :do -> parse_do_block(next_token(parser), rhs)
+          _ -> {rhs, parser}
+        end
+
       ast =
         {token, meta, [rhs]}
         |> attach_op_range(op_range)
