@@ -370,7 +370,7 @@ defmodule Spitfire do
     precedence < power
   end
 
-  @terminals MapSet.new([:eol, :eof, :"}", :")", :"]", :">>"])
+  @terminals MapSet.new([:eol, :";", :eof, :"}", :")", :"]", :">>"])
   @terminals_with_comma MapSet.put(@terminals, :",")
 
   # Dynamic terminal set selection based on parser context
@@ -5101,6 +5101,7 @@ defmodule Spitfire do
     |> normalize_not_pipelines()
     |> normalize_unary_ranges()
     |> normalize_block_sensitive_unary()
+    |> split_unary_blocks()
   end
 
   defp normalize_not_in(ast) do
@@ -5288,6 +5289,22 @@ defmodule Spitfire do
 
   @block_sensitive_unaries MapSet.new([:not, :!, :+, :-, :^, :"~~~"])
 
+  @block_split_unaries MapSet.union(@block_sensitive_unaries, MapSet.new([:@, :&]))
+
+  defp split_unary_blocks(ast) do
+    Macro.postwalk(ast, fn
+      {op, meta, [{:__block__, block_meta, [first | rest]}]} = node ->
+        if rest != [] and block_split_unary?(op) and not block_has_parens?(block_meta) do
+          {:__block__, block_meta, [{op, meta, [first]} | rest]}
+        else
+          node
+        end
+
+      other ->
+        other
+    end)
+  end
+
   defp normalize_block_sensitive_unary(ast) do
     Macro.postwalk(ast, fn
       {:not, not_meta, [{bin_op, bin_meta, [{unary_op, unary_meta, [operand]}, rhs]}]} = node ->
@@ -5327,6 +5344,11 @@ defmodule Spitfire do
         other
     end)
   end
+
+  defp block_split_unary?(op), do: MapSet.member?(@block_split_unaries, op)
+
+  defp block_has_parens?(meta),
+    do: Keyword.has_key?(meta, :parens) or Keyword.has_key?(meta, :closing)
 
   defp unary_block_op?(op), do: MapSet.member?(@block_sensitive_unaries, op)
 
