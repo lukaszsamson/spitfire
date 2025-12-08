@@ -593,4 +593,17 @@ defmodule SpitfireReproTest do
     """
     assert Spitfire.parse(code) == s2q(code)
   end
+
+  test "repro 66" do
+    code = """
+    ~~~ spam()()
+    -spam()()
+    not spam()()
+    !spam()()
+    &spam()()
+    @spam()()
+    1..2//spam()()
+    """
+    assert Spitfire.parse(code) == s2q(code)
+  end
 end

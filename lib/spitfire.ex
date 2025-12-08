@@ -1200,6 +1200,11 @@ defmodule Spitfire do
       {rhs, parser} = parse_expression(parser, effective_precedence, false, false, false)
 
       {rhs, parser} =
+        while peek_token_type(parser) == :"(" <- {rhs, parser} do
+          parse_call_expression(next_token(parser), rhs)
+        end
+
+      {rhs, parser} =
         if token_type == :at_op and operand_token_type == :at_op and peek_token_type(parser) == :"[" do
           parse_access_expression(next_token(parser), rhs)
         else
