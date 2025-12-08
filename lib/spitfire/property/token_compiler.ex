@@ -228,32 +228,6 @@ defmodule Spitfire.Property.TokenCompiler do
     compile_binary_op(left, op_eol, right, layout, opts)
   end
 
-  # Common binary operator compilation
-  defp compile_binary_op(left, {:op_eol, {op_kind, op}, newlines}, right, layout, opts) do
-    # Compile left operand
-    {left_tokens, layout} = do_to_tokens(left, layout, opts)
-
-    # Compile operator
-    op_lexeme = op_to_lexeme(op)
-    {op_meta, layout} = TokenLayout.space_before(layout, op_lexeme, nil)
-    op_token = {op_kind, op_meta, op}
-
-    # Handle newlines after operator
-    {eol_tokens, layout} =
-      if newlines > 0 do
-        eol_meta = TokenLayout.meta(layout, "\n", newlines)
-        layout = TokenLayout.newlines(layout, newlines)
-        {[{:eol, eol_meta}], layout}
-      else
-        {[], layout}
-      end
-
-    # Compile right operand
-    {right_tokens, layout} = do_to_tokens(right, layout, opts)
-
-    {left_tokens ++ [op_token] ++ eol_tokens ++ right_tokens, layout}
-  end
-
   # ---------------------------------------------------------------------------
   # Unary Operators
   # ---------------------------------------------------------------------------
@@ -672,6 +646,37 @@ defmodule Spitfire.Property.TokenCompiler do
   end
 
   # ---------------------------------------------------------------------------
+  # Bitstrings
+  # ---------------------------------------------------------------------------
+
+  # Bitstring: <<elem1, elem2, ...>>
+  defp do_to_tokens({:bitstring, []}, layout, _opts) do
+    # Empty bitstring: <<>>
+    {open_meta, layout} = TokenLayout.space_before(layout, "<<", nil)
+    open_token = {:"<<", open_meta}
+
+    {close_meta, layout} = TokenLayout.stick_right(layout, ">>", nil)
+    close_token = {:">>", close_meta}
+
+    {[open_token, close_token], layout}
+  end
+
+  defp do_to_tokens({:bitstring, args}, layout, opts) do
+    # Opening <<
+    {open_meta, layout} = TokenLayout.space_before(layout, "<<", nil)
+    open_token = {:"<<", open_meta}
+
+    # Compile arguments (first stuck to open <<)
+    {args_tokens, layout} = compile_args_in_brackets(args, layout, opts)
+
+    # Closing >> (stuck to last arg)
+    {close_meta, layout} = TokenLayout.stick_right(layout, ">>", nil)
+    close_token = {:">>", close_meta}
+
+    {[open_token] ++ args_tokens ++ [close_token], layout}
+  end
+
+  # ---------------------------------------------------------------------------
   # Strings
   # ---------------------------------------------------------------------------
 
@@ -772,6 +777,114 @@ defmodule Spitfire.Property.TokenCompiler do
     {arg_tokens, layout} = compile_no_parens_args(arg, layout, opts)
 
     {target_tokens ++ arg_tokens, layout}
+  end
+
+  # ---------------------------------------------------------------------------
+  # no_parens_expr nodes (Increment 9)
+  # ---------------------------------------------------------------------------
+
+  # no_parens_many: foo a, b, c (multi-arg call without parentheses)
+  # Per grammar lines 255-256
+  defp do_to_tokens({:no_parens_many, target, args}, layout, opts) when is_list(args) do
+    # Compile target (identifier or dot_identifier)
+    {target_tokens, layout} = compile_no_parens_target(target, layout, opts)
+
+    # Compile arguments with comma separators
+    {args_tokens, layout} = compile_no_parens_many_args(args, layout, opts)
+
+    {target_tokens ++ args_tokens, layout}
+  end
+
+  # no_parens_one_ambig: foo bar 1, 2 (nested ambiguous call)
+  # Per grammar lines 252-253
+  defp do_to_tokens({:no_parens_one_ambig, target, arg}, layout, opts) do
+    # Compile target (identifier or dot_identifier)
+    {target_tokens, layout} = compile_no_parens_target(target, layout, opts)
+
+    # Compile the single argument (which is a no_parens_expr)
+    {arg_tokens, layout} = do_to_tokens(arg, layout, opts)
+
+    {target_tokens ++ arg_tokens, layout}
+  end
+
+  # no_parens_op: matched_expr op no_parens_expr
+  # Per grammar line 173
+  defp do_to_tokens({:no_parens_op, left, {:op_eol, {op_kind, op}, newlines}, right}, layout, opts) do
+    # Compile left side (matched_expr)
+    {left_tokens, layout} = do_to_tokens(left, layout, opts)
+
+    # Compile operator
+    {op_meta, layout} = TokenLayout.space_before(layout, Atom.to_string(op), nil)
+    op_token = {op_kind, op_meta, op}
+
+    # Add newlines after operator if specified
+    {newline_tokens, layout} = compile_newlines(newlines, layout)
+
+    # Compile right side (no_parens_expr)
+    {right_tokens, layout} = do_to_tokens(right, layout, opts)
+
+    {left_tokens ++ [op_token] ++ newline_tokens ++ right_tokens, layout}
+  end
+
+  # no_parens_unary: unary_op no_parens_expr
+  # Per grammar line 174
+  defp do_to_tokens({:no_parens_unary, {op_kind, op}, newlines, operand}, layout, opts) do
+    # Compile operator
+    {op_meta, layout} = TokenLayout.space_before(layout, Atom.to_string(op), nil)
+    op_token = {op_kind, op_meta, op}
+
+    # Add newlines after operator if specified
+    {newline_tokens, layout} = compile_newlines(newlines, layout)
+
+    # Compile operand (no_parens_expr)
+    {operand_tokens, layout} = do_to_tokens(operand, layout, opts)
+
+    {[op_token] ++ newline_tokens ++ operand_tokens, layout}
+  end
+
+  # no_parens_at_op: @ no_parens_expr
+  # Per grammar line 175
+  defp do_to_tokens({:no_parens_at_op, newlines, operand}, layout, opts) do
+    # Compile @ operator
+    {at_meta, layout} = TokenLayout.space_before(layout, "@", nil)
+    at_token = {:at_op, at_meta, :@}
+
+    # Add newlines after operator if specified
+    {newline_tokens, layout} = compile_newlines(newlines, layout)
+
+    # Compile operand (no_parens_expr)
+    {operand_tokens, layout} = do_to_tokens(operand, layout, opts)
+
+    {[at_token] ++ newline_tokens ++ operand_tokens, layout}
+  end
+
+  # no_parens_capture_op: & no_parens_expr
+  # Per grammar line 176
+  defp do_to_tokens({:no_parens_capture_op, newlines, operand}, layout, opts) do
+    # Compile & operator
+    {amp_meta, layout} = TokenLayout.space_before(layout, "&", nil)
+    amp_token = {:capture_op, amp_meta, :&}
+
+    # Add newlines after operator if specified
+    {newline_tokens, layout} = compile_newlines(newlines, layout)
+
+    # Compile operand (no_parens_expr)
+    {operand_tokens, layout} = do_to_tokens(operand, layout, opts)
+
+    {[amp_token] ++ newline_tokens ++ operand_tokens, layout}
+  end
+
+  # no_parens_ellipsis: ... no_parens_expr
+  # Per grammar line 177
+  defp do_to_tokens({:no_parens_ellipsis, operand}, layout, opts) do
+    # Compile ... operator
+    {ellipsis_meta, layout} = TokenLayout.space_before(layout, "...", nil)
+    ellipsis_token = {:ellipsis_op, ellipsis_meta, :...}
+
+    # Compile operand (no_parens_expr)
+    {operand_tokens, layout} = do_to_tokens(operand, layout, opts)
+
+    {[ellipsis_token] ++ operand_tokens, layout}
   end
 
   # Dot call: expr.(args) - the expr part with the dot
@@ -1167,6 +1280,101 @@ defmodule Spitfire.Property.TokenCompiler do
 
   defp do_to_tokens(node, _layout, _opts) do
     raise "Unimplemented grammar tree node: #{inspect(node)}"
+  end
+
+  # Common binary operator compilation
+  defp compile_binary_op(left, {:op_eol, {op_kind, op}, newlines}, right, layout, opts) do
+    # Compile left operand
+    {left_tokens, layout} = do_to_tokens(left, layout, opts)
+
+    # Compile operator
+    op_lexeme = op_to_lexeme(op)
+    {op_meta, layout} = TokenLayout.space_before(layout, op_lexeme, nil)
+    op_token = {op_kind, op_meta, op}
+
+    # Handle newlines after operator
+    {eol_tokens, layout} =
+      if newlines > 0 do
+        eol_meta = TokenLayout.meta(layout, "\n", newlines)
+        layout = TokenLayout.newlines(layout, newlines)
+        {[{:eol, eol_meta}], layout}
+      else
+        {[], layout}
+      end
+
+    # Compile right operand
+    {right_tokens, layout} = do_to_tokens(right, layout, opts)
+
+    {left_tokens ++ [op_token] ++ eol_tokens ++ right_tokens, layout}
+  end
+
+  # Helper: compile target for no_parens calls (identifier or dot_identifier)
+  defp compile_no_parens_target({:identifier, name}, layout, _opts) do
+    name_str = Atom.to_string(name)
+    chars = String.to_charlist(name_str)
+    {id_meta, layout} = TokenLayout.space_before(layout, name_str, chars)
+    id_token = {:identifier, id_meta, name}
+    {[id_token], layout}
+  end
+
+  defp compile_no_parens_target({:dot_identifier, left, right_name}, layout, opts) do
+    # Compile left side
+    {left_tokens, layout} = do_to_tokens(left, layout, opts)
+
+    # Compile dot (stuck to left)
+    {dot_meta, layout} = TokenLayout.stick_right(layout, ".", nil)
+    dot_token = {:., dot_meta}
+
+    # Compile right identifier (stuck to dot)
+    name_str = Atom.to_string(right_name)
+    chars = String.to_charlist(name_str)
+    {id_meta, layout} = TokenLayout.stick_right(layout, name_str, chars)
+    id_token = {:identifier, id_meta, right_name}
+
+    {left_tokens ++ [dot_token, id_token], layout}
+  end
+
+  # Helper: compile multiple arguments for no_parens_many (comma-separated)
+  defp compile_no_parens_many_args([], layout, _opts), do: {[], layout}
+
+  defp compile_no_parens_many_args([arg], layout, opts) do
+    # Single arg - compile with space before
+    do_to_tokens(arg, layout, opts)
+  end
+
+  defp compile_no_parens_many_args([arg | rest], layout, opts) do
+    # First arg with space before
+    {arg_tokens, layout} = do_to_tokens(arg, layout, opts)
+
+    # Compile comma
+    {comma_meta, layout} = TokenLayout.stick_right(layout, ",", nil)
+    comma_token = {:",", comma_meta}
+
+    # Compile rest
+    {rest_tokens, layout} = compile_no_parens_many_args_rest(rest, layout, opts)
+
+    {arg_tokens ++ [comma_token] ++ rest_tokens, layout}
+  end
+
+  defp compile_no_parens_many_args_rest([], layout, _opts), do: {[], layout}
+
+  defp compile_no_parens_many_args_rest([arg], layout, opts) do
+    # Last arg with space before
+    do_to_tokens(arg, layout, opts)
+  end
+
+  defp compile_no_parens_many_args_rest([arg | rest], layout, opts) do
+    # Arg with space before
+    {arg_tokens, layout} = do_to_tokens(arg, layout, opts)
+
+    # Compile comma
+    {comma_meta, layout} = TokenLayout.stick_right(layout, ",", nil)
+    comma_token = {:",", comma_meta}
+
+    # Compile rest
+    {rest_tokens, layout} = compile_no_parens_many_args_rest(rest, layout, opts)
+
+    {arg_tokens ++ [comma_token] ++ rest_tokens, layout}
   end
 
   # ===========================================================================
@@ -1649,6 +1857,29 @@ defmodule Spitfire.Property.TokenCompiler do
     close_token = {:"}", close_meta}
 
     {[map_token] ++ pairs_tokens ++ [close_token], layout}
+  end
+
+  # Bitstring stuck to previous token
+  defp compile_arg_with_adhesion({:bitstring, []}, layout, _opts) do
+    {open_meta, layout} = TokenLayout.stick_right(layout, "<<", nil)
+    open_token = {:"<<", open_meta}
+
+    {close_meta, layout} = TokenLayout.stick_right(layout, ">>", nil)
+    close_token = {:">>", close_meta}
+
+    {[open_token, close_token], layout}
+  end
+
+  defp compile_arg_with_adhesion({:bitstring, args}, layout, opts) do
+    {open_meta, layout} = TokenLayout.stick_right(layout, "<<", nil)
+    open_token = {:"<<", open_meta}
+
+    {args_tokens, layout} = compile_args_in_brackets(args, layout, opts)
+
+    {close_meta, layout} = TokenLayout.stick_right(layout, ">>", nil)
+    close_token = {:">>", close_meta}
+
+    {[open_token] ++ args_tokens ++ [close_token], layout}
   end
 
   # String stuck to previous token
@@ -2535,5 +2766,18 @@ defmodule Spitfire.Property.TokenCompiler do
     {rest_tokens, layout} = compile_alias_segments(rest, layout, false)
 
     {[alias_token, dot_token] ++ rest_tokens, layout}
+  end
+
+  # ---------------------------------------------------------------------------
+  # Helper: compile_newlines
+  # ---------------------------------------------------------------------------
+
+  # Compile newlines after an operator (for op_eol patterns)
+  defp compile_newlines(0, layout), do: {[], layout}
+
+  defp compile_newlines(newlines, layout) when is_integer(newlines) and newlines > 0 do
+    eol_meta = TokenLayout.meta(layout, "\n", newlines)
+    layout = TokenLayout.newlines(layout, newlines)
+    {[{:eol, eol_meta}], layout}
   end
 end

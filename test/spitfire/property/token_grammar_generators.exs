@@ -16,6 +16,7 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
   - **Increment 6**: Full block_expr coverage per grammar lines 181-185.
   - **Increment 7**: paren_stab forms per grammar lines 277-279.
   - **Increment 8**: Full do_block coverage per grammar lines 322-329.
+  - **Increment 9**: Full no_parens_expr coverage per grammar lines 173-179, 252-256.
 
   ## Grammar Coverage: unmatched_expr (Increment 5)
 
@@ -93,11 +94,43 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
   - `:catch` - catch block with stab clauses (for try)
   - `:after` - after block with expressions (for try/receive)
 
+  ## Grammar Coverage: no_parens_expr (Increment 9)
+
+  All 7 no_parens_expr productions from elixir_parser.yrl lines 173-179 are implemented:
+
+  1. `matched_expr no_parens_op_expr` - gen_no_parens_op
+     Examples: `foo + bar a, b` (binary op with no_parens right side)
+     Generates `{:no_parens_op, left, op_eol, right}`
+
+  2. `unary_op_eol no_parens_expr` - gen_no_parens_unary
+     Examples: `not foo a, b`, `!bar x, y`
+     Generates `{:no_parens_unary, {op_kind, op}, newlines, operand}`
+
+  3. `at_op_eol no_parens_expr` - gen_no_parens_at_op
+     Examples: `@foo a, b`
+     Generates `{:no_parens_at_op, newlines, operand}`
+
+  4. `capture_op_eol no_parens_expr` - gen_no_parens_capture_op
+     Examples: `&foo a, b`
+     Generates `{:no_parens_capture_op, newlines, operand}`
+
+  5. `ellipsis_op no_parens_expr` - gen_no_parens_ellipsis
+     Examples: `...foo a, b`
+     Generates `{:no_parens_ellipsis, operand}`
+
+  6. `no_parens_one_ambig_expr` - gen_no_parens_one_ambig_expr (lines 252-253)
+     Examples: `foo bar a, b` (nested ambiguous call)
+     Generates `{:no_parens_one_ambig, target, arg}`
+     Where arg is a no_parens_expr.
+
+  7. `no_parens_many_expr` - gen_no_parens_many_expr (lines 255-256)
+     Examples: `foo a, b, c`, `foo x, y, key: val`
+     Generates `{:no_parens_many, target, args}`
+     Multi-argument calls without parentheses.
+
   ## Deferred to Future Phases (TODO)
 
   The following are intentionally not generated in the current phase:
-
-  - **no_parens_expr** (Phase 6+): no_parens_one_ambig_expr, no_parens_many_expr
   - **access_expr additions** (Phase 7+):
     - Bitstrings: `<<1, 2, 3>>`
     - Heredocs: `\"\"\"text\"\"\"`
@@ -322,12 +355,6 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
     end)
   end
 
-  # grammar -> '$empty' : {'__block__', [], []}.
-  # Represented as grammar_v2 with no leading/trailing eoe and empty expr list.
-  defp gen_grammar_empty do
-    StreamData.constant({:grammar_v2, nil, [], nil})
-  end
-
   @doc """
   Generate a grammar tree using legacy format.
 
@@ -416,37 +443,15 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
         # Per grammar: expr -> matched_expr | no_parens_expr | unmatched_expr
         StreamData.frequency([
           {6, gen_matched_expr(state)},
-          {3, gen_unmatched_expr(state)}
-          # TODO Phase 6+: Add no_parens_expr (no_parens_one_ambig_expr, no_parens_many_expr)
-          # These are expressions like: foo bar, baz (multi-arg without parens)
+          {3, gen_unmatched_expr(state)},
+          # Phase 9: no_parens_expr - multi-arg calls, nested ambiguous calls
+          # Examples: foo a, b, c  or  foo bar 1, 2
+          {2, gen_no_parens_expr(state)}
         ])
       else
         # Restricted context (e.g., operand position): only matched
         gen_matched_expr(state)
       end
-    end
-  end
-
-  # Legacy gen_expr for backward compatibility (used by gen_fn_single, etc.)
-  defp gen_expr_legacy(state) do
-    if GrammarTree.budget_exhausted?(state) do
-      gen_fallback_literal()
-    else
-      # Phase 1-2: literals, identifiers, operators, calls, fn_single, fn_multi, block_expr
-      StreamData.frequency([
-        {5, gen_literal()},
-        {3, gen_identifier()},
-        {2, gen_alias()},
-        {3, gen_binary_op(state)},
-        {2, gen_unary_op(state)},
-        {3, gen_call_parens(state)},
-        {2, gen_call_no_parens_one(state)},
-        {2, gen_capture_int()},
-        {2, gen_fn_single(state)},
-        {2, gen_fn_multi(state)},
-        # All 5 block_expr rules
-        {2, gen_block_expr(state)}
-      ])
     end
   end
 
@@ -625,27 +630,6 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
   # Generator: binary operators
   # ===========================================================================
 
-  defp gen_binary_op(state) do
-    # Decrement depth to prevent infinite recursion
-    child_state = GrammarTree.decr_depth(state)
-
-    # Generate operands (use simple exprs at low depth)
-    operand_gen =
-      if child_state.budget.depth <= 1 do
-        gen_simple_expr()
-      else
-        gen_expr(child_state)
-      end
-
-    StreamData.bind(operand_gen, fn left ->
-      StreamData.bind(gen_op_eol(), fn op_eol ->
-        StreamData.bind(operand_gen, fn right ->
-          StreamData.constant({:binary_op, left, op_eol, right})
-        end)
-      end)
-    end)
-  end
-
   # Generate op_eol: {op_kind, op} with optional newlines
   defp gen_op_eol do
     StreamData.bind(StreamData.member_of(@binary_ops), fn {op_kind, op} ->
@@ -662,29 +646,6 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
       {8, StreamData.constant(0)},
       {2, StreamData.constant(1)}
     ])
-  end
-
-  # ===========================================================================
-  # Generator: unary operators
-  # ===========================================================================
-
-  defp gen_unary_op(state) do
-    # Decrement depth to prevent infinite recursion
-    child_state = GrammarTree.decr_depth(state)
-
-    # Generate operand (use simple exprs at low depth)
-    operand_gen =
-      if child_state.budget.depth <= 1 do
-        gen_simple_expr()
-      else
-        gen_expr(child_state)
-      end
-
-    StreamData.bind(StreamData.member_of(@unary_ops), fn {op_kind, op} ->
-      StreamData.bind(operand_gen, fn operand ->
-        StreamData.constant({:unary_op, {op_kind, op}, operand})
-      end)
-    end)
   end
 
   # ===========================================================================
@@ -908,7 +869,7 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
 
   # Generate a stab clause with varied patterns (literals, identifiers, atoms)
   # for better pattern matching diversity in fn_multi
-  defp gen_stab_clause_varied(state) do
+  defp gen_stab_clause_varied(_state) do
     # Generate pattern - use varied patterns for multi-clause fns
     pattern_gen =
       StreamData.frequency([
@@ -1804,11 +1765,13 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
         # Bracket access
         {2, gen_bracket_expr(state)},
         # Bracket at access: @foo[bar]
-        {1, gen_bracket_at_expr(state)}
-        # NOTE: map disabled - Toxic doesn't render %{} token correctly
-        # {2, gen_map(state)}
+        {1, gen_bracket_at_expr(state)},
+        # Bitstring: <<1, 2, 3>>
+        {2, gen_bitstring(state)}
         # NOTE: bin_string disabled - Toxic doesn't support this token format yet
         # {2, gen_bin_string()}
+        # NOTE: map disabled - Toxic doesn't render %{} token correctly
+        # {2, gen_map(state)}
       ])
     end
   end
@@ -1978,6 +1941,306 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
 
     StreamData.bind(operand_gen, fn operand ->
       StreamData.constant({:ellipsis_prefix, operand})
+    end)
+  end
+
+  # ===========================================================================
+  # Category-Aware: no_parens_expr (Phase 9)
+  # ===========================================================================
+  #
+  # Per grammar lines 173-179, no_parens_expr allows function calls without
+  # parentheses where nesting ambiguity exists. These require careful handling.
+  #
+  # no_parens_expr -> matched_expr no_parens_op_expr      (binary op with no_parens right)
+  # no_parens_expr -> unary_op_eol no_parens_expr         (unary prefix)
+  # no_parens_expr -> at_op_eol no_parens_expr            (at prefix)
+  # no_parens_expr -> capture_op_eol no_parens_expr       (capture prefix)
+  # no_parens_expr -> ellipsis_op no_parens_expr          (ellipsis prefix)
+  # no_parens_expr -> no_parens_one_ambig_expr            (ambiguous nested call)
+  # no_parens_expr -> no_parens_many_expr                 (multi-arg call)
+
+  # Main generator for no_parens_expr
+  def gen_no_parens_expr(state) do
+    if GrammarTree.budget_exhausted?(state) do
+      # Fallback to simplest no_parens form: multi-arg call
+      gen_no_parens_many_expr_simple()
+    else
+      child_state = GrammarTree.decr_depth(state)
+
+      StreamData.frequency([
+        # no_parens_one_ambig_expr: foo bar 1, 2 (nested ambiguous call)
+        {3, gen_no_parens_one_ambig_expr(child_state)},
+        # no_parens_many_expr: foo a, b, c (multi-arg call)
+        {4, gen_no_parens_many_expr(child_state)},
+        # Binary op with no_parens_expr on right: matched_expr no_parens_op_expr
+        {2, gen_no_parens_op(child_state)},
+        # Unary prefix operators with no_parens_expr operand
+        {1, gen_no_parens_unary(child_state)},
+        {1, gen_no_parens_at_op(child_state)},
+        {1, gen_no_parens_capture_op(child_state)},
+        {1, gen_no_parens_ellipsis(child_state)}
+      ])
+    end
+  end
+
+  # Generate binary op: matched_expr no_parens_op_expr
+  # Per grammar line 173: no_parens_expr -> matched_expr no_parens_op_expr
+  defp gen_no_parens_op(state) do
+    child_state = GrammarTree.decr_depth(state)
+    restricted_state = restrict_unmatched(child_state)
+
+    left_gen =
+      if child_state.budget.depth <= 1 do
+        gen_sub_matched_expr(restricted_state)
+      else
+        gen_matched_expr(restricted_state)
+      end
+
+    # Right side is no_parens_expr
+    right_gen =
+      if child_state.budget.depth <= 1 do
+        gen_no_parens_many_expr_simple()
+      else
+        gen_no_parens_expr(child_state)
+      end
+
+    StreamData.bind(left_gen, fn left ->
+      StreamData.bind(gen_op_eol(), fn op_eol ->
+        StreamData.bind(right_gen, fn right ->
+          StreamData.constant({:no_parens_op, left, op_eol, right})
+        end)
+      end)
+    end)
+  end
+
+  # Generate unary op with no_parens_expr operand
+  # Per grammar line 174: no_parens_expr -> unary_op_eol no_parens_expr
+  defp gen_no_parens_unary(state) do
+    child_state = GrammarTree.decr_depth(state)
+
+    operand_gen =
+      if child_state.budget.depth <= 1 do
+        gen_no_parens_many_expr_simple()
+      else
+        gen_no_parens_expr(child_state)
+      end
+
+    StreamData.bind(StreamData.member_of(@unary_ops), fn {op_kind, op} ->
+      StreamData.bind(gen_newlines(), fn newlines ->
+        StreamData.bind(operand_gen, fn operand ->
+          StreamData.constant({:no_parens_unary, {op_kind, op}, newlines, operand})
+        end)
+      end)
+    end)
+  end
+
+  # Generate at_op with no_parens_expr operand
+  # Per grammar line 175: no_parens_expr -> at_op_eol no_parens_expr
+  defp gen_no_parens_at_op(state) do
+    child_state = GrammarTree.decr_depth(state)
+
+    operand_gen =
+      if child_state.budget.depth <= 1 do
+        gen_no_parens_many_expr_simple()
+      else
+        gen_no_parens_expr(child_state)
+      end
+
+    StreamData.bind(gen_newlines(), fn newlines ->
+      StreamData.bind(operand_gen, fn operand ->
+        StreamData.constant({:no_parens_at_op, newlines, operand})
+      end)
+    end)
+  end
+
+  # Generate capture_op with no_parens_expr operand
+  # Per grammar line 176: no_parens_expr -> capture_op_eol no_parens_expr
+  defp gen_no_parens_capture_op(state) do
+    child_state = GrammarTree.decr_depth(state)
+
+    operand_gen =
+      if child_state.budget.depth <= 1 do
+        gen_no_parens_many_expr_simple()
+      else
+        gen_no_parens_expr(child_state)
+      end
+
+    StreamData.bind(gen_newlines(), fn newlines ->
+      StreamData.bind(operand_gen, fn operand ->
+        StreamData.constant({:no_parens_capture_op, newlines, operand})
+      end)
+    end)
+  end
+
+  # Generate ellipsis_op with no_parens_expr operand
+  # Per grammar line 177: no_parens_expr -> ellipsis_op no_parens_expr
+  defp gen_no_parens_ellipsis(state) do
+    child_state = GrammarTree.decr_depth(state)
+
+    operand_gen =
+      if child_state.budget.depth <= 1 do
+        gen_no_parens_many_expr_simple()
+      else
+        gen_no_parens_expr(child_state)
+      end
+
+    StreamData.bind(operand_gen, fn operand ->
+      StreamData.constant({:no_parens_ellipsis, operand})
+    end)
+  end
+
+  # ===========================================================================
+  # no_parens_one_ambig_expr (nested ambiguous calls)
+  # ===========================================================================
+  #
+  # Per grammar lines 252-253:
+  # no_parens_one_ambig_expr -> dot_op_identifier call_args_no_parens_ambig
+  # no_parens_one_ambig_expr -> dot_identifier call_args_no_parens_ambig
+  #
+  # Where call_args_no_parens_ambig -> no_parens_expr : ['$1']
+  #
+  # This represents: foo bar 1, 2 where "bar 1, 2" is the no_parens_expr argument
+  # The outer call (foo) has one argument that is itself a no_parens call.
+
+  defp gen_no_parens_one_ambig_expr(state) do
+    child_state = GrammarTree.decr_depth(state)
+
+    # Target: identifier or dot_identifier
+    target_gen =
+      StreamData.frequency([
+        {4, StreamData.member_of(@identifiers) |> StreamData.map(&{:identifier, &1})},
+        {1, gen_dot_identifier(child_state)}
+      ])
+
+    # Argument: a no_parens_expr (the ambiguous nested call)
+    arg_gen =
+      if child_state.budget.depth <= 1 do
+        gen_no_parens_many_expr_simple()
+      else
+        # Prefer no_parens_many to create clear nested patterns
+        StreamData.frequency([
+          {4, gen_no_parens_many_expr(child_state)},
+          {1, gen_no_parens_expr(child_state)}
+        ])
+      end
+
+    StreamData.bind(target_gen, fn target ->
+      StreamData.bind(arg_gen, fn arg ->
+        StreamData.constant({:no_parens_one_ambig, target, arg})
+      end)
+    end)
+  end
+
+  # ===========================================================================
+  # no_parens_many_expr (multi-argument calls without parentheses)
+  # ===========================================================================
+  #
+  # Per grammar lines 255-256:
+  # no_parens_many_expr -> dot_op_identifier call_args_no_parens_many_strict
+  # no_parens_many_expr -> dot_identifier call_args_no_parens_many_strict
+  #
+  # Where call_args_no_parens_many (lines 520-522):
+  # - matched_expr ',' call_args_no_parens_kw     (expr, kw: val)
+  # - call_args_no_parens_comma_expr              (a, b, c)
+  # - call_args_no_parens_comma_expr ',' kw       (a, b, kw: val)
+  #
+  # Examples: foo a, b, c  or  foo a, b, key: val
+
+  defp gen_no_parens_many_expr(state) do
+    child_state = GrammarTree.decr_depth(state)
+
+    # Target: identifier or dot_identifier
+    target_gen =
+      StreamData.frequency([
+        {4, StreamData.member_of(@identifiers) |> StreamData.map(&{:identifier, &1})},
+        {1, gen_dot_identifier(child_state)}
+      ])
+
+    # Arguments: 2+ args (call_args_no_parens_many)
+    args_gen = gen_call_args_no_parens_many(child_state)
+
+    StreamData.bind(target_gen, fn target ->
+      StreamData.bind(args_gen, fn args ->
+        StreamData.constant({:no_parens_many, target, args})
+      end)
+    end)
+  end
+
+  # Simplified no_parens_many for depth exhaustion fallback
+  defp gen_no_parens_many_expr_simple do
+    StreamData.bind(StreamData.member_of(@identifiers), fn name ->
+      StreamData.bind(StreamData.integer(2..3), fn count ->
+        StreamData.bind(gen_simple_expr_list(count), fn args ->
+          StreamData.constant({:no_parens_many, {:identifier, name}, args})
+        end)
+      end)
+    end)
+  end
+
+  # Generate call_args_no_parens_many: 2+ arguments
+  # Per grammar lines 520-522
+  defp gen_call_args_no_parens_many(state) do
+    restricted_state = restrict_unmatched(state)
+
+    StreamData.frequency([
+      # Just positional args: a, b, c
+      {4, gen_positional_args_list(restricted_state, 2, 4)},
+      # Positional + trailing keyword: a, b, key: val
+      {2, gen_args_with_trailing_kw(restricted_state)}
+    ])
+  end
+
+  # Generate 2-4 positional arguments (matched_expr only)
+  defp gen_positional_args_list(state, min, max) do
+    StreamData.bind(StreamData.integer(min..max), fn count ->
+      gen_matched_expr_list(state, count)
+    end)
+  end
+
+  # Generate list of matched expressions
+  defp gen_matched_expr_list(_state, 0), do: StreamData.constant([])
+
+  defp gen_matched_expr_list(state, count) when count > 0 do
+    expr_gen =
+      if state.budget.depth <= 1 do
+        gen_simple_expr()
+      else
+        gen_sub_matched_expr(state)
+      end
+
+    StreamData.bind(expr_gen, fn expr ->
+      StreamData.bind(gen_matched_expr_list(state, count - 1), fn rest ->
+        StreamData.constant([expr | rest])
+      end)
+    end)
+  end
+
+  # Generate positional args + trailing keyword args: a, b, key: val
+  defp gen_args_with_trailing_kw(state) do
+    StreamData.bind(StreamData.integer(1..2), fn pos_count ->
+      StreamData.bind(gen_matched_expr_list(state, pos_count), fn positional ->
+        StreamData.bind(gen_call_args_no_parens_kw(), fn kw_args ->
+          StreamData.constant(positional ++ [kw_args])
+        end)
+      end)
+    end)
+  end
+
+  # Helper: generate dot_identifier target (matched_expr.identifier)
+  defp gen_dot_identifier(state) do
+    restricted_state = restrict_unmatched(state)
+
+    left_gen =
+      if state.budget.depth <= 1 do
+        gen_simple_expr()
+      else
+        gen_sub_matched_expr(restricted_state)
+      end
+
+    StreamData.bind(left_gen, fn left ->
+      StreamData.bind(StreamData.member_of(@identifiers), fn name ->
+        StreamData.constant({:dot_identifier, left, name})
+      end)
     end)
   end
 
@@ -2455,6 +2718,71 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
   defp gen_bracket_arg(_state) do
     # Use simple expressions as keys
     gen_simple_expr()
+  end
+
+  # ===========================================================================
+  # Bitstring Generators
+  # ===========================================================================
+
+  @doc """
+  Generate a bitstring: <<elem1, elem2, ...>>
+
+  Per grammar lines 609-611:
+  - bitstring -> open_bit '>>'
+  - bitstring -> open_bit container_args close_bit
+  """
+  def gen_bitstring(state) do
+    child_state = GrammarTree.decr_depth(state)
+
+    StreamData.frequency([
+      # Empty bitstring: <<>>
+      {1, StreamData.constant({:bitstring, []})},
+      # Bitstring with 1-3 elements
+      {4, gen_bitstring_with_elements(child_state, 1, 3)}
+    ])
+  end
+
+  defp gen_bitstring_with_elements(state, min, max) do
+    StreamData.bind(StreamData.integer(min..max), fn count ->
+      gen_bitstring_args(state, count)
+    end)
+    |> StreamData.map(fn args -> {:bitstring, args} end)
+  end
+
+  # Generate bitstring arguments - simpler than regular container_args
+  # to avoid type specifiers which add complexity
+  defp gen_bitstring_args(_state, 0), do: StreamData.constant([])
+
+  defp gen_bitstring_args(state, count) when count > 0 do
+    # Bitstring elements are typically integers or other bitstrings
+    arg_gen = gen_bitstring_element()
+
+    StreamData.bind(arg_gen, fn arg ->
+      StreamData.bind(gen_bitstring_args(GrammarTree.decr_nodes(state), count - 1), fn rest ->
+        StreamData.constant([arg | rest])
+      end)
+    end)
+  end
+
+  # Generate a bitstring element - typically integers or simple expressions
+  defp gen_bitstring_element do
+    StreamData.frequency([
+      {5, gen_bitstring_int()},
+      {2, StreamData.member_of(@identifiers) |> StreamData.map(&{:identifier, &1})}
+      # NOTE: strings inside bitstrings disabled for simplicity
+      # {1, StreamData.bind(StreamData.string(:alphanumeric, min_length: 1, max_length: 5), fn s ->
+      #   StreamData.constant({:bin_string, s})
+      # end)}
+    ])
+  end
+
+  # Generate a decimal integer for bitstring elements (0-255 typical byte range)
+  defp gen_bitstring_int do
+    StreamData.integer(0..255)
+    |> StreamData.map(fn n ->
+      chars = Integer.to_charlist(n)
+      {:int, n, :dec, chars}
+    end)
   end
 
   # ===========================================================================
