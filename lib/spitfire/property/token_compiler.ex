@@ -458,6 +458,12 @@ defmodule Spitfire.Property.TokenCompiler do
     {[open_token, close_token], layout}
   end
 
+  # Handle keyword-only no-parens arguments appearing as an operator-right RHS
+  defp do_to_tokens({:kw_args, pairs}, layout, opts) do
+    {tokens, layout} = compile_no_parens_kw_pairs(pairs, layout, opts)
+    {tokens, layout}
+  end
+
   # ---------------------------------------------------------------------------
   # Bracket Access Expressions
   # ---------------------------------------------------------------------------
@@ -1334,17 +1340,49 @@ defmodule Spitfire.Property.TokenCompiler do
     {left_tokens ++ [dot_token, id_token], layout}
   end
 
+  defp compile_no_parens_target({:op_identifier, op}, layout, _opts) do
+    name_str = Atom.to_string(op)
+    chars = String.to_charlist(name_str)
+    {id_meta, layout} = TokenLayout.space_before(layout, name_str, chars)
+    id_token = {:op_identifier, id_meta, op}
+    {[id_token], layout}
+  end
+
+  defp compile_no_parens_target({:dot_op_identifier, left, op}, layout, opts) do
+    # Compile left side
+    {left_tokens, layout} = do_to_tokens(left, layout, opts)
+
+    # Compile dot (stuck to left)
+    {dot_meta, layout} = TokenLayout.stick_right(layout, ".", nil)
+    dot_token = {:., dot_meta}
+
+    # Compile op identifier (stuck to dot)
+    name = Atom.to_string(op)
+    chars = String.to_charlist(name)
+    {op_meta, layout} = TokenLayout.stick_right(layout, name, chars)
+    op_token = {:op_identifier, op_meta, op}
+
+    {left_tokens ++ [dot_token, op_token], layout}
+  end
+
   # Helper: compile multiple arguments for no_parens_many (comma-separated)
   defp compile_no_parens_many_args([], layout, _opts), do: {[], layout}
 
   defp compile_no_parens_many_args([arg], layout, opts) do
     # Single arg - compile with space before
-    do_to_tokens(arg, layout, opts)
+    case arg do
+      {:kw_args, _} -> compile_no_parens_args(arg, layout, opts)
+      _ -> do_to_tokens(arg, layout, opts)
+    end
   end
 
   defp compile_no_parens_many_args([arg | rest], layout, opts) do
     # First arg with space before
-    {arg_tokens, layout} = do_to_tokens(arg, layout, opts)
+    {arg_tokens, layout} =
+      case arg do
+        {:kw_args, _} -> compile_no_parens_args(arg, layout, opts)
+        _ -> do_to_tokens(arg, layout, opts)
+      end
 
     # Compile comma
     {comma_meta, layout} = TokenLayout.stick_right(layout, ",", nil)
@@ -1360,12 +1398,19 @@ defmodule Spitfire.Property.TokenCompiler do
 
   defp compile_no_parens_many_args_rest([arg], layout, opts) do
     # Last arg with space before
-    do_to_tokens(arg, layout, opts)
+    case arg do
+      {:kw_args, _} -> compile_no_parens_args(arg, layout, opts)
+      _ -> do_to_tokens(arg, layout, opts)
+    end
   end
 
   defp compile_no_parens_many_args_rest([arg | rest], layout, opts) do
     # Arg with space before
-    {arg_tokens, layout} = do_to_tokens(arg, layout, opts)
+    {arg_tokens, layout} =
+      case arg do
+        {:kw_args, _} -> compile_no_parens_args(arg, layout, opts)
+        _ -> do_to_tokens(arg, layout, opts)
+      end
 
     # Compile comma
     {comma_meta, layout} = TokenLayout.stick_right(layout, ",", nil)

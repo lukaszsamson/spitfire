@@ -171,6 +171,8 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
     {:concat_op, :---},
     # range_op (..) as binary (ternary_op // is handled separately in gen_range_step)
     {:range_op, :..},
+    # ternary_op (//) - include so no_parens_op can produce // as an operator per grammar
+    {:ternary_op, :"//"},
     # xor_op (^^^)
     {:xor_op, :"^^^"},
     # Comparison (comp_op)
@@ -284,7 +286,7 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
     max_forms = Keyword.get(opts, :max_forms, 3)
 
     # Set allow_unmatched: true for top-level context
-    context = %{GrammarTree.phase1_context() | allow_unmatched: true, phase: phase}
+    context = %{GrammarTree.phase1_context() | allow_unmatched: false, allow_no_parens: true, phase: phase}
     state = %{budget: GrammarTree.initial_budget(max_depth, max_nodes), context: context}
 
     # Generate all grammar variants with appropriate frequencies
@@ -438,16 +440,13 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
       # Literal is a matched_expr
       gen_fallback_literal()
     else
-      if state.context.allow_unmatched do
+      if state.context.allow_unmatched or state.context.allow_no_parens do
         # Top-level context: can generate any expression type
         # Per grammar: expr -> matched_expr | no_parens_expr | unmatched_expr
         StreamData.frequency([
-          {6, gen_matched_expr(state)},
-          {3, gen_unmatched_expr(state)},
-          # Phase 9: no_parens_expr - multi-arg calls, nested ambiguous calls
-          # Examples: foo a, b, c  or  foo bar 1, 2
-          {2, gen_no_parens_expr(state)}
-        ])
+          {6, gen_matched_expr(state)}
+        ] ++ if(state.context.allow_unmatched, do: [{3, gen_unmatched_expr(state)}], else: [])
+        ++ if(state.context.allow_no_parens, do: [{2, gen_no_parens_expr(state)}], else: []))
       else
         # Restricted context (e.g., operand position): only matched
         gen_matched_expr(state)
@@ -2005,11 +2004,23 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
       end
 
     StreamData.bind(left_gen, fn left ->
-      StreamData.bind(gen_op_eol(), fn op_eol ->
-        StreamData.bind(right_gen, fn right ->
-          StreamData.constant({:no_parens_op, left, op_eol, right})
-        end)
-      end)
+      StreamData.frequency([
+        # General case: op_eol followed by no_parens_expr (covers grammar rules 1-18)
+        # Per grammar lines 230-247: no_parens_op_expr -> *_op_eol no_parens_expr
+        {8, StreamData.bind(gen_op_eol(), fn op_eol ->
+          StreamData.bind(right_gen, fn right ->
+            StreamData.constant({:no_parens_op, left, op_eol, right})
+          end)
+        end)},
+
+        # Special case: when_op_eol followed by call_args_no_parens_kw (grammar rule 19)
+        # Per grammar line 250: no_parens_op_expr -> when_op_eol call_args_no_parens_kw
+        {2, StreamData.bind(gen_newlines(), fn newlines ->
+          StreamData.bind(gen_call_args_no_parens_kw(), fn kw_args ->
+            StreamData.constant({:no_parens_op, left, {:op_eol, {:when_op, :when}, newlines}, kw_args})
+          end)
+        end)}
+      ])
     end)
   end
 
@@ -2105,11 +2116,13 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
   defp gen_no_parens_one_ambig_expr(state) do
     child_state = GrammarTree.decr_depth(state)
 
-    # Target: identifier or dot_identifier
+    # Target: identifier, dot_identifier, op_identifier, or dot_op_identifier
     target_gen =
       StreamData.frequency([
         {4, StreamData.member_of(@identifiers) |> StreamData.map(&{:identifier, &1})},
-        {1, gen_dot_identifier(child_state)}
+        {1, gen_dot_identifier(child_state)},
+        {1, StreamData.bind(StreamData.member_of(@binary_ops), fn {_, op} -> StreamData.constant({:op_identifier, op}) end)},
+        {1, gen_dot_op_identifier_for_call(child_state)}
       ])
 
     # Argument: a no_parens_expr (the ambiguous nested call)
@@ -2149,11 +2162,14 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
   defp gen_no_parens_many_expr(state) do
     child_state = GrammarTree.decr_depth(state)
 
-    # Target: identifier or dot_identifier
+    # Target: identifier or dot_identifier (also allow operator identifier targets per grammar)
     target_gen =
       StreamData.frequency([
         {4, StreamData.member_of(@identifiers) |> StreamData.map(&{:identifier, &1})},
-        {1, gen_dot_identifier(child_state)}
+        {1, gen_dot_identifier(child_state)},
+        # Operator-as-identifier targets (e.g., +/2) and dotted operator targets (expr.+)
+        {1, StreamData.bind(StreamData.member_of(@binary_ops), fn {_, op} -> StreamData.constant({:op_identifier, op}) end)},
+        {1, gen_dot_op_identifier_for_call(child_state)}
       ])
 
     # Arguments: 2+ args (call_args_no_parens_many)
