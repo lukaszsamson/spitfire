@@ -659,6 +659,7 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
     target_gen =
       StreamData.frequency([
         {4, gen_paren_identifier()},
+        {2, gen_dot_paren_identifier(child_state)},
         {1, gen_dot_call_target(child_state)}
       ])
 
@@ -668,6 +669,30 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
     StreamData.bind(target_gen, fn target ->
       StreamData.bind(args_gen, fn args ->
         StreamData.constant({:call_parens, target, args})
+      end)
+    end)
+  end
+
+  # Generate nested parens call: foo()() (no do block)
+  # Grammar: dot_call_identifier call_args_parens call_args_parens
+  defp gen_call_parens_nested(state) do
+    child_state = GrammarTree.decr_depth(state)
+
+    target_gen =
+      StreamData.frequency([
+        {4, gen_paren_identifier()},
+        {2, gen_dot_paren_identifier(child_state)},
+        {1, gen_dot_call_target(child_state)}
+      ])
+
+    args1_gen = gen_args(child_state, 2)
+    args2_gen = gen_args(child_state, 2)
+
+    StreamData.bind(target_gen, fn target ->
+      StreamData.bind(args1_gen, fn args1 ->
+        StreamData.bind(args2_gen, fn args2 ->
+          StreamData.constant({:call_parens_nested, target, args1, args2})
+        end)
       end)
     end)
   end
@@ -1624,7 +1649,7 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
   def gen_sub_matched_expr(state) do
     StreamData.frequency([
       {9, gen_access_expr(state)},
-      {5, gen_no_parens_zero_expr()},
+      {5, gen_no_parens_zero_expr(state)},
       {1, gen_nullary_range()},
       {1, gen_nullary_ellipsis()},
       # Access expression followed by a keyword identifier (invalid in grammar)
@@ -1649,16 +1674,29 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
   - dot_do_identifier -> matched_expr dot_op do_identifier
 
   This is where identifiers belong in the grammar (not access_expr).
+  When state has remaining depth, matched_expr variants are included.
   """
-  def gen_no_parens_zero_expr do
-    StreamData.frequency([
-      # Simple identifier (most common)
-      {6, gen_identifier()},
-      # Dotted identifier: expr.identifier (e.g., foo.bar, Mod.func)
-      {2, gen_dot_identifier()},
-      # Do identifier: if, unless, case, etc. (as bare identifiers)
-      {1, gen_dot_do_identifier()}
-    ])
+  def gen_no_parens_zero_expr(state) do
+    child_state = GrammarTree.decr_depth(state)
+
+    if child_state.budget.depth <= 1 do
+      # At low depth, only simple forms
+      StreamData.frequency([
+        {6, gen_identifier()},
+        {2, gen_dot_identifier_simple()},
+        {1, gen_dot_do_identifier_simple()}
+      ])
+    else
+      # At higher depth, allow matched_expr on left side
+      StreamData.frequency([
+        # Simple identifier (most common)
+        {6, gen_identifier()},
+        # Dotted identifier: expr.identifier (e.g., foo.bar, Mod.func, (a+b).foo)
+        {2, gen_dot_identifier_full(child_state)},
+        # Do identifier: if, unless, case, etc. (as bare or dotted identifiers)
+        {1, gen_dot_do_identifier_full(child_state)}
+      ])
+    end
   end
 
   @doc """
@@ -1671,18 +1709,27 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
   These are identifiers that can precede do blocks when used with arguments.
   When used alone (in no_parens_zero_expr), they're just bare identifiers.
   """
-  def gen_dot_do_identifier do
+  def gen_dot_do_identifier_simple do
     StreamData.frequency([
       # Simple do_identifier: if, unless, case, etc.
       {4, StreamData.member_of(@do_identifiers) |> StreamData.map(&{:do_identifier, &1})},
-      # Dotted do_identifier: Foo.if, Mod.case, etc. (rare but valid)
-      {1, gen_dotted_do_identifier()}
+      # Dotted do_identifier with simple left: Foo.if, Mod.case, etc.
+      {1, gen_dotted_do_identifier_simple()}
     ])
   end
 
-  # Generate a dotted do_identifier: expr.do_identifier
-  # Per grammar: dot_do_identifier -> matched_expr dot_op do_identifier
-  defp gen_dotted_do_identifier do
+  # Full version with matched_expr on left side
+  defp gen_dot_do_identifier_full(state) do
+    StreamData.frequency([
+      # Simple do_identifier: if, unless, case, etc.
+      {4, StreamData.member_of(@do_identifiers) |> StreamData.map(&{:do_identifier, &1})},
+      # Dotted do_identifier: (matched_expr).if, (matched_expr).case, etc.
+      {1, gen_dotted_do_identifier_full(state)}
+    ])
+  end
+
+  # Generate a dotted do_identifier with simple left: Alias.do_id or identifier.do_id
+  defp gen_dotted_do_identifier_simple do
     left_gen =
       StreamData.frequency([
         {2, gen_alias()},
@@ -1696,14 +1743,51 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
     end)
   end
 
-  # Generate a dotted identifier: expr.identifier
+  # Generate a dotted do_identifier with matched_expr left: (matched_expr).do_id
+  # Per grammar: dot_do_identifier -> matched_expr dot_op do_identifier
+  defp gen_dotted_do_identifier_full(state) do
+    restricted_state = restrict_unmatched(state)
+
+    left_gen =
+      StreamData.frequency([
+        {3, gen_alias()},
+        {2, gen_identifier()},
+        {1, gen_sub_matched_expr(restricted_state)}
+      ])
+
+    StreamData.bind(left_gen, fn left ->
+      StreamData.bind(StreamData.member_of(@do_identifiers), fn do_id ->
+        StreamData.constant({:dot_do_identifier, left, do_id})
+      end)
+    end)
+  end
+
+  # Generate a dotted identifier with simple left: Alias.id or identifier.id
   # Per grammar: dot_identifier -> matched_expr dot_op identifier
-  defp gen_dot_identifier do
-    # Left side can be a simple expression (to avoid deep nesting)
+  defp gen_dot_identifier_simple do
     left_gen =
       StreamData.frequency([
         {3, gen_identifier()},
         {2, gen_alias()}
+      ])
+
+    StreamData.bind(left_gen, fn left ->
+      StreamData.bind(StreamData.member_of(@identifiers), fn right_name ->
+        StreamData.constant({:dot_identifier, left, right_name})
+      end)
+    end)
+  end
+
+  # Generate a dotted identifier with matched_expr left: (matched_expr).id
+  # Per grammar: dot_identifier -> matched_expr dot_op identifier
+  defp gen_dot_identifier_full(state) do
+    restricted_state = restrict_unmatched(state)
+
+    left_gen =
+      StreamData.frequency([
+        {3, gen_identifier()},
+        {2, gen_alias()},
+        {1, gen_sub_matched_expr(restricted_state)}
       ])
 
     StreamData.bind(left_gen, fn left ->
@@ -1751,6 +1835,7 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
         {2, gen_alias()},
         {2, gen_fn_single(state)},
         {2, gen_call_parens(state)},
+        {1, gen_call_parens_nested(state)},
         {1, gen_capture_int()},
         {1, gen_paren_expr(state)},
         {1, gen_empty_paren()},

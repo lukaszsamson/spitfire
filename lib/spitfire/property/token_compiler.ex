@@ -735,6 +735,32 @@ defmodule Spitfire.Property.TokenCompiler do
     {target_tokens ++ [open_token] ++ args_tokens ++ [close_token], layout}
   end
 
+  # Nested parens call without do: foo()()
+  defp do_to_tokens({:call_parens_nested, target, args1, args2}, layout, opts) do
+    # Compile target
+    {target_tokens, layout} = compile_call_target(target, layout, opts)
+
+    # First call
+    {lparen1_meta, layout} = TokenLayout.stick_right(layout, "(", nil)
+    lparen1_token = {:"(", lparen1_meta}
+
+    {args1_tokens, layout} = compile_args_list(args1, layout, opts)
+
+    {rparen1_meta, layout} = TokenLayout.stick_right(layout, ")", nil)
+    rparen1_token = {:")", rparen1_meta}
+
+    # Second call (stuck to first close paren)
+    {lparen2_meta, layout} = TokenLayout.stick_right(layout, "(", nil)
+    lparen2_token = {:"(", lparen2_meta}
+
+    {args2_tokens, layout} = compile_args_list(args2, layout, opts)
+
+    {rparen2_meta, layout} = TokenLayout.stick_right(layout, ")", nil)
+    rparen2_token = {:")", rparen2_meta}
+
+    {target_tokens ++ [lparen1_token] ++ args1_tokens ++ [rparen1_token, lparen2_token] ++
+       args2_tokens ++ [rparen2_token], layout}
+  end
   # No-parens call with one argument: foo bar
   defp do_to_tokens({:call_no_parens_one, {:identifier, name}, arg}, layout, opts) do
     # Compile identifier
@@ -1446,6 +1472,24 @@ defmodule Spitfire.Property.TokenCompiler do
     {expr_tokens ++ [dot_token], layout}
   end
 
+  # Target is a dot_paren_identifier (matched_expr.paren_identifier)
+  defp compile_call_target({:dot_paren_identifier, left, right_name}, layout, opts) do
+    # Compile left side (matched_expr)
+    {left_tokens, layout} = do_to_tokens(left, layout, opts)
+
+    # Compile dot (stuck to left)
+    {dot_meta, layout} = TokenLayout.stick_right(layout, ".", nil)
+    dot_token = {:., dot_meta}
+
+    # Compile right side as paren_identifier (stuck to dot)
+    right_str = Atom.to_string(right_name)
+    chars = String.to_charlist(right_str)
+    {right_meta, layout} = TokenLayout.stick_right(layout, right_str, chars)
+    right_token = {:paren_identifier, right_meta, right_name}
+
+    {left_tokens ++ [dot_token, right_token], layout}
+  end
+
   # Target is an identifier (shouldn't happen for call_parens, but handle it)
   defp compile_call_target({:identifier, atom}, layout, _opts) do
     name = Atom.to_string(atom)
@@ -2123,6 +2167,24 @@ defmodule Spitfire.Property.TokenCompiler do
     dot_token = {:., dot_meta}
 
     {expr_tokens ++ [dot_token], layout}
+  end
+
+  # dot_paren_identifier stuck: matched_expr.paren_identifier
+  defp compile_call_target_stuck({:dot_paren_identifier, left, right_name}, layout, opts) do
+    # Compile left expression stuck
+    {left_tokens, layout} = compile_arg_with_adhesion(left, layout, opts)
+
+    # Compile dot (stuck to left)
+    {dot_meta, layout} = TokenLayout.stick_right(layout, ".", nil)
+    dot_token = {:., dot_meta}
+
+    # Compile right side as paren_identifier (stuck to dot)
+    right_str = Atom.to_string(right_name)
+    chars = String.to_charlist(right_str)
+    {right_meta, layout} = TokenLayout.stick_right(layout, right_str, chars)
+    right_token = {:paren_identifier, right_meta, right_name}
+
+    {left_tokens ++ [dot_token, right_token], layout}
   end
 
   defp compile_call_target_stuck({:identifier, atom}, layout, _opts) do
