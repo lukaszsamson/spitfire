@@ -2746,9 +2746,39 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
     StreamData.frequency([
       # Identifier with bracket access: foo[bar]
       {4, gen_bracket_identifier(child_state)},
+      # Dotted bracket identifier: expr.foo[bar]
+      {2, gen_dot_bracket_identifier(child_state)},
       # Expression with bracket access: expr[key] (less common to avoid nesting)
       {1, gen_bracket_access_expr(child_state)}
     ])
+  end
+
+  # Generate dotted bracket identifier: matched_expr . bracket_identifier [arg]
+  defp gen_dot_bracket_identifier(state) do
+    child_state = GrammarTree.decr_depth(state)
+    restricted = restrict_unmatched(child_state)
+
+    left_gen =
+      if child_state.budget.depth <= 1 do
+        StreamData.frequency([
+          {2, gen_alias()},
+          {1, gen_identifier()}
+        ])
+      else
+        StreamData.frequency([
+          {3, gen_alias()},
+          {2, gen_identifier()},
+          {1, gen_sub_matched_expr(restricted)}
+        ])
+      end
+
+    StreamData.bind(left_gen, fn left ->
+      StreamData.bind(StreamData.member_of(@identifiers), fn name ->
+        StreamData.bind(gen_bracket_arg(state), fn arg ->
+          StreamData.constant({:bracket_expr, {:dot_bracket_identifier, left, name}, arg})
+        end)
+      end)
+    end)
   end
 
   @doc """
@@ -2782,8 +2812,13 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
 
   # Generate @(expr)[key]
   defp gen_bracket_at_access_expr(state) do
-    # Use simple expressions to avoid deep nesting
-    expr_gen = gen_simple_expr()
+    child_state = GrammarTree.decr_depth(state)
+
+    expr_gen =
+      StreamData.frequency([
+        {3, gen_simple_expr()},
+        {1, gen_dot_identifier(child_state)}
+      ])
 
     StreamData.bind(gen_newlines(), fn newlines ->
       StreamData.bind(expr_gen, fn expr ->
@@ -2805,8 +2840,13 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
 
   # Generate expression bracket access: (expr)[key]
   defp gen_bracket_access_expr(state) do
-    # Use simple expressions to avoid deep nesting
-    expr_gen = gen_simple_expr()
+    child_state = GrammarTree.decr_depth(state)
+
+    expr_gen =
+      StreamData.frequency([
+        {3, gen_simple_expr()},
+        {1, gen_dot_identifier(child_state)}
+      ])
 
     StreamData.bind(expr_gen, fn expr ->
       StreamData.bind(gen_bracket_arg(state), fn arg ->
@@ -2816,9 +2856,34 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
   end
 
   # Generate bracket argument: the [key] part
-  defp gen_bracket_arg(_state) do
-    # Use simple expressions as keys
-    gen_simple_expr()
+  # Supports multiple variants per elixir_parser.yrl:
+  # - kw_data (keyword list) => {:kw_args, pairs}
+  # - container_expr (single expression)
+  # - container_expr with trailing comma => {:trailing, expr}
+  # NOTE: error_too_many_access_syntax (too many access args) is TODO
+  defp gen_bracket_arg(state) do
+    child_state = GrammarTree.decr_depth(state)
+
+    StreamData.frequency([
+      # Single key expression: foo[bar]
+      {5, gen_simple_expr()},
+      # Container expression(s): foo[1, 2]  or foo[[a, b]]
+      {3, StreamData.bind(StreamData.integer(1..3), fn count ->
+        StreamData.bind(gen_container_args(child_state, count), fn args ->
+          # If single element, return the element (container_expr case);
+          # if multiple, return the list to model container_args (too-many case)
+          if length(args) == 1 do
+            StreamData.constant(hd(args))
+          else
+            StreamData.constant(args)
+          end
+        end)
+      end)},
+      # Keyword data: foo[a: 1, b: 2]
+      {1, gen_call_args_no_parens_kw()},
+      # Single key with trailing comma: foo[bar,]
+      {1, StreamData.bind(gen_simple_expr(), fn expr -> StreamData.constant({:trailing, expr}) end)}
+    ])
   end
 
   # ===========================================================================

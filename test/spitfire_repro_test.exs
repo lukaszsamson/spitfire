@@ -365,30 +365,53 @@ defmodule SpitfireReproTest do
   test "repro 51" do
     code = """
     -not delta 27.51 + if false do
-    false
     148
     end; !:alice
-    ; gamma Mod and ... - -755 <=
-    eggs(delta, true) > gamma == if true do
-    :ok
+    """
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
+  test "repro 51a" do
+    code = """
+    not delta 27.51 + if false do
+    148
+    end; :alice
+    """
+    assert Spitfire.parse(code) == s2q(code)
+
+    code = """
+    @ delta 27.51 + if false do
+    148
+    end; :alice
+    """
+    assert Spitfire.parse(code) == s2q(code)
+
+    code = """
+    ^ delta 27.51 + if false do
+    148
     end
-    unless true do
-    baz
-    Remote
-    else
-    :bob
-    end
-    unless baz do
-    State
-    else
-    ?u
-    end
-    ; 42.72 and 0b1001
-    unless true do
-    -136
-    else
-    Foo
-    end
+    :alice
+    """
+    assert Spitfire.parse(code) == s2q(code)
+
+    code = """
+    & delta 27.51 + if false do
+    148
+    end; :alice
+    """
+    assert Spitfire.parse(code) == s2q(code)
+
+    code = """
+    -delta 27.51 + if false do
+    148
+    end; :alice
+    """
+    assert Spitfire.parse(code) == s2q(code)
+
+    code = """
+    1..2//delta 27.51 + if false do
+    148
+    end; :alice
     """
     assert Spitfire.parse(code) == s2q(code)
   end

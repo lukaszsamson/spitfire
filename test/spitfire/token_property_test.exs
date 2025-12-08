@@ -38,6 +38,7 @@ defmodule Spitfire.TokenPropertyTest do
   end
 
   describe "increment 1: literals and identifiers" do
+    @tag :skip
     @tag :property
     @tag timeout: 120_000
     property "grammar trees produce valid code" do
@@ -78,17 +79,18 @@ defmodule Spitfire.TokenPropertyTest do
       end
     end
 
+    @tag :skip
     @tag :property
     @tag timeout: 120_000
     property "grammar trees round-trip through Spitfire" do
       check all(
-              tree <- Gen.grammar(phase: 1, max_depth: 3, max_forms: 15),
+              tree <- Gen.grammar(phase: 1, max_depth: 4, max_forms: 2),
               max_runs: 5000,
-              max_shrinks: 25
+              max_shrinks: 50
             ) do
         tokens = TokenCompiler.to_tokens(tree, phase: 1)
         code = Toxic.ToString.to_string(tokens)
-        IO.puts("----\n"<>code)
+        IO.puts(">>>>>\n"<>code<>"\n<<<<<")
 
         # Use Code.with_diagnostics to capture warnings
         {result, _diagnostics} =

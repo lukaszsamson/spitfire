@@ -493,6 +493,28 @@ defmodule Spitfire.Property.TokenCompiler do
     {expr_tokens ++ bracket_tokens, layout}
   end
 
+  # Bracket access with dotted bracket identifier: expr.foo[bar]
+  # Represented as {:bracket_expr, {:dot_bracket_identifier, left, name}, arg}
+  defp do_to_tokens({:bracket_expr, {:dot_bracket_identifier, left, name}, arg}, layout, opts) do
+    # Compile left expression
+    {left_tokens, layout} = do_to_tokens(left, layout, opts)
+
+    # Compile dot (stuck to left)
+    {dot_meta, layout} = TokenLayout.stick_right(layout, ".", nil)
+    dot_token = {:., dot_meta}
+
+    # Compile bracket_identifier (stuck to dot)
+    name_str = Atom.to_string(name)
+    chars = String.to_charlist(name_str)
+    {id_meta, layout} = TokenLayout.stick_right(layout, name_str, chars)
+    id_token = {:bracket_identifier, id_meta, name}
+
+    # Compile bracket arg (stuck to identifier)
+    {bracket_tokens, layout} = compile_bracket_arg(arg, layout, opts)
+
+    {left_tokens ++ [dot_token, id_token] ++ bracket_tokens, layout}
+  end
+
   # ---------------------------------------------------------------------------
   # Bracket At Expressions (@foo[bar])
   # ---------------------------------------------------------------------------
@@ -552,6 +574,42 @@ defmodule Spitfire.Property.TokenCompiler do
     {bracket_tokens, layout} = compile_bracket_arg_stuck(arg, layout, opts)
 
     {[at_token] ++ eol_tokens ++ expr_tokens ++ bracket_tokens, layout}
+  end
+
+  # Bracket at with dotted bracket identifier: @expr.foo[bar]
+  defp do_to_tokens({:bracket_at_expr, newlines, {:dot_bracket_identifier, left, name}, arg}, layout, opts)
+       when is_integer(newlines) do
+    # Compile @ operator
+    {at_meta, layout} = TokenLayout.space_before(layout, "@", nil)
+    at_token = {:at_op, at_meta, :@}
+
+    # Emit newlines if any (per at_op_eol -> at_op eol)
+    {eol_tokens, layout} =
+      if newlines > 0 do
+        eol_meta = TokenLayout.meta(layout, "\n", newlines)
+        layout = TokenLayout.newlines(layout, newlines)
+        {[{:eol, eol_meta}], layout}
+      else
+        {[], layout}
+      end
+
+    # Compile left expression
+    {left_tokens, layout} = do_to_tokens(left, layout, opts)
+
+    # Compile dot (stuck to left)
+    {dot_meta, layout} = TokenLayout.stick_right(layout, ".", nil)
+    dot_token = {:., dot_meta}
+
+    # Compile bracket_identifier (stuck to dot)
+    name_str = Atom.to_string(name)
+    chars = String.to_charlist(name_str)
+    {id_meta, layout} = TokenLayout.stick_right(layout, name_str, chars)
+    id_token = {:bracket_identifier, id_meta, name}
+
+    # Compile bracket arg (stuck to identifier)
+    {bracket_tokens, layout} = compile_bracket_arg(arg, layout, opts)
+
+    {[at_token] ++ eol_tokens ++ left_tokens ++ [dot_token, id_token] ++ bracket_tokens, layout}
   end
 
   # ---------------------------------------------------------------------------
@@ -2724,8 +2782,62 @@ defmodule Spitfire.Property.TokenCompiler do
   # ===========================================================================
 
   # Compile bracket argument: [key]
-  defp compile_bracket_arg(arg, layout, opts) do
+  # Supports multiple generator shapes produced by gen_bracket_arg/1:
+  # - simple expression (e.g., {:identifier, meta, name})
+  # - {:kw_args, pairs} for keyword lists
+  # - list of elements for container args
+  # - {:trailing, expr} for trailing-comma form
+  defp compile_bracket_arg({:kw_args, pairs}, layout, opts) do
     # Opening bracket (stuck to identifier for adhesion)
+    {open_meta, layout} = TokenLayout.stick_right(layout, "[", nil)
+    open_token = {:"[", open_meta}
+
+    # Compile keyword pairs inside bracket
+    {pairs_tokens, layout} = compile_no_parens_kw_pairs(pairs, layout, opts)
+
+    # Closing bracket (stuck to last value)
+    {close_meta, layout} = TokenLayout.stick_right(layout, "]", nil)
+    close_token = {:"]", close_meta}
+
+    {[open_token] ++ pairs_tokens ++ [close_token], layout}
+  end
+
+  defp compile_bracket_arg(arg, layout, opts) when is_list(arg) do
+    # Opening bracket (stuck to identifier for adhesion)
+    {open_meta, layout} = TokenLayout.stick_right(layout, "[", nil)
+    open_token = {:"[", open_meta}
+
+    # Compile multiple args in brackets
+    {args_tokens, layout} = compile_args_in_brackets(arg, layout, opts)
+
+    # Closing bracket (stuck to last arg)
+    {close_meta, layout} = TokenLayout.stick_right(layout, "]", nil)
+    close_token = {:"]", close_meta}
+
+    {[open_token] ++ args_tokens ++ [close_token], layout}
+  end
+
+  defp compile_bracket_arg({:trailing, expr}, layout, opts) do
+    # Opening bracket (stuck to identifier for adhesion)
+    {open_meta, layout} = TokenLayout.stick_right(layout, "[", nil)
+    open_token = {:"[", open_meta}
+
+    # Compile single expr (stuck to bracket)
+    {arg_tokens, layout} = compile_arg_with_adhesion(expr, layout, opts)
+
+    # Trailing comma before closing bracket
+    {comma_meta, layout} = TokenLayout.stick_right(layout, ",", nil)
+    comma_token = {:",", comma_meta}
+
+    # Closing bracket (stuck to comma)
+    {close_meta, layout} = TokenLayout.stick_right(layout, "]", nil)
+    close_token = {:"]", close_meta}
+
+    {[open_token] ++ arg_tokens ++ [comma_token, close_token], layout}
+  end
+
+  defp compile_bracket_arg(arg, layout, opts) do
+    # Fallback: single key expression
     {open_meta, layout} = TokenLayout.stick_right(layout, "[", nil)
     open_token = {:"[", open_meta}
 
@@ -2740,15 +2852,52 @@ defmodule Spitfire.Property.TokenCompiler do
   end
 
   # Compile bracket argument stuck to expression: expr[key]
-  defp compile_bracket_arg_stuck(arg, layout, opts) do
-    # Opening bracket (stuck to expression)
+  # Mirrors compile_bracket_arg variants but opening bracket is stuck to expr
+  defp compile_bracket_arg_stuck({:kw_args, pairs}, layout, opts) do
     {open_meta, layout} = TokenLayout.stick_right(layout, "[", nil)
     open_token = {:"[", open_meta}
 
-    # Key expression (stuck to bracket)
+    {pairs_tokens, layout} = compile_no_parens_kw_pairs(pairs, layout, opts)
+
+    {close_meta, layout} = TokenLayout.stick_right(layout, "]", nil)
+    close_token = {:"]", close_meta}
+
+    {[open_token] ++ pairs_tokens ++ [close_token], layout}
+  end
+
+  defp compile_bracket_arg_stuck(arg, layout, opts) when is_list(arg) do
+    {open_meta, layout} = TokenLayout.stick_right(layout, "[", nil)
+    open_token = {:"[", open_meta}
+
+    {args_tokens, layout} = compile_args_in_brackets(arg, layout, opts)
+
+    {close_meta, layout} = TokenLayout.stick_right(layout, "]", nil)
+    close_token = {:"]", close_meta}
+
+    {[open_token] ++ args_tokens ++ [close_token], layout}
+  end
+
+  defp compile_bracket_arg_stuck({:trailing, expr}, layout, opts) do
+    {open_meta, layout} = TokenLayout.stick_right(layout, "[", nil)
+    open_token = {:"[", open_meta}
+
+    {arg_tokens, layout} = compile_arg_with_adhesion(expr, layout, opts)
+
+    {comma_meta, layout} = TokenLayout.stick_right(layout, ",", nil)
+    comma_token = {:",", comma_meta}
+
+    {close_meta, layout} = TokenLayout.stick_right(layout, "]", nil)
+    close_token = {:"]", close_meta}
+
+    {[open_token] ++ arg_tokens ++ [comma_token, close_token], layout}
+  end
+
+  defp compile_bracket_arg_stuck(arg, layout, opts) do
+    {open_meta, layout} = TokenLayout.stick_right(layout, "[", nil)
+    open_token = {:"[", open_meta}
+
     {arg_tokens, layout} = compile_arg_with_adhesion(arg, layout, opts)
 
-    # Closing bracket (stuck to key)
     {close_meta, layout} = TokenLayout.stick_right(layout, "]", nil)
     close_token = {:"]", close_meta}
 
