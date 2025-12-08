@@ -723,7 +723,8 @@ defmodule Spitfire do
           cond do
             # if the next token is the closing paren or if the next token is a newline and the next next token is the closing paren
             peek_token(parser) == :")" ||
-                (peek_token(parser) == :eol && peek_token(next_token(parser)) == :")") ->
+              (peek_token(parser) == :eol && peek_token(next_token(parser)) == :")") ||
+                (peek_token(parser) == :";" && peek_token(next_token(parser)) == :")") ->
               parser =
                 parser
                 |> Map.put(:nesting, old_nesting)
@@ -825,7 +826,7 @@ defmodule Spitfire do
 
               # handles if the closing paren is on a new line or the same line
               parser =
-                if peek_token(parser) == :eol do
+                if peek_token(parser) in [:eol, :";"] do
                   next_token(parser)
                 else
                   parser
