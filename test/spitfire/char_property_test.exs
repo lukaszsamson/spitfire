@@ -1353,6 +1353,10 @@ defmodule Spitfire.CharPropertyTest do
     ast
     |> unwrap_single_block()
     |> Macro.postwalk(fn
+      # Empty blocks - strip all metadata (Oracle omits it, Spitfire includes it)
+      {:__block__, _meta, []} ->
+        {:__block__, [], []}
+
       {tag, meta, args} when is_list(meta) ->
         {tag, Keyword.drop(meta, @ignored_meta_keys), args}
 

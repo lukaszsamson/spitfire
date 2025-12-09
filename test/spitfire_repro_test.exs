@@ -1454,4 +1454,140 @@ defmodule SpitfireReproTest do
 
     assert Spitfire.parse(code) == s2q(code)
   end
+
+  test "repro 128" do
+    code = """
+    A.\"\".{}\
+    """
+
+    assert Spitfire.parse(code) == s2q(code)
+
+    code = """
+    A.''.{}\
+    """
+
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
+  test "repro 129" do
+    code = """
+    A.\"\".foo()\
+    """
+
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
+  test "repro 130" do
+    code = """
+    (b);()\
+    """
+
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
+  test "repro 131" do
+    code = """
+    %&0{}\
+    """
+
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
+  test "repro 132" do
+    code = """
+    [\"foo\#{nil}\": 1]\
+    """
+
+    assert Spitfire.parse(code) == s2q(code)
+
+    code = """
+    'foo\#{nil}'\
+    """
+
+    assert Spitfire.parse(code) == s2q(code)
+
+    code = """
+    \"\#{nil}\"\
+    """
+
+    assert Spitfire.parse(code) == s2q(code)
+
+    code = """
+    '''\nfoo\#{nil}\n'''\
+    """
+
+    assert Spitfire.parse(code) == s2q(code)
+
+    code = """
+    '''\nfoo\#{nil}\n'''\
+    """
+
+    assert Spitfire.parse(code) == s2q(code)
+
+    code = """
+    ~s\"\"\"\nfoo\#{nil}\n\"\"\"\
+    """
+
+    assert Spitfire.parse(code) == s2q(code)
+
+    code = """
+    ~s\"\"\"\nfoo\#{nil|s}\n\"\"\"\
+    """
+
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
+  test "repro 133" do
+    code = """
+    def foo ;not+c do 1 end\
+    """
+
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
+  test "repro 134" do
+    code = """
+    %~r//c{}\
+    """
+
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
+  test "repro 135" do
+    code = """
+    %~r//c{}\
+    """
+
+    assert Spitfire.parse(code) == s2q(code)
+
+    code = """
+    %~a\"\"{}\
+    """
+
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
+  test "repro 136" do
+    code = """
+    '''\nfoo\#{;nil}edtf|-s}\n'''\
+    """
+
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
+  test "repro 137" do
+    code = """
+    foo[0.'']\
+    """
+
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
+  test "repro 138" do
+    code = """
+    <<a, s: 0.'' >>\
+    """
+
+    assert Spitfire.parse(code) == s2q(code)
+  end
 end
