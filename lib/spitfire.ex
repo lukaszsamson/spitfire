@@ -3638,6 +3638,13 @@ defmodule Spitfire do
           :atom_safe_start -> &parse_linearized_atom(&1, :safe)
           :atom_unsafe_start -> &parse_linearized_atom(&1, :unsafe)
           :alias -> &parse_alias/1
+          :int -> &parse_int/1
+          :flt -> &parse_float/1
+          :char -> &parse_char/1
+          :bin_string -> &parse_string/1
+          :list_string -> &parse_string/1
+          :bin_string_start -> &parse_linearized_string(&1, :binary)
+          :list_string_start -> &parse_linearized_string(&1, :charlist)
           :at_op -> &parse_lone_module_attr/1
           :unary_op -> &parse_prefix_lone_identifer/1
           :dual_op -> &parse_prefix_expression/1
@@ -3645,21 +3652,29 @@ defmodule Spitfire do
         end
 
       if prefix == nil do
-        meta = current_meta(parser)
-        ctype = current_token_type(parser)
-        parser = put_error(parser, {meta, "unknown token: #{ctype}"})
+        case current_token_type(parser) do
+          :bin_string_start ->
+            parse_linearized_string(parser, :binary)
 
-        parser =
-          case ctype do
-            :")" -> parser
-            :"]" -> parser
-            :"}" -> parser
-            :">>" -> parser
-            :end -> parser
-            _ -> next_token(parser)
-          end
+          :list_string_start ->
+            parse_linearized_string(parser, :charlist)
 
-        {{:__block__, [], []}, parser}
+          ctype ->
+            meta = current_meta(parser)
+            parser = put_error(parser, {meta, "unknown token: #{ctype}"})
+
+            parser =
+              case ctype do
+                :")" -> parser
+                :"]" -> parser
+                :"}" -> parser
+                :">>" -> parser
+                :end -> parser
+                _ -> next_token(parser)
+              end
+
+            {{:__block__, [], []}, parser}
+        end
       else
         {left, parser} = prefix.(parser)
 
@@ -6632,6 +6647,10 @@ defmodule Spitfire do
     true
   end
 
+  defp valid_peek?(ctype, :"{" ) when ctype in [:bin_string_end, :list_string_end] do
+    true
+  end
+
   defp valid_peek?(ctype, :"{")
        when ctype in [
               :atom,
@@ -6640,7 +6659,12 @@ defmodule Spitfire do
               :atom_safe_start,
               :atom_unsafe_start,
               :atom_safe_end,
-              :atom_unsafe_end
+              :atom_unsafe_end,
+              :int,
+              :flt,
+              :char,
+              :bin_string,
+              :list_string
             ] do
     true
   end
