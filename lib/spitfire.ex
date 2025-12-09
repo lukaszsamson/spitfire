@@ -2615,6 +2615,30 @@ defmodule Spitfire do
       peek_token(parser) == :end ->
         {ast, next_token(parser)}
 
+      peek_token(parser) == :-> ->
+        parser = next_token(parser)
+        {ast, parser} = parse_stab_expression(parser, ast)
+
+        parser =
+          case peek_token(parser) do
+            :end -> next_token(parser)
+            _ -> parser
+          end
+
+        {ast, parser}
+
+      peek_token_type(parser) == :stab_op ->
+        parser = next_token(parser)
+        {ast, parser} = parse_stab_expression(parser, ast)
+
+        parser =
+          case peek_token(parser) do
+            :end -> next_token(parser)
+            _ -> parser
+          end
+
+        {ast, parser}
+
       true ->
         parser = next_token(parser)
         eoe = current_eoe(parser)
@@ -2670,6 +2694,8 @@ defmodule Spitfire do
           {[ast | rest], parser}
         end
 
+      exprs = normalize_fn_clauses(exprs)
+
       {parser, meta} =
         case current_token(parser) do
           :end ->
@@ -2692,6 +2718,12 @@ defmodule Spitfire do
       {ast, parser}
     end
   end
+
+  defp normalize_fn_clauses([{:comma, _, items}, {:->, meta, [_lhs, rhs]} | rest]) do
+    [{:->, meta, [items, rhs]} | rest]
+  end
+
+  defp normalize_fn_clauses(exprs), do: exprs
 
   defp parse_dot_call_expression(parser, lhs) do
     trace "parse_dot_call_expression", trace_meta(parser) do
