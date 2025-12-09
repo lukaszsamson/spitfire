@@ -1607,12 +1607,9 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
         {1, gen_dot_op_identifier_for_call(child_state)}
       ])
 
-    # call_args_no_parens_all: matched_expr | kw_args
-    args_gen =
-      StreamData.frequency([
-        {3, gen_simple_expr() |> StreamData.map(&{:single_arg, &1})},
-        {2, gen_call_args_no_parens_kw()}
-      ])
+    # call_args_no_parens_all: one | ambig | many
+    # Per grammar lines 508-510
+    args_gen = gen_call_args_no_parens_all(child_state)
 
     StreamData.bind(target_gen, fn target ->
       StreamData.bind(args_gen, fn args ->
@@ -1635,12 +1632,9 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
         {2, gen_dot_identifier_for_call(child_state)}
       ])
 
-    # call_args_no_parens_all: matched_expr | kw_args
-    args_gen =
-      StreamData.frequency([
-        {3, gen_simple_expr() |> StreamData.map(&{:single_arg, &1})},
-        {2, gen_call_args_no_parens_kw()}
-      ])
+    # call_args_no_parens_all: one | ambig | many
+    # Per grammar lines 508-510
+    args_gen = gen_call_args_no_parens_all(child_state)
 
     StreamData.bind(target_gen, fn target ->
       StreamData.bind(args_gen, fn args ->
@@ -2704,6 +2698,61 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
         end)
       end)
     end)
+  end
+
+  # ===========================================================================
+  # call_args_no_parens_all generator
+  # ===========================================================================
+  #
+  # Per grammar lines 508-510:
+  # call_args_no_parens_all -> call_args_no_parens_one   : single arg or kw
+  # call_args_no_parens_all -> call_args_no_parens_ambig : nested no_parens call
+  # call_args_no_parens_all -> call_args_no_parens_many  : 2+ args
+  #
+  # This is used in:
+  # - block_expr rules (lines 184-185): dot_op_identifier/dot_identifier call_args_no_parens_all do_block
+  # - stab_expr (line 358): call_args_no_parens_all stab_op_eol_and_expr
+
+  @doc """
+  Generate call_args_no_parens_all - any valid argument form for no-parens calls.
+
+  Returns one of:
+  - `{:call_args_one, {:single_arg, expr}}` - single matched_expr
+  - `{:call_args_one, {:kw_args, pairs}}` - keyword args only
+  - `{:call_args_ambig, no_parens_expr}` - nested ambiguous call
+  - `{:call_args_many, [exprs]}` - 2+ positional args, optionally with trailing kw
+  """
+  def gen_call_args_no_parens_all(state) do
+    child_state = GrammarTree.decr_depth(state)
+
+    if child_state.budget.depth <= 1 do
+      # At shallow depth, only simple forms
+      StreamData.frequency([
+        # call_args_no_parens_one: single arg
+        {4, gen_simple_expr() |> StreamData.map(&{:call_args_one, {:single_arg, &1}})},
+        # call_args_no_parens_one: keyword args
+        {2, gen_call_args_no_parens_kw() |> StreamData.map(&{:call_args_one, &1})},
+        # call_args_no_parens_many: 2+ args
+        {3, gen_positional_args_list(child_state, 2, 3) |> StreamData.map(&{:call_args_many, &1})}
+      ])
+    else
+      restricted_state = restrict_unmatched(child_state)
+
+      StreamData.frequency([
+        # call_args_no_parens_one: single matched_expr
+        {4,
+         gen_sub_matched_expr(restricted_state)
+         |> StreamData.map(&{:call_args_one, {:single_arg, &1}})},
+        # call_args_no_parens_one: keyword args
+        {2, gen_call_args_no_parens_kw() |> StreamData.map(&{:call_args_one, &1})},
+        # call_args_no_parens_ambig: nested no_parens call
+        {2, gen_no_parens_expr(child_state) |> StreamData.map(&{:call_args_ambig, &1})},
+        # call_args_no_parens_many: 2+ args (positional only)
+        {3, gen_positional_args_list(restricted_state, 2, 4) |> StreamData.map(&{:call_args_many, &1})},
+        # call_args_no_parens_many: positional + trailing kw
+        {2, gen_args_with_trailing_kw(restricted_state) |> StreamData.map(&{:call_args_many, &1})}
+      ])
+    end
   end
 
   # Helper: generate dot_identifier target (matched_expr.identifier)

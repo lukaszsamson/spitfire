@@ -41,6 +41,11 @@ defmodule Spitfire.CharPropertyTest do
               code <-
                 StreamData.string(
                   [
+                    # minimal set to cover all keywords, operators, brackets, separators, numbers, aliases and identifiers
+                    ?0,
+                    ?1,
+                    ?b,
+                    ?x,
                     ?d,
                     ?o,
                     ?e,
@@ -126,7 +131,10 @@ defmodule Spitfire.CharPropertyTest do
                     ?_,
                     ?=,
                     ?\s
-                    # ?#, #\n
+                    # excluded for now - create too many comments
+                    # ?#,
+                    # excluded for now
+                    #\n
                   ], min_length: 0, max_length: 16),
               max_runs: 5_000_000,
               max_shrinking_steps: 50

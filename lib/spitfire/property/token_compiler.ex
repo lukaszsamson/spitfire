@@ -3517,7 +3517,28 @@ defmodule Spitfire.Property.TokenCompiler do
   # ===========================================================================
 
   # Compile arguments for no-parens calls
-  # Can be a single expression or keyword arguments
+  # Can be a single expression, keyword arguments, or call_args_no_parens_all variants
+
+  # call_args_no_parens_all format (new)
+  # Per grammar lines 508-510:
+  # call_args_no_parens_all -> call_args_no_parens_one   : {:call_args_one, arg}
+  # call_args_no_parens_all -> call_args_no_parens_ambig : {:call_args_ambig, no_parens_expr}
+  # call_args_no_parens_all -> call_args_no_parens_many  : {:call_args_many, [exprs]}
+
+  defp compile_no_parens_args({:call_args_one, arg}, layout, opts) do
+    # call_args_no_parens_one: single arg or keyword args
+    compile_no_parens_args(arg, layout, opts)
+  end
+
+  defp compile_no_parens_args({:call_args_ambig, no_parens_expr}, layout, opts) do
+    # call_args_no_parens_ambig: nested no_parens call (the argument IS a no_parens_expr)
+    do_to_tokens(no_parens_expr, layout, opts)
+  end
+
+  defp compile_no_parens_args({:call_args_many, exprs}, layout, opts) when is_list(exprs) do
+    # call_args_no_parens_many: 2+ positional args, optionally with trailing kw
+    compile_no_parens_many_args(exprs, layout, opts)
+  end
 
   # Legacy format: direct expression
   defp compile_no_parens_args({:single_arg, expr}, layout, opts) do
