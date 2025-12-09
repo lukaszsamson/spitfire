@@ -1849,7 +1849,8 @@ defmodule Spitfire do
     trace "parse_access_expression", trace_meta(parser) do
       meta = current_meta(parser)
       open_range = token_range(parser.current_token)
-      parser = parser |> next_token() |> eat_eol()
+      parser = parser |> next_token()
+      {parser, leading_newlines, _} = consume_leading_eoe_tokens(parser)
 
       # Detect keyword list bracket arg at token-time
       {rhs, parser} =
@@ -1902,8 +1903,8 @@ defmodule Spitfire do
       extra_meta = [from_brackets: true]
 
       newlines =
-        case peek_newlines(parser, :eol) do
-          nil -> []
+        case leading_newlines do
+          0 -> []
           nl -> [newlines: nl]
         end
 
