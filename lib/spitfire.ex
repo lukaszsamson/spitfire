@@ -641,7 +641,7 @@ defmodule Spitfire do
                 {left, parser}
 
               ^do_block when parser.nesting != 0 and not allow_do? ->
-                {left, next_token(parser)}
+                {left, parser}
 
               _ ->
                 infix.(next_token(parser), left)
@@ -1449,9 +1449,11 @@ defmodule Spitfire do
       {rhs, parser} = parse_expression(parser, @capture_op, false, false, false)
       parser = pop_capture_name_context(parser)
 
+      allow_do? = parser.nesting == 0 or Map.get(parser, :allow_do_in_args, false)
+
       {rhs, parser} =
         case peek_token_type(parser) do
-          :do -> parse_do_block(next_token(parser), rhs)
+          :do when allow_do? -> parse_do_block(next_token(parser), rhs)
           _ -> {rhs, parser}
         end
 
