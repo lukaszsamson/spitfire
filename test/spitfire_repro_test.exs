@@ -1183,7 +1183,6 @@ defmodule SpitfireReproTest do
     assert Spitfire.parse(code) == s2q(code)
   end
 
-  @tag :skip
   test "repro 99" do
     code = """
     fn @b^e -> :ok end\
@@ -1192,7 +1191,6 @@ defmodule SpitfireReproTest do
     assert Spitfire.parse(code) == s2q(code)
   end
 
-  @tag :skip
   test "repro 100" do
     code = """
     fn r.\"\"s -> :ok end\
@@ -1209,7 +1207,6 @@ defmodule SpitfireReproTest do
     assert Spitfire.parse(code) == s2q(code)
   end
 
-  @tag :skip
   test "repro 103" do
     code = """
     fn 1 -> i.''l end\
@@ -1273,7 +1270,6 @@ defmodule SpitfireReproTest do
     assert Spitfire.parse(code) == s2q(code)
   end
 
-  @tag :skip
   test "repro 107" do
     code = """
     :\"foo\#{}\"\
@@ -1282,7 +1278,6 @@ defmodule SpitfireReproTest do
     assert Spitfire.parse(code) == s2q(code)
   end
 
-  @tag :skip
   test "repro 108" do
     code = """
     [\"foo\#{}\": 1]\
@@ -1291,7 +1286,6 @@ defmodule SpitfireReproTest do
     assert Spitfire.parse(code) == s2q(code)
   end
 
-  @tag :skip
   test "repro 109" do
     code = """
     foo.\"\"A\
@@ -1308,7 +1302,6 @@ defmodule SpitfireReproTest do
     assert Spitfire.parse(code) == s2q(code)
   end
 
-  @tag :skip
   test "repro 111" do
     code = """
     0.'' do :ok end\
@@ -1317,7 +1310,6 @@ defmodule SpitfireReproTest do
     assert Spitfire.parse(code) == s2q(code)
   end
 
-  @tag :skip
   test "repro 112" do
     code = """
     :\"foo\#{\"\"}\"\

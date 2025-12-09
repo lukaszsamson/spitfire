@@ -3007,6 +3007,10 @@ defmodule Spitfire do
     [{:->, meta, [[guard], rhs]} | rest]
   end
 
+  defp normalize_fn_clauses([lhs, {:->, meta, [[lhs], rhs]} | rest]) do
+    [{:->, meta, [[lhs], rhs]} | rest]
+  end
+
   defp normalize_fn_clauses([{_, _} = kw_pair, {:->, meta, [_lhs, rhs]} | rest]) do
     [{:->, meta, [[[kw_pair]], rhs]} | rest]
   end
