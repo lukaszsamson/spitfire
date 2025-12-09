@@ -786,6 +786,7 @@ defmodule Spitfire.Property.TokenCompiler do
   end
 
   # Call with parentheses: foo(1, 2) or expr.(1)
+  # Grammar: parens_call -> dot_call_identifier call_args_parens
   defp do_to_tokens({:call_parens, target, args}, layout, opts) do
     # Compile target
     {target_tokens, layout} = compile_call_target(target, layout, opts)
@@ -794,8 +795,8 @@ defmodule Spitfire.Property.TokenCompiler do
     {open_meta, layout} = TokenLayout.stick_right(layout, "(", nil)
     open_token = {:"(", open_meta}
 
-    # Compile arguments with commas (first arg stuck to open paren)
-    {args_tokens, layout} = compile_args_in_parens(args, layout, opts)
+    # Compile arguments using call_args_parens handler
+    {args_tokens, layout} = compile_call_args_parens(args, layout, opts)
 
     # Compile closing paren (stuck to last arg or open paren)
     {close_meta, layout} = TokenLayout.stick_right(layout, ")", nil)
@@ -805,6 +806,7 @@ defmodule Spitfire.Property.TokenCompiler do
   end
 
   # Nested parens call without do: foo()()
+  # Grammar: parens_call -> dot_call_identifier call_args_parens call_args_parens
   defp do_to_tokens({:call_parens_nested, target, args1, args2}, layout, opts) do
     # Compile target
     {target_tokens, layout} = compile_call_target(target, layout, opts)
@@ -813,7 +815,7 @@ defmodule Spitfire.Property.TokenCompiler do
     {lparen1_meta, layout} = TokenLayout.stick_right(layout, "(", nil)
     lparen1_token = {:"(", lparen1_meta}
 
-    {args1_tokens, layout} = compile_args_list(args1, layout, opts)
+    {args1_tokens, layout} = compile_call_args_parens(args1, layout, opts)
 
     {rparen1_meta, layout} = TokenLayout.stick_right(layout, ")", nil)
     rparen1_token = {:")", rparen1_meta}
@@ -822,7 +824,7 @@ defmodule Spitfire.Property.TokenCompiler do
     {lparen2_meta, layout} = TokenLayout.stick_right(layout, "(", nil)
     lparen2_token = {:"(", lparen2_meta}
 
-    {args2_tokens, layout} = compile_args_list(args2, layout, opts)
+    {args2_tokens, layout} = compile_call_args_parens(args2, layout, opts)
 
     {rparen2_meta, layout} = TokenLayout.stick_right(layout, ")", nil)
     rparen2_token = {:")", rparen2_meta}
@@ -1378,8 +1380,8 @@ defmodule Spitfire.Property.TokenCompiler do
     {lparen_meta, layout} = TokenLayout.stick_right(layout, "(", nil)
     lparen_token = {:"(", lparen_meta}
 
-    # Compile arguments
-    {args_tokens, layout} = compile_args_list(args, layout, opts)
+    # Compile arguments using call_args_parens handler
+    {args_tokens, layout} = compile_call_args_parens(args, layout, opts)
 
     # Compile close paren (stuck to args)
     {rparen_meta, layout} = TokenLayout.stick_right(layout, ")", nil)
@@ -1427,7 +1429,7 @@ defmodule Spitfire.Property.TokenCompiler do
     {lparen1_meta, layout} = TokenLayout.stick_right(layout, "(", nil)
     lparen1_token = {:"(", lparen1_meta}
 
-    {args1_tokens, layout} = compile_args_list(args1, layout, opts)
+    {args1_tokens, layout} = compile_call_args_parens(args1, layout, opts)
 
     {rparen1_meta, layout} = TokenLayout.stick_right(layout, ")", nil)
     rparen1_token = {:")", rparen1_meta}
@@ -1436,7 +1438,7 @@ defmodule Spitfire.Property.TokenCompiler do
     {lparen2_meta, layout} = TokenLayout.stick_right(layout, "(", nil)
     lparen2_token = {:"(", lparen2_meta}
 
-    {args2_tokens, layout} = compile_args_list(args2, layout, opts)
+    {args2_tokens, layout} = compile_call_args_parens(args2, layout, opts)
 
     {rparen2_meta, layout} = TokenLayout.stick_right(layout, ")", nil)
     rparen2_token = {:")", rparen2_meta}
@@ -1861,20 +1863,104 @@ defmodule Spitfire.Property.TokenCompiler do
   end
 
   # ===========================================================================
-  # Helper: compile_args_list (for call args inside parens)
+  # Helper: compile_call_args_parens
   # ===========================================================================
+  #
+  # Per grammar lines 553-562, call_args_parens can be:
+  # - `{:call_args_parens, :empty}` - empty args ()
+  # - `{:call_args_parens, {:no_parens_expr, expr}}` - single no_parens_expr (foo bar)
+  # - `{:call_args_parens, {:kw_only, pairs}}` - keyword only (a: 1, b: 2)
+  # - `{:call_args_parens, {:positional, exprs}}` - positional args only (1, 2, 3)
+  # - `{:call_args_parens, {:positional_with_kw, exprs, kw_pairs}}` - positional + kw
 
-  # Compile argument list with first arg stuck to open paren
-  defp compile_args_list([], layout, _opts), do: {[], layout}
+  # Empty args: ()
+  defp compile_call_args_parens({:call_args_parens, :empty}, layout, _opts), do: {[], layout}
 
-  defp compile_args_list([arg | rest], layout, opts) do
-    # First argument stuck to opening paren
-    {first_tokens, layout} = compile_arg_with_adhesion(arg, layout, opts)
+  # Single no_parens_expr: (foo bar)
+  defp compile_call_args_parens({:call_args_parens, {:no_parens_expr, expr}}, layout, opts) do
+    # Compile the no_parens_expr - it gets space handling from its own compilation
+    {expr_tokens, layout} = do_to_tokens(expr, layout, opts)
+    {expr_tokens, layout}
+  end
 
-    # Remaining args have commas
-    {rest_tokens, layout} = compile_remaining_args(rest, layout, opts)
+  # Keyword only: (a: 1, b: 2)
+  defp compile_call_args_parens({:call_args_parens, {:kw_only, pairs}}, layout, opts) do
+    compile_kw_call_args(pairs, layout, opts, :first)
+  end
 
-    {first_tokens ++ rest_tokens, layout}
+  # Positional args only: (1, 2, 3)
+  defp compile_call_args_parens({:call_args_parens, {:positional, exprs}}, layout, opts) do
+    compile_args_in_parens(exprs, layout, opts)
+  end
+
+  # Positional + trailing kw: (1, 2, a: 3)
+  defp compile_call_args_parens({:call_args_parens, {:positional_with_kw, exprs, kw_pairs}}, layout, opts) do
+    # Compile positional args first
+    {pos_tokens, layout} = compile_args_in_parens(exprs, layout, opts)
+
+    # Add comma before keywords
+    {comma_meta, layout} = TokenLayout.stick_right(layout, ",", nil)
+    comma_token = {:",", comma_meta}
+
+    # Compile keyword args (not first since we have positional)
+    {kw_tokens, layout} = compile_kw_call_args(kw_pairs, layout, opts, :rest)
+
+    {pos_tokens ++ [comma_token] ++ kw_tokens, layout}
+  end
+
+  # Backward compatibility: handle plain list (old format)
+  defp compile_call_args_parens(args, layout, opts) when is_list(args) do
+    compile_args_in_parens(args, layout, opts)
+  end
+
+  # Helper: compile keyword args for call_args_parens
+  # :first means first arg is stuck to open paren, :rest means space before
+  defp compile_kw_call_args([], layout, _opts, _position), do: {[], layout}
+
+  defp compile_kw_call_args([{key, value} | rest], layout, opts, position) do
+    # Compile keyword key (as kw_identifier)
+    key_str = Atom.to_string(key)
+    key_lexeme = key_str <> ":"
+    chars = String.to_charlist(key_str)
+
+    {key_meta, layout} =
+      case position do
+        :first -> TokenLayout.stick_right(layout, key_lexeme, chars)
+        :rest -> TokenLayout.space_before(layout, key_lexeme, chars)
+      end
+
+    key_token = {:kw_identifier, key_meta, key}
+
+    # Compile value with space
+    {value_tokens, layout} = do_to_tokens(value, layout, opts)
+
+    # Compile remaining pairs
+    {rest_tokens, layout} = compile_kw_call_args_rest(rest, layout, opts)
+
+    {[key_token] ++ value_tokens ++ rest_tokens, layout}
+  end
+
+  defp compile_kw_call_args_rest([], layout, _opts), do: {[], layout}
+
+  defp compile_kw_call_args_rest([{key, value} | rest], layout, opts) do
+    # Add comma
+    {comma_meta, layout} = TokenLayout.stick_right(layout, ",", nil)
+    comma_token = {:",", comma_meta}
+
+    # Compile key with space
+    key_str = Atom.to_string(key)
+    key_lexeme = key_str <> ":"
+    chars = String.to_charlist(key_str)
+    {key_meta, layout} = TokenLayout.space_before(layout, key_lexeme, chars)
+    key_token = {:kw_identifier, key_meta, key}
+
+    # Compile value
+    {value_tokens, layout} = do_to_tokens(value, layout, opts)
+
+    # Compile remaining
+    {rest_tokens, layout} = compile_kw_call_args_rest(rest, layout, opts)
+
+    {[comma_token, key_token] ++ value_tokens ++ rest_tokens, layout}
   end
 
   # ===========================================================================

@@ -661,10 +661,12 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
   # ===========================================================================
 
   # Generate a call with parentheses: foo(a, b) or expr.(a)
+  # Grammar: parens_call -> dot_call_identifier call_args_parens
   defp gen_call_parens(state) do
     child_state = GrammarTree.decr_depth(state)
 
     # Generate target - either a paren_identifier or a dot_call
+    # Per grammar: dot_call_identifier -> dot_paren_identifier | matched_expr dot_call_op
     target_gen =
       StreamData.frequency([
         {4, gen_paren_identifier()},
@@ -672,8 +674,8 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
         {1, gen_dot_call_target(child_state)}
       ])
 
-    # Generate arguments (0-3 arguments)
-    args_gen = gen_args(child_state, 3)
+    # Generate arguments using full call_args_parens grammar
+    args_gen = gen_call_args_parens(child_state)
 
     StreamData.bind(target_gen, fn target ->
       StreamData.bind(args_gen, fn args ->
@@ -683,7 +685,7 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
   end
 
   # Generate nested parens call: foo()() (no do block)
-  # Grammar: dot_call_identifier call_args_parens call_args_parens
+  # Grammar: parens_call -> dot_call_identifier call_args_parens call_args_parens
   defp gen_call_parens_nested(state) do
     child_state = GrammarTree.decr_depth(state)
 
@@ -694,8 +696,8 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
         {1, gen_dot_call_target(child_state)}
       ])
 
-    args1_gen = gen_args(child_state, 2)
-    args2_gen = gen_args(child_state, 2)
+    args1_gen = gen_call_args_parens(child_state)
+    args2_gen = gen_call_args_parens(child_state)
 
     StreamData.bind(target_gen, fn target ->
       StreamData.bind(args1_gen, fn args1 ->
@@ -708,22 +710,196 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
 
   # Generate keyword arguments for no-parens call: a: 1 or a: 1, b: 2
   # Per grammar: call_args_no_parens_kw -> call_args_no_parens_kw_expr [',' ...]
-  # call_args_no_parens_kw_expr -> kw_eol matched_expr
-  defp gen_call_args_no_parens_kw do
+  # call_args_no_parens_kw_expr -> kw_eol matched_expr | kw_eol no_parens_expr
+  defp gen_call_args_no_parens_kw(state \\ GrammarTree.initial_state()) do
     StreamData.bind(StreamData.integer(1..3), fn count ->
-      gen_kw_arg_list(count)
+      gen_kw_arg_list(state, count)
     end)
     |> StreamData.map(fn pairs -> {:kw_args, pairs} end)
   end
 
   # Generate list of keyword argument pairs
-  defp gen_kw_arg_list(0), do: StreamData.constant([])
+  defp gen_kw_arg_list(_state, 0), do: StreamData.constant([])
 
-  defp gen_kw_arg_list(count) when count > 0 do
+  defp gen_kw_arg_list(state, count) when count > 0 do
+    # Allow keyword values to be either simple/matched expressions or
+    # occasionally full no_parens_expr to model nested no-parens in keywords
+    value_gen =
+      if state.budget.depth <= 1 do
+        gen_simple_expr()
+      else
+        StreamData.frequency([
+          {4, gen_simple_expr()},
+          {1, gen_no_parens_expr(GrammarTree.decr_depth(state))}
+        ])
+      end
+
     StreamData.bind(StreamData.member_of(@identifiers), fn key ->
-      StreamData.bind(gen_simple_expr(), fn value ->
-        StreamData.bind(gen_kw_arg_list(count - 1), fn rest ->
+      StreamData.bind(value_gen, fn value ->
+        StreamData.bind(gen_kw_arg_list(GrammarTree.decr_nodes(state), count - 1), fn rest ->
           StreamData.constant([{key, value} | rest])
+        end)
+      end)
+    end)
+  end
+
+  # ===========================================================================
+  # Generator: call_args_parens
+  # ===========================================================================
+  #
+  # Per grammar lines 553-562:
+  #   call_args_parens -> open_paren ')' :                                      % empty
+  #   call_args_parens -> open_paren no_parens_expr close_paren :               % single no_parens_expr
+  #   call_args_parens -> open_paren kw_call close_paren :                      % keyword only
+  #   call_args_parens -> open_paren call_args_parens_base close_paren :        % positional args
+  #   call_args_parens -> open_paren call_args_parens_base ',' kw_call close_paren : % positional + kw
+  #
+  # call_args_parens_expr (lines 546-548) -> matched_expr | unmatched_expr
+  # call_args_parens_base (lines 550-551) -> call_args_parens_expr (',' call_args_parens_expr)*
+  #
+  # Returns one of:
+  # - `{:call_args_parens, :empty}` - empty args ()
+  # - `{:call_args_parens, {:no_parens_expr, expr}}` - single no_parens_expr
+  # - `{:call_args_parens, {:kw_only, pairs}}` - keyword only
+  # - `{:call_args_parens, {:positional, exprs}}` - positional args only
+  # - `{:call_args_parens, {:positional_with_kw, exprs, kw_pairs}}` - positional + trailing kw
+
+  @doc """
+  Generate call_args_parens - arguments inside parentheses for function calls.
+
+  Per grammar lines 553-562, this covers all valid argument forms:
+  - Empty: `()`
+  - Single no_parens_expr: `(foo bar)` - special handling for nested calls
+  - Keywords only: `(a: 1, b: 2)`
+  - Positional args: `(1, 2, 3)` - call_args_parens_base
+  - Positional + keywords: `(1, 2, a: 3)` - call_args_parens_base + kw_call
+
+  The `open_paren` and `close_paren` productions (lines 378-381) allow:
+  - open_paren -> '(' | '(' eol
+  - close_paren -> ')' | eol ')'
+  """
+  def gen_call_args_parens(state) do
+    child_state = GrammarTree.decr_depth(state)
+
+    if child_state.budget.depth <= 1 do
+      # At shallow depth, only simple forms (no nested no_parens_expr)
+      StreamData.frequency([
+        # Empty: ()
+        {2, StreamData.constant({:call_args_parens, :empty})},
+        # Keyword only: (a: 1)
+        {2, gen_kw_call() |> StreamData.map(&{:call_args_parens, {:kw_only, &1}})},
+        # Positional only: (1, 2)
+        {4, gen_call_args_parens_base_simple(1, 3) |> StreamData.map(&{:call_args_parens, {:positional, &1}})},
+        # Positional + kw: (1, a: 2)
+        {2, gen_positional_with_kw_simple(child_state) |> StreamData.map(&{:call_args_parens, &1})}
+      ])
+    else
+      restricted_state = restrict_unmatched(child_state)
+
+      StreamData.frequency([
+        # Empty: ()
+        {2, StreamData.constant({:call_args_parens, :empty})},
+        # Single no_parens_expr: (foo bar)
+        {1, gen_no_parens_expr(child_state) |> StreamData.map(&{:call_args_parens, {:no_parens_expr, &1}})},
+        # Keyword only: (a: 1, b: 2)
+        {2, gen_kw_call() |> StreamData.map(&{:call_args_parens, {:kw_only, &1}})},
+        # Positional only: (expr, expr)
+        {4, gen_call_args_parens_base(restricted_state, 1, 3) |> StreamData.map(&{:call_args_parens, {:positional, &1}})},
+        # Positional + kw: (expr, a: 1)
+        {2, gen_positional_with_kw(restricted_state) |> StreamData.map(&{:call_args_parens, &1})}
+      ])
+    end
+  end
+
+  # Generate kw_call for use in call_args_parens: a: 1, b: 2
+  # Per grammar lines 576-578:
+  #   kw_call -> kw_base
+  #   kw_call -> kw_base ','  (trailing comma, warns but valid)
+  #   kw_base -> kw_eol container_expr (',' kw_eol container_expr)*
+  defp gen_kw_call do
+    StreamData.bind(StreamData.integer(1..3), fn count ->
+      gen_kw_call_pairs(count)
+    end)
+  end
+
+  # Generate kw_call pairs using container_expr values (matched or unmatched)
+  defp gen_kw_call_pairs(0), do: StreamData.constant([])
+
+  defp gen_kw_call_pairs(count) when count > 0 do
+    # Values can be matched_expr or unmatched_expr (container_expr)
+    # For simplicity, use simple expressions for keywords
+    value_gen = gen_simple_expr()
+
+    StreamData.bind(StreamData.member_of(@identifiers), fn key ->
+      StreamData.bind(value_gen, fn value ->
+        StreamData.bind(gen_kw_call_pairs(count - 1), fn rest ->
+          StreamData.constant([{key, value} | rest])
+        end)
+      end)
+    end)
+  end
+
+  # Generate call_args_parens_base with simple expressions
+  defp gen_call_args_parens_base_simple(min_args, max_args) do
+    StreamData.bind(StreamData.integer(min_args..max_args), fn count ->
+      gen_simple_expr_list(count)
+    end)
+  end
+
+  # Generate a list of simple expressions
+  defp gen_simple_expr_list(0), do: StreamData.constant([])
+
+  defp gen_simple_expr_list(count) when count > 0 do
+    StreamData.bind(gen_simple_expr(), fn expr ->
+      StreamData.bind(gen_simple_expr_list(count - 1), fn rest ->
+        StreamData.constant([expr | rest])
+      end)
+    end)
+  end
+
+  # Generate call_args_parens_base with matched/unmatched expressions
+  defp gen_call_args_parens_base(state, min_args, max_args) do
+    StreamData.bind(StreamData.integer(min_args..max_args), fn count ->
+      gen_call_args_parens_expr_list(state, count)
+    end)
+  end
+
+  # Generate a list of call_args_parens_expr (matched or unmatched, not no_parens)
+  defp gen_call_args_parens_expr_list(_state, 0), do: StreamData.constant([])
+
+  defp gen_call_args_parens_expr_list(state, count) when count > 0 do
+    # call_args_parens_expr -> matched_expr | unmatched_expr
+    # Avoid unmatched at the end to prevent ambiguity with do blocks
+    expr_gen =
+      StreamData.frequency([
+        {4, gen_sub_matched_expr(state)},
+        {2, gen_matched_expr(state)}
+      ])
+
+    StreamData.bind(expr_gen, fn expr ->
+      StreamData.bind(gen_call_args_parens_expr_list(GrammarTree.decr_nodes(state), count - 1), fn rest ->
+        StreamData.constant([expr | rest])
+      end)
+    end)
+  end
+
+  # Generate positional args + trailing kw (simple version)
+  defp gen_positional_with_kw_simple(_state) do
+    StreamData.bind(StreamData.integer(1..2), fn pos_count ->
+      StreamData.bind(gen_simple_expr_list(pos_count), fn positional ->
+        StreamData.bind(gen_kw_call(), fn kw_pairs ->
+          StreamData.constant({:positional_with_kw, positional, kw_pairs})
+        end)
+      end)
+    end)
+  end
+
+  # Generate positional args + trailing kw (full version)
+  defp gen_positional_with_kw(state) do
+    StreamData.bind(StreamData.integer(1..2), fn pos_count ->
+      StreamData.bind(gen_call_args_parens_expr_list(state, pos_count), fn positional ->
+        StreamData.bind(gen_kw_call(), fn kw_pairs ->
+          StreamData.constant({:positional_with_kw, positional, kw_pairs})
         end)
       end)
     end)
@@ -1320,17 +1496,6 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
     end)
   end
 
-  # Generate a list of simple expressions
-  defp gen_simple_expr_list(0), do: StreamData.constant([])
-
-  defp gen_simple_expr_list(count) when count > 0 do
-    StreamData.bind(gen_simple_expr(), fn expr ->
-      StreamData.bind(gen_simple_expr_list(count - 1), fn rest ->
-        StreamData.constant([expr | rest])
-      end)
-    end)
-  end
-
   # Generate block extras (block_list from grammar lines 368-374)
   # block_list -> block_item | block_item block_list
   # block_item -> block_eoe stab_eoe | block_eoe
@@ -1531,7 +1696,8 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
         {1, gen_dot_call_target(child_state)}
       ])
 
-    args_gen = gen_args(child_state, 3)
+    # Use full call_args_parens grammar
+    args_gen = gen_call_args_parens(child_state)
 
     StreamData.bind(target_gen, fn target ->
       StreamData.bind(args_gen, fn args ->
@@ -1578,8 +1744,9 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
         {2, gen_dot_paren_identifier(child_state)}
       ])
 
-    args1_gen = gen_args(child_state, 2)
-    args2_gen = gen_args(child_state, 2)
+    # Use full call_args_parens grammar
+    args1_gen = gen_call_args_parens(child_state)
+    args2_gen = gen_call_args_parens(child_state)
 
     StreamData.bind(target_gen, fn target ->
       StreamData.bind(args1_gen, fn args1 ->
@@ -1803,21 +1970,21 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
 
       # Variant 2: Positional with trailing keyword args (call_args_no_parens_many with kw)
       # Examples: (a, key: 1), (x, y, foo: :bar)
-      {2,
-       StreamData.bind(StreamData.integer(1..3), fn pos_count ->
-         StreamData.bind(gen_pattern_identifier_list(pos_count), fn pos ->
-           StreamData.bind(gen_call_args_no_parens_kw(), fn kw ->
-             StreamData.constant({:many_parens, pos ++ [kw]})
+        {2,
+         StreamData.bind(StreamData.integer(1..3), fn pos_count ->
+           StreamData.bind(gen_pattern_identifier_list(pos_count), fn pos ->
+             StreamData.bind(gen_call_args_no_parens_kw(), fn kw ->
+               StreamData.constant({:many_parens, pos ++ [kw]})
+             end)
            end)
-         end)
-       end)},
+         end)},
 
       # Variant 3: Keyword-only inside parens (call_args_no_parens_kw)
       # Examples: (key: val), (a: 1, b: 2)
-      {1,
-       StreamData.bind(gen_call_args_no_parens_kw(), fn kw ->
-         StreamData.constant({:many_parens, [kw]})
-       end)}
+        {1,
+         StreamData.bind(gen_call_args_no_parens_kw(), fn kw ->
+           StreamData.constant({:many_parens, [kw]})
+         end)}
     ])
   end
 
@@ -2466,7 +2633,7 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
         # Per grammar line 250: no_parens_op_expr -> when_op_eol call_args_no_parens_kw
         {2,
          StreamData.bind(gen_newlines(), fn newlines ->
-           StreamData.bind(gen_call_args_no_parens_kw(), fn kw_args ->
+           StreamData.bind(gen_call_args_no_parens_kw(child_state), fn kw_args ->
              StreamData.constant(
                {:no_parens_op, left, {:op_eol, {:when_op, :when}, newlines}, kw_args}
              )
@@ -2693,7 +2860,7 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
   defp gen_args_with_trailing_kw(state) do
     StreamData.bind(StreamData.integer(1..2), fn pos_count ->
       StreamData.bind(gen_matched_expr_list(state, pos_count), fn positional ->
-        StreamData.bind(gen_call_args_no_parens_kw(), fn kw_args ->
+        StreamData.bind(gen_call_args_no_parens_kw(state), fn kw_args ->
           StreamData.constant(positional ++ [kw_args])
         end)
       end)
