@@ -1160,6 +1160,52 @@ defmodule Spitfire do
     end
   end
 
+  # Bitstring argument comma-list: same keyword folding as tuples but
+  # terminated by the bitstring closer (">>").
+  defp parse_bitstring_args_comma_list(parser) do
+    trace "parse_bitstring_args_comma_list", trace_meta(parser) do
+      {first, first_is_kw_pair, parser} = parse_tuple_arg_item(parser)
+
+      Process.put(:comma_list_parsers, [parser])
+
+      {rest, parser} =
+        while2 peek_token(parser) == :"," <- parser do
+          parser = next_token(parser)
+
+          case peek_token(parser) do
+            :">>" ->
+              {:filter, {nil, parser}}
+
+            _ ->
+              parser = next_token(parser)
+              {item, is_kw_pair, parser} = parse_tuple_arg_item(parser)
+
+              clp = Process.get(:comma_list_parsers)
+              Process.put(:comma_list_parsers, [parser | clp])
+
+              {{item, is_kw_pair}, parser}
+          end
+        end
+
+      items = [{first, first_is_kw_pair} | rest]
+
+      {trailing_kw_rev, rest_rev} =
+        items
+        |> Enum.reverse()
+        |> Enum.split_while(fn {_it, is_kw_pair} -> is_kw_pair end)
+
+      case trailing_kw_rev do
+        [] ->
+          {Enum.map(items, &elem(&1, 0)), parser}
+
+        _ ->
+          trailing_kw = Enum.reverse(trailing_kw_rev) |> Enum.map(&elem(&1, 0))
+          leading = Enum.reverse(rest_rev) |> Enum.map(&elem(&1, 0))
+          {leading ++ [trailing_kw], parser}
+      end
+    end
+  end
+
   # Specialized comma-list for function call arguments.
   # It detects trailing keyword pairs (based on token-time flags) and
   # folds them into a single keyword list argument, matching s2q behavior.
@@ -3095,7 +3141,15 @@ defmodule Spitfire do
 
         true ->
           old_comma_list_parsers = Process.get(:comma_list_parsers)
-          {pairs, parser} = parse_comma_list(parser, @list_comma, true, false)
+          saved_kw_pair = Map.get(parser, :produced_kw_pair)
+          saved_kw_source = Map.get(parser, :produced_kw_source)
+
+          {pairs, parser} = parse_bitstring_args_comma_list(parser)
+
+          parser =
+            parser
+            |> Map.put(:produced_kw_pair, saved_kw_pair)
+            |> Map.put(:produced_kw_source, saved_kw_source)
 
           case peek_token_eat_eol(parser) do
             :">>" ->
