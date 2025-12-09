@@ -5388,6 +5388,7 @@ defmodule Spitfire do
     |> normalize_unary_capture_infix()
     |> normalize_unary_end_of_expression()
     |> normalize_unary_block_binary()
+    |> normalize_clause_default_commas()
   end
 
   defp normalize_not_in(ast) do
@@ -5679,6 +5680,28 @@ defmodule Spitfire do
         else
           node
         end
+
+      other ->
+        other
+    end)
+  end
+
+  defp normalize_clause_default_commas(ast) do
+    Macro.postwalk(ast, fn
+      {:->, meta, [args, body]} when is_list(args) ->
+        args =
+          Enum.flat_map(args, fn
+            {:\\, def_meta, [{:comma, c_meta, parts}, rhs]} when is_list(parts) and parts != [] ->
+              leading = Enum.slice(parts, 0, length(parts) - 1)
+              last = List.last(parts)
+
+              leading ++ [{:\\, def_meta, [last || {:__block__, c_meta, []}, rhs]}]
+
+            other ->
+              [other]
+          end)
+
+        {:->, meta, [args, body]}
 
       other ->
         other
