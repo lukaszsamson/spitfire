@@ -646,6 +646,7 @@ defmodule SpitfireReproTest do
   end
 
   @tag :skip
+  # TODO: tokenizer error
   test "repro 61a" do
     code = """
     .. || @ Bar.Schema + 198
@@ -708,24 +709,11 @@ defmodule SpitfireReproTest do
     assert Spitfire.parse(code) == s2q(code)
   end
 
-  @tag :skip
   test "repro 67" do
     code = """
-
-    baz foo: false do 3 -> :two
-    2 -> false
-    else
-    Context.Mod.Qux
-    end
-    ... .. ... // @
-    Foo.State.spam[:error] ^^^ &
-    bar !== Baz.Foo.Context.(0xC7, 34.39) do
+    & bar !== Baz.Foo.Context.(0xC7) do
     bar
-    Default
-    catch
-    6 -> :foo
     end
-
     """
 
     assert Spitfire.parse(code) == s2q(code)
@@ -855,7 +843,6 @@ defmodule SpitfireReproTest do
     assert Spitfire.parse(code) == s2q(code)
   end
 
-  @tag :skip
   test "repro 75" do
     code = """
     ; Mod.baz spam: 0o11 do
@@ -877,7 +864,6 @@ defmodule SpitfireReproTest do
     assert Spitfire.parse(code) == s2q(code)
   end
 
-  @tag :skip
   test "repro 75a" do
     code = """
     & baz eggs do Context.Qux.Baz
@@ -897,7 +883,6 @@ defmodule SpitfireReproTest do
     assert Spitfire.parse(code) == s2q(code)
   end
 
-  @tag :skip
   test "repro 76" do
     code = """
     gamma.if baz do false
