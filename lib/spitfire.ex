@@ -1904,7 +1904,15 @@ defmodule Spitfire do
 
       parser = parser |> next_token() |> eat_eol()
 
-      {rhs, parser} = parse_expression(parser, precedence, false, false, false)
+      {rhs, parser} =
+        case {current_token_type(parser), peek_token_type(parser)} do
+          {:unary_op, :ternary_op} ->
+            rhs = {:not, current_meta(parser), nil}
+            {rhs, next_token(parser)}
+
+          _ ->
+            parse_expression(parser, precedence, false, false, false)
+        end
 
       {rhs, parser} =
         case rhs do
@@ -2170,11 +2178,22 @@ defmodule Spitfire do
 
             {{:__block__, [{:error, true} | meta], []}, parser}
 
+          {:identifier, id_meta, [{:/, _m1, [{:/, _m0, nil}, step]}]} ->
+            stop = {:not, id_meta, nil}
+            {{:..//, newlines ++ meta, [lhs, stop, step]}, parser}
+
           _ ->
             {rhs, parser}
         end
 
-      {ast, parser} = {{token, newlines ++ meta, [lhs, rhs]}, eat_eol(parser)}
+      {ast, parser} =
+        case rhs do
+          {:..//, _, _} ->
+            {rhs, eat_eol(parser)}
+
+          _ ->
+            {{token, newlines ++ meta, [lhs, rhs]}, eat_eol(parser)}
+        end
 
       ast = attach_op_range(ast, op_range)
 
