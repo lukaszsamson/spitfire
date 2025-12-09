@@ -1528,6 +1528,45 @@ defmodule Spitfire do
 
   defp capture_has_do_block_args?(_), do: false
 
+  defp has_do_block?({_, meta, _} = ast) when is_list(meta),
+    do: Keyword.has_key?(meta, :do) or has_do_block_args?(ast)
+
+  defp has_do_block?(ast), do: has_do_block_args?(ast)
+
+  defp has_do_block_args?({_, _, args}) when is_list(args) do
+    case List.last(args) do
+      kw when is_list(kw) -> Keyword.keyword?(kw) and Keyword.has_key?(kw, :do)
+      _ -> false
+    end
+  end
+
+  defp has_do_block_args?(_), do: false
+
+  defp ellipsis_reparse_infix?(token_type) do
+    token_type in [
+      :match_op,
+      :when_op,
+      :type_op,
+      :pipe_op,
+      :assoc_op,
+      :capture_op,
+      :in_match_op,
+      :in_op,
+      :xor_op,
+      :ternary_op,
+      :concat_op,
+      :range_op,
+      :dual_op,
+      :mult_op,
+      :power_op,
+      :or_op,
+      :and_op,
+      :comp_op,
+      :rel_op,
+      :arrow_op
+    ]
+  end
+
   # """
   # A stab expression without a lhs is only possible as the argument to an anonymous function and in the typespect of an anon function
 
@@ -3514,7 +3553,17 @@ defmodule Spitfire do
 
       if is_prefix do
         parser = next_token(parser)
+        parser_after_prefix = parser
+
         {rhs, parser} = parse_expression(parser, @capture_op, false, false, false)
+
+        {rhs, parser} =
+          if has_do_block?(rhs) and ellipsis_reparse_infix?(peek_token_type(parser)) do
+            parse_expression(parser_after_prefix, @lowest, false, false, false)
+          else
+            {rhs, parser}
+          end
+
         {{:..., meta, [rhs]}, parser}
       else
         {{:..., meta, []}, parser}

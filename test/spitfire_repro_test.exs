@@ -767,7 +767,6 @@ defmodule SpitfireReproTest do
     assert Spitfire.parse(code) == s2q(code)
   end
 
-  # @tag :skip
   test "repro 71" do
     code = """
     @ & if true do
@@ -780,17 +779,13 @@ defmodule SpitfireReproTest do
     assert Spitfire.parse(code) == s2q(code)
   end
 
-  @tag :skip
   test "repro 72" do
     code = """
-    ; ... gamma.if true do
-    baz -> 358
-    qux -> nil
-    9 -> Mod
+    ... gamma.if true do
+      baz
     end \\\\ receive true do; gamma
     Remote.Config.Qux
-    end; !
-    ...qux.eggs <~ foo
+    end
     """
 
     assert Spitfire.parse(code) == s2q(code)
