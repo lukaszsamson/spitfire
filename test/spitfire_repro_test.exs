@@ -1218,10 +1218,27 @@ defmodule SpitfireReproTest do
     assert Spitfire.parse(code) == s2q(code)
   end
 
-  @tag :skip
   test "repro 104" do
     code = """
     fn |: n -> :ok end\
+    """
+
+    assert Spitfire.parse(code) == s2q(code)
+
+    code = """
+    fn asd: n -> :ok end\
+    """
+
+    assert Spitfire.parse(code) == s2q(code)
+
+    code = """
+    fn \"asd\": n -> :ok end\
+    """
+
+    assert Spitfire.parse(code) == s2q(code)
+
+    code = """
+    fn \"as\#{1}d\": n -> :ok end\
     """
 
     assert Spitfire.parse(code) == s2q(code)

@@ -915,7 +915,7 @@ defmodule Spitfire do
       token = encode_literal(parser, token, range)
       parser = parser |> next_token() |> eat_eol()
 
-      {expr, parser} = parse_expression(parser, @lowest, false, false, false)
+      {expr, parser} = parse_expression(parser, @lowest, false, false, false, true)
       parser = parser |> Map.put(:produced_kw_pair, true) |> Map.put(:produced_kw_source, :token)
       {{token, expr}, parser}
     end
@@ -926,7 +926,7 @@ defmodule Spitfire do
       {atom, parser} = parse_atom(%{parser | current_token: {:atom_unsafe, meta, tokens}})
       parser = parser |> next_token() |> eat_eol()
 
-      {expr, parser} = parse_expression(parser, @lowest, false, false, false)
+      {expr, parser} = parse_expression(parser, @lowest, false, false, false, true)
 
       atom =
         case atom do
@@ -959,7 +959,7 @@ defmodule Spitfire do
       token = encode_literal(parser, token)
       parser = parser |> next_token() |> eat_eol()
 
-      {value, parser} = parse_expression(parser, @lowest, false, false, false)
+      {value, parser} = parse_expression(parser, @lowest, false, false, false, true)
 
       {kvs, parser} =
         while2 peek_token(parser) == :"," <- parser do
@@ -994,7 +994,7 @@ defmodule Spitfire do
             {t, meta, args}
         end
 
-      {value, parser} = parse_expression(parser, @lowest, false, false, false)
+      {value, parser} = parse_expression(parser, @lowest, false, false, false, true)
 
       {kvs, parser} =
         while2 peek_token(parser) == :"," <- parser do
@@ -3003,6 +3003,14 @@ defmodule Spitfire do
     end
   end
 
+  defp normalize_fn_clauses([{_, _} = kw_pair, {:->, meta, [_lhs, rhs]} | rest]) do
+    [{:->, meta, [[[kw_pair]], rhs]} | rest]
+  end
+
+  defp normalize_fn_clauses([[{_, _} | _] = kw_list, {:->, meta, [_lhs, rhs]} | rest]) do
+    [{:->, meta, [[kw_list], rhs]} | rest]
+  end
+
   defp normalize_fn_clauses([{:comma, _, items}, {:->, meta, [_lhs, rhs]} | rest]) do
     [{:->, meta, [items, rhs]} | rest]
   end
@@ -4880,7 +4888,7 @@ defmodule Spitfire do
           # We left the end token as current; consume it and eat EOLs before the value
           parser = parser |> next_token() |> eat_eol()
           # Parse the value with kw_identifier precedence
-          {value, parser} = parse_expression(parser, @lowest, false, false, false)
+          {value, parser} = parse_expression(parser, @lowest, false, false, false, true)
 
           parser =
             parser |> Map.put(:produced_kw_pair, true) |> Map.put(:produced_kw_source, :string)
