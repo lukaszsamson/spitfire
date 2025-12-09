@@ -217,6 +217,8 @@ defmodule Spitfire do
           |> normalize_ast()
           |> strip_ranges_if_needed(opts)
 
+        errors = strip_operator_errors(errors)
+
         cond do
           parser_after.fatal_error ->
             {:error, parser_after.fatal_error}
@@ -1311,7 +1313,7 @@ defmodule Spitfire do
   defp parse_prefix_expression(parser) do
     trace "parse_prefix_expression", trace_meta(parser) do
       token = current_token(parser)
-      meta = current_meta(parser)
+      meta = mark_operator_meta(current_meta(parser), token, parser)
       op_range = token_range(parser.current_token)
       token_type = current_token_type(parser)
 
@@ -1445,7 +1447,7 @@ defmodule Spitfire do
   defp parse_capture_expression(parser) do
     trace "parse_capture_expression", trace_meta(parser) do
       token = current_token(parser)
-      meta = current_meta(parser)
+      meta = mark_operator_meta(current_meta(parser), token, parser)
       op_range = token_range(parser.current_token)
 
       parser = parser |> next_token() |> eat_eol()
@@ -1458,8 +1460,13 @@ defmodule Spitfire do
 
       {rhs, parser} =
         case peek_token_type(parser) do
-          :do when allow_do? -> parse_do_block(next_token(parser), rhs)
-          _ -> {rhs, parser}
+          :do when allow_do? ->
+            parser_with_flag = Map.put(parser, :do_from_capture, true)
+            {ast, parser_after} = parse_do_block(next_token(parser_with_flag), rhs)
+            {ast, Map.delete(parser_after, :do_from_capture)}
+
+          _ ->
+            {rhs, parser}
         end
 
       ast =
@@ -1473,7 +1480,7 @@ defmodule Spitfire do
   defp parse_prefix_lone_identifer(parser) do
     trace "parse_prefix_lone_identifer", trace_meta(parser) do
       token = current_token(parser)
-      meta = current_meta(parser)
+      meta = mark_operator_meta(current_meta(parser), token, parser)
       op_range = token_range(parser.current_token)
 
       parser = next_token(parser)
@@ -1490,7 +1497,7 @@ defmodule Spitfire do
   defp parse_capture_int(parser) do
     trace "parse_capture_int", trace_meta(parser) do
       token = current_token(parser)
-      meta = current_meta(parser)
+      meta = mark_operator_meta(current_meta(parser), token, parser)
       op_range = token_range(parser.current_token)
       parser = next_token(parser)
       {encoder, parser} = Map.pop(parser, :literal_encoder)
@@ -1524,7 +1531,7 @@ defmodule Spitfire do
         end
 
       token = current_token(parser)
-      meta = current_meta(parser)
+      meta = mark_operator_meta(current_meta(parser), token, parser)
       op_range = token_range(parser.current_token)
       {pending, parser} = Map.pop(parser, :pending_newlines)
       newlines = stab_newlines(parser, meta, pending)
@@ -1737,7 +1744,10 @@ defmodule Spitfire do
   defp parse_infix_expression(parser, lhs) do
     trace "parse_infix_expression", trace_meta(parser) do
       token = current_token(parser)
-      meta = current_meta(parser)
+      meta =
+        parser
+        |> current_meta()
+        |> mark_operator_meta(token, parser)
       op_range = token_range(parser.current_token)
       precedence = current_precedence(parser)
       # we save this in case the next expression is an error
@@ -1934,7 +1944,10 @@ defmodule Spitfire do
   defp parse_range_expression(parser) do
     trace "parse_range_expression", trace_meta(parser) do
       token = current_token(parser)
-      meta = current_meta(parser)
+      meta =
+        parser
+        |> current_meta()
+        |> mark_operator_meta(token, parser)
       op_range = token_range(parser.current_token)
 
       ast =
@@ -2121,28 +2134,100 @@ defmodule Spitfire do
           {type, build_block_nr(expr)}
         end
 
-      ast =
-        case lhs do
-          {token, meta, nil} ->
-            {token, [do: do_meta, end: end_meta] ++ meta, [exprs]}
+      block_meta = [do: do_meta, end: end_meta]
 
-          {token, meta, args} when is_list(args) ->
-            {token, [do: do_meta, end: end_meta] ++ meta, args ++ [exprs]}
-        end
+      from_capture? = Map.get(parser, :do_from_capture, false)
 
       ast =
-        case ast do
-          {form, meta, args} ->
-            callee_range = ast_range(lhs)
-            child_ranges = Enum.map(args, &arg_range/1)
-            range = merge_ranges([callee_range, do_range, end_range | child_ranges])
-            {form, put_meta_range(meta, range), args}
+        case maybe_rehome_do_block(lhs, block_meta, exprs, do_range, end_range, from_capture?) do
+          {:ok, rehomed} -> rehomed
+          _ -> attach_block_to_call(lhs, block_meta, exprs, do_range, end_range)
         end
 
       parser = Map.put(parser, :nesting, old_nesting)
       {ast, parser}
     end
   end
+
+  defp attach_block_to_call(lhs, block_meta, exprs, do_range, end_range) do
+    {token, meta, args} =
+      case lhs do
+        {token, meta, nil} ->
+          {token, block_meta ++ meta, [exprs]}
+
+        {token, meta, args} when is_list(args) ->
+          {token, block_meta ++ meta, args ++ [exprs]}
+      end
+
+    callee_range = ast_range(lhs)
+    child_ranges = Enum.map(args, &arg_range/1)
+    range = merge_ranges([callee_range, do_range, end_range | child_ranges])
+    {token, put_meta_range(meta, range), args}
+  end
+
+  defp maybe_rehome_do_block(
+         {capture_op, capture_meta, [inner]} = capture_ast,
+         block_meta,
+         exprs,
+         do_range,
+         end_range,
+         from_capture?
+       )
+       when is_list(capture_meta) and from_capture? do
+    case maybe_rehome_do_block(inner, block_meta, exprs, do_range, end_range, true) do
+      {:ok, new_inner} ->
+        child_ranges = Enum.map([new_inner], &arg_range/1)
+        cap_range = merge_ranges([ast_range(capture_ast), do_range, end_range | child_ranges])
+        {:ok, {capture_op, put_meta_range(capture_meta, cap_range), [new_inner]}}
+
+      _ ->
+        nil
+    end
+  end
+
+  defp maybe_rehome_do_block(
+         {op, meta, [lhs, rhs]} = op_ast,
+         block_meta,
+         exprs,
+         do_range,
+         end_range,
+         from_capture?
+       )
+       when is_list(meta) and from_capture? do
+    if operator_meta?(meta) do
+      case maybe_attach_block_to_call(rhs, block_meta, exprs, do_range, end_range) do
+        {:ok, rhs_with_block} ->
+          child_ranges = Enum.map([lhs, rhs_with_block], &arg_range/1)
+          op_range = merge_ranges([ast_range(op_ast), do_range, end_range | child_ranges])
+          {:ok, {op, put_meta_range(meta, op_range), [lhs, rhs_with_block]}}
+
+        _ ->
+          nil
+      end
+    else
+      nil
+    end
+  end
+
+  defp maybe_rehome_do_block(_lhs, _block_meta, _exprs, _do_range, _end_range, _from_capture?),
+    do: nil
+
+  defp maybe_attach_block_to_call(
+         {_form, meta, args} = call,
+         block_meta,
+         exprs,
+         do_range,
+         end_range
+       )
+       when is_list(meta) and is_list(args) do
+    if Keyword.has_key?(meta, :do) do
+      nil
+    else
+      {:ok, attach_block_to_call(call, block_meta, exprs, do_range, end_range)}
+    end
+  end
+
+  defp maybe_attach_block_to_call(_call, _block_meta, _exprs, _do_range, _end_range), do: nil
 
   defp parse_do_sections(parser, type, acc) do
     {exprs, parser} = parse_do_exprs(parser, [])
@@ -5236,6 +5321,47 @@ defmodule Spitfire do
     {form, put_meta_range(meta, merge_ranges(ranges)), args}
   end
 
+  defp mark_operator_meta(meta, token, parser) do
+    type = current_token_type(parser)
+
+    meta =
+      if operator_token_type?(type) do
+        [{:operator_token, type} | meta]
+      else
+        meta
+      end
+
+    [{:operator, token} | meta]
+  end
+
+  defp operator_meta?(meta) do
+    Keyword.has_key?(meta, :operator_token) or Keyword.has_key?(meta, :operator)
+  end
+
+  defp operator_token_type?(type) do
+    type in [
+      :match_op,
+      :when_op,
+      :pipe_op,
+      :type_op,
+      :dual_op,
+      :mult_op,
+      :power_op,
+      :concat_op,
+      :range_op,
+      :arrow_op,
+      :or_op,
+      :and_op,
+      :comp_op,
+      :rel_op,
+      :in_op,
+      :xor_op,
+      :in_match_op,
+      :ternary_op,
+      :assoc_op
+    ]
+  end
+
   # Test-only helper: verify that ranges are in a reasonable order
   # This helps catch logic errors where ranges might be passed in unexpected order
   defp verify_range_order(ranges) do
@@ -5469,6 +5595,7 @@ defmodule Spitfire do
 
   defp normalize_ast(ast) do
     ast
+    |> strip_operator_meta()
     |> normalize_not_in()
     |> normalize_not_wrapped_unary_in()
     |> normalize_double_not_in()
@@ -5487,6 +5614,45 @@ defmodule Spitfire do
     |> normalize_unary_block_binary()
     |> normalize_clause_default_commas()
     |> normalize_keyword_clause_args()
+  end
+
+  defp strip_operator_meta(ast) do
+    Macro.prewalk(ast, fn
+      {form, meta, args} when is_list(meta) ->
+        {form, clean_operator_meta(meta), args}
+
+      other ->
+        other
+    end)
+  end
+
+  defp clean_operator_meta(meta) do
+    meta
+    |> Enum.map(fn
+      {:assoc, assoc_meta} when is_list(assoc_meta) ->
+        {:assoc, clean_operator_meta(assoc_meta)}
+
+      {key, value} when is_list(value) ->
+        if Keyword.keyword?(value) do
+          {key, clean_operator_meta(value)}
+        else
+          {key, value}
+        end
+
+      other ->
+        other
+    end)
+    |> Keyword.drop([:operator, :operator_token])
+  end
+
+  defp strip_operator_errors(errors) do
+    Enum.map(errors, fn
+      {meta, message} when is_list(meta) ->
+        {clean_operator_meta(meta), message}
+
+      other ->
+        other
+    end)
   end
 
   defp normalize_not_in(ast) do
