@@ -1542,6 +1542,92 @@ defmodule Spitfire do
 
   defp has_do_block_args?(_), do: false
 
+  defp empty_interpolation_block(line, col, cline, ccol) do
+    line = cline || line
+
+    column =
+      cond do
+        is_integer(ccol) and is_integer(col) -> Enum.max([col + 2, ccol - 1, 1])
+        is_integer(ccol) -> max(ccol - 1, 1)
+        true -> col
+      end
+
+    {:__block__, [line: line, column: column], []}
+  end
+
+  defp ensure_interpolation_ast({:__block__, [], []} = ast, _line, _col, _cline, _ccol), do: ast
+
+  defp ensure_interpolation_ast({:__block__, meta, []}, line, col, cline, ccol) do
+    line = Keyword.get(meta, :line, cline || line)
+
+    column =
+      Keyword.get_lazy(meta, :column, fn ->
+        if is_integer(ccol), do: max(ccol - 1, 1), else: col
+      end)
+
+    meta =
+      meta
+      |> Keyword.delete(:line)
+      |> Keyword.delete(:column)
+      |> then(&[{:line, line}, {:column, column} | &1])
+
+    {:__block__, meta, []}
+  end
+
+  defp ensure_interpolation_ast(ast, _line, _col, _cline, _ccol), do: ast
+
+  defp interpolation_saw_semicolon?(tokens) do
+    tokens
+    |> List.flatten()
+    |> Enum.any?(fn
+      :";" -> true
+      {:";", _} -> true
+      {:";", _, _} -> true
+      {:eol, _, _} -> true
+      _ -> false
+    end)
+  end
+
+  defp maybe_force_semicolon_meta({:__block__, meta, []}, true, line, col, cline, ccol)
+       when meta == [] do
+    empty_interpolation_block(line, col, cline, ccol)
+  end
+
+  defp maybe_force_semicolon_meta(ast, _saw, _line, _col, _cline, _ccol), do: ast
+
+  defp parse_interpolation_exprs(parser, exprs, saw_semicolon) do
+    case current_token(parser) do
+      token when token in [:end_interpolation, :eof, nil] ->
+        {Enum.reverse(exprs), parser, saw_semicolon}
+
+      _ ->
+        {parser, leading_newlines, saw_semicolon2} = consume_leading_eoe_tokens(parser)
+        saw_semicolon = saw_semicolon or saw_semicolon2 or leading_newlines > 0
+
+        case current_token_type(parser) do
+          :end_interpolation ->
+            {Enum.reverse(exprs), parser, saw_semicolon}
+
+          :eof ->
+            {Enum.reverse(exprs), parser, saw_semicolon}
+
+          _ ->
+            {e, p} = parse_expression(parser)
+            e = maybe_inject_leading_newlines(e, leading_newlines)
+            e = push_eoe(e, peek_eoe(p))
+            p = eat_eol_at(p, 1)
+
+            p =
+              case current_token_type(p) do
+                type when type in [:end_interpolation, :eof] -> p
+                _ -> next_token(p)
+              end
+
+            parse_interpolation_exprs(p, [e | exprs], saw_semicolon)
+        end
+    end
+  end
+
   defp ellipsis_reparse_infix?(token_type) do
     token_type in [
       :match_op,
@@ -3066,10 +3152,14 @@ defmodule Spitfire do
 
             {{line, col, _}, {cline, ccol, _}, tokens} ->
               meta = put_meta_range([line: line, column: col], {{line, col}, {cline, ccol}})
+              saw_semicolon = interpolation_saw_semicolon?(tokens)
+              saw_semicolon = saw_semicolon or (Keyword.keyword?(tokens) and tokens != [])
               # construct a new parser
               ast =
                 if tokens == [] do
-                  {:__block__, [], []}
+                  if saw_semicolon,
+                    do: empty_interpolation_block(line, col, cline, ccol),
+                    else: {:__block__, [], []}
                 else
                   parser =
                     %{
@@ -3093,8 +3183,20 @@ defmodule Spitfire do
 
                   {ast, parser} = parse_expression(parser)
                   ast = push_eoe(ast, peek_eoe(parser))
+
+                  ast =
+                    case {ast, saw_semicolon} do
+                      {{:__block__, _meta, []}, true} ->
+                        empty_interpolation_block(line, col, cline, ccol)
+
+                      _ ->
+                        ast
+                    end
+
                   ast
                 end
+                |> ensure_interpolation_ast(line, col, cline, ccol)
+                |> maybe_force_semicolon_meta(saw_semicolon, line, col, cline, ccol)
 
               {{:., meta, [Kernel, :to_string]},
                [from_interpolation: true, closing: [line: cline, column: ccol]] ++ meta, [ast]}
@@ -3149,11 +3251,15 @@ defmodule Spitfire do
               token
 
             {{line, col, _}, {cline, ccol, _}, tokens} ->
+              saw_semicolon = interpolation_saw_semicolon?(tokens)
+              saw_semicolon = saw_semicolon or (Keyword.keyword?(tokens) and tokens != [])
               meta = put_meta_range([line: line, column: col], {{line, col}, {cline, ccol}})
               # construct a new parser
               ast =
                 if tokens == [] do
-                  {:__block__, [], []}
+                  if saw_semicolon,
+                    do: empty_interpolation_block(line, col, cline, ccol),
+                    else: {:__block__, [], []}
                 else
                   parser =
                     %{
@@ -3177,8 +3283,19 @@ defmodule Spitfire do
 
                   {ast, parser} = parse_expression(parser)
                   ast = push_eoe(ast, peek_eoe(parser))
+
+                  ast =
+                    case {ast, saw_semicolon} do
+                      {{:__block__, _meta, []}, true} ->
+                        empty_interpolation_block(line, col, cline, ccol)
+
+                      _ ->
+                        ast
+                    end
+
                   ast
                 end
+                |> ensure_interpolation_ast(line, col, cline, ccol)
 
               {{:., meta, [Kernel, :to_string]},
                [from_interpolation: true, closing: [line: cline, column: ccol]] ++ meta, [ast]}
@@ -4196,11 +4313,15 @@ defmodule Spitfire do
 
             {{line, col, _}, {cline, ccol, _}, tokens} ->
               meta = put_meta_range([line: line, column: col], {{line, col}, {cline, ccol}})
+              saw_semicolon = interpolation_saw_semicolon?(tokens)
+              saw_semicolon = saw_semicolon or (Keyword.keyword?(tokens) and tokens != [])
 
               # construct a new parser
               ast =
                 if tokens == [] do
-                  {:__block__, [], []}
+                  if saw_semicolon,
+                    do: empty_interpolation_block(line, col, cline, ccol),
+                    else: {:__block__, [], []}
                 else
                   parser =
                     %{
@@ -4224,8 +4345,19 @@ defmodule Spitfire do
 
                   {ast, parser} = parse_expression(parser)
                   ast = push_eoe(ast, peek_eoe(parser))
+
+                  ast =
+                    case {ast, saw_semicolon} do
+                      {{:__block__, _meta, []}, true} ->
+                        empty_interpolation_block(line, col, cline, ccol)
+
+                      _ ->
+                        ast
+                    end
+
                   ast
                 end
+                |> ensure_interpolation_ast(line, col, cline, ccol)
 
               {:"::", meta,
                [
@@ -4288,38 +4420,112 @@ defmodule Spitfire do
         # Eat any immediate EOLs after opening interpolation
         parser = eat_eol(parser)
 
-        # 4. Parse expression with :end_interpolation as terminal (unless empty)
-        empty_interp? = current_token_type(parser) == :end_interpolation
-
-        {expr, parser} =
-          if empty_interp? do
-            {{:__block__, [], []}, parser}
-          else
-            {e, p} = parse_expression(parser)
-            # Attach end_of_expression metadata for fidelity with legacy (non-empty only)
-            {push_eoe(e, peek_eoe(p)), p}
-          end
+        # 4. Parse expression(s) with :end_interpolation as terminal (unless empty)
+        {exprs, parser, saw_semicolon} = parse_interpolation_exprs(parser, [], false)
 
         # 5. Skip any trailing EOLs (for non-empty), then expect and consume :end_interpolation
-        parser = if empty_interp?, do: parser, else: eat_eol_at(parser, 1)
+        parser = eat_eol_at(parser, 1)
 
-        {end_meta, end_range, parser} =
+        {end_meta, end_range, parser, missing_closer?} =
           cond do
             current_token_type(parser) == :end_interpolation ->
               # Current is the closing marker (empty interpolation)
-              {current_meta(parser), token_range(parser.current_token), next_token(parser)}
+              {current_meta(parser), token_range(parser.current_token), next_token(parser), false}
 
             peek_token_type(parser) == :end_interpolation ->
               # Closing marker is at peek; advance to it and then past it
               parser = next_token(parser)
-              {current_meta(parser), token_range(parser.current_token), next_token(parser)}
+              {current_meta(parser), token_range(parser.current_token), next_token(parser), false}
 
             true ->
               # Error: expected :end_interpolation
               parser = put_error(parser, {current_meta(parser), "expected end of interpolation"})
               # Synthesize a closing meta/range from current position for recovery
-              {current_meta(parser), token_range(parser.current_token), parser}
+              {current_meta(parser), token_range(parser.current_token), parser, true}
           end
+
+        end_column =
+          Keyword.get(end_meta, :column) ||
+            case end_range do
+              {{_, scol}, _} -> scol
+              _ -> nil
+            end ||
+            Keyword.get(open_meta, :column)
+
+        errors? = Map.get(parser, :errors, []) != []
+        missing_closer? = missing_closer? or errors?
+
+        end_column =
+          if missing_closer? and is_integer(end_column) do
+            max(end_column - 1, 1)
+          else
+            end_column
+          end
+
+        end_column =
+          if errors? and is_integer(end_column) and is_integer(Keyword.get(open_meta, :column)) do
+            min(end_column, Keyword.get(open_meta, :column) + 3)
+          else
+            end_column
+          end
+
+        open_column = Keyword.get(open_meta, :column)
+
+        saw_semicolon =
+          saw_semicolon or
+            (is_integer(end_column) and is_integer(open_column) and end_column - open_column > 2)
+
+        end_meta =
+          if is_list(end_meta) do
+            line = Keyword.get(end_meta, :line)
+
+            column =
+              if is_integer(end_column), do: end_column, else: Keyword.get(end_meta, :column)
+
+            rest = end_meta |> Keyword.delete(:line) |> Keyword.delete(:column)
+
+            if(is_nil(line), do: [], else: [{:line, line}]) ++
+              if(is_nil(column), do: [], else: [{:column, column}]) ++ rest
+          else
+            end_meta
+          end
+
+        interior_length =
+          case {open_range, end_range} do
+            {{{line, _}, {_, ocol}}, {{line, ecol}, _}}
+            when is_integer(ocol) and is_integer(ecol) ->
+              ecol - ocol - 1
+
+            _ ->
+              0
+          end
+
+        expr =
+          case exprs do
+            [] ->
+              if saw_semicolon == true or interior_length > 0 do
+                empty_interpolation_block(
+                  Keyword.get(open_meta, :line),
+                  Keyword.get(open_meta, :column),
+                  Keyword.get(open_meta, :line),
+                  end_column
+                )
+              else
+                {:__block__, [], []}
+              end
+
+            many ->
+              build_block_nr(many)
+          end
+
+        expr =
+          ensure_interpolation_ast(
+            expr,
+            Keyword.get(open_meta, :line),
+            Keyword.get(open_meta, :column),
+            Keyword.get(end_meta, :line),
+            Keyword.get(end_meta, :column)
+          )
 
         # 6. Restore nesting and pop depth
         [saved | rest] = parser.saved_nesting_stack
