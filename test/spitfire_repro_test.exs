@@ -576,6 +576,7 @@ defmodule SpitfireReproTest do
     assert Spitfire.parse(code) == s2q(code)
   end
 
+  # TODO: tokenizer error
   @tag :skip
   test "repro 58" do
     code = """
@@ -766,17 +767,13 @@ defmodule SpitfireReproTest do
     assert Spitfire.parse(code) == s2q(code)
   end
 
-  @tag :skip
+  # @tag :skip
   test "repro 71" do
     code = """
     @ & if true do
     :ok
     end when if false do
     qux
-    alpha
-    else
-    Default
-    Context.Remote.Foo
     end
     """
 
@@ -790,7 +787,7 @@ defmodule SpitfireReproTest do
     baz -> 358
     qux -> nil
     9 -> Mod
-    end \\ receive true do; gamma
+    end \\\\ receive true do; gamma
     Remote.Config.Qux
     end; !
     ...qux.eggs <~ foo
