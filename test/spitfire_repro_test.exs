@@ -1360,4 +1360,84 @@ defmodule SpitfireReproTest do
 
     assert Spitfire.parse(code) == s2q(code)
   end
+
+  test "repro 117" do
+    code = """
+    %Foo{1}\
+    """
+
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
+  test "repro 118" do
+    code = """
+    %!!h{}\
+    """
+
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
+  test "repro 119" do
+    code = """
+    :\"foo\#{}\"\
+    """
+
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
+  test "repro 120" do
+    code = """
+    '''\nfoo\#{n;h}\n'''\
+    """
+
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
+  test "repro 121" do
+    code = """
+    A.\"\"e.{}\
+    """
+
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
+  test "repro 122" do
+    code = """
+    'foo\#{0;d}'\
+    """
+
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
+  test "repro 123" do
+    code = """
+    \"\#{0;d}\"\
+    """
+
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
+  test "repro 124" do
+    code = """
+    ~s\"\"\"\nfoo\#{n;h}\n\"\"\"\
+    """
+
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
+  test "repro 125" do
+    code = """
+    %!0{}\
+    """
+
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
+  test "repro 126" do
+    code = """
+    foo.''d\
+    """
+
+    assert Spitfire.parse(code) == s2q(code)
+  end
 end

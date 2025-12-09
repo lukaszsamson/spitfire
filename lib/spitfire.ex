@@ -3665,7 +3665,7 @@ defmodule Spitfire do
           :bin_string_start -> &parse_linearized_string(&1, :binary)
           :list_string_start -> &parse_linearized_string(&1, :charlist)
           :at_op -> &parse_lone_module_attr/1
-          :unary_op -> &parse_prefix_lone_identifer/1
+          :unary_op -> &parse_prefix_expression/1
           :dual_op -> &parse_prefix_expression/1
           _ -> nil
         end
@@ -5907,13 +5907,23 @@ defmodule Spitfire do
     nil
   end
 
-  defp current_newlines(%{current_token: {_token, {_line, _col, newlines}, _}})
-       when is_integer(newlines) do
+  defp current_newlines(%{current_token: {type, {{_sl, _sc}, {_el, _ec}, newlines}, _}})
+       when type in [:eol, :";" | @operators] and is_integer(newlines) do
     newlines
   end
 
-  defp current_newlines(%{current_token: {_token, {_line, _col, newlines}}})
-       when is_integer(newlines) do
+  defp current_newlines(%{current_token: {type, {{_sl, _sc}, {_el, _ec}, newlines}}})
+       when type in [:eol, :";" | @operators] and is_integer(newlines) do
+    newlines
+  end
+
+  defp current_newlines(%{current_token: {_token, {line, col, newlines}, _}})
+       when is_integer(line) and is_integer(col) and is_integer(newlines) do
+    newlines
+  end
+
+  defp current_newlines(%{current_token: {_token, {line, col, newlines}}})
+       when is_integer(line) and is_integer(col) and is_integer(newlines) do
     newlines
   end
 
