@@ -1027,7 +1027,27 @@ defmodule Spitfire.Property.TokenCompiler do
   # fn expressions (Phase 1: single clause only)
   # ---------------------------------------------------------------------------
 
-  # fn_single with stab_eoe: fn stab_eoe end
+  # fn_single with fn_eoe and stab_eoe: fn fn_eoe stab_eoe end
+  # Per grammar line 276: access_expr -> fn_eoe stab_eoe 'end'
+  defp do_to_tokens({:fn_single, fn_eoe, {:stab_eoe, clauses, trailing_eoe}}, layout, opts) do
+    # Compile 'fn' keyword
+    {fn_meta, layout} = TokenLayout.space_before(layout, "fn", nil)
+    fn_token = {:fn, fn_meta}
+
+    # Compile fn_eoe (what comes after 'fn')
+    {fn_eoe_tokens, layout} = compile_fn_eoe(fn_eoe, layout, opts)
+
+    # Compile stab_eoe (clauses with optional trailing eoe)
+    {clauses_tokens, layout} = compile_stab_eoe(clauses, trailing_eoe, layout, opts)
+
+    # Compile 'end' keyword
+    {end_meta, layout} = TokenLayout.space_before(layout, "end", nil)
+    end_token = {:end, end_meta}
+
+    {[fn_token] ++ fn_eoe_tokens ++ clauses_tokens ++ [end_token], layout}
+  end
+
+  # fn_single with stab_eoe (no fn_eoe): fn stab_eoe end (backward compat)
   defp do_to_tokens({:fn_single, {:stab_eoe, clauses, trailing_eoe}}, layout, opts) do
     # Compile 'fn' keyword
     {fn_meta, layout} = TokenLayout.space_before(layout, "fn", nil)
@@ -1059,7 +1079,27 @@ defmodule Spitfire.Property.TokenCompiler do
     {[fn_token] ++ clause_tokens ++ [end_token], layout}
   end
 
-  # fn_multi with stab_eoe: fn stab_eoe end
+  # fn_multi with fn_eoe and stab_eoe: fn fn_eoe stab_eoe end
+  # Per grammar line 276: access_expr -> fn_eoe stab_eoe 'end'
+  defp do_to_tokens({:fn_multi, fn_eoe, {:stab_eoe, clauses, trailing_eoe}}, layout, opts) do
+    # Compile 'fn' keyword
+    {fn_meta, layout} = TokenLayout.space_before(layout, "fn", nil)
+    fn_token = {:fn, fn_meta}
+
+    # Compile fn_eoe (what comes after 'fn')
+    {fn_eoe_tokens, layout} = compile_fn_eoe(fn_eoe, layout, opts)
+
+    # Compile stab_eoe (clauses with optional trailing eoe)
+    {clauses_tokens, layout} = compile_stab_eoe(clauses, trailing_eoe, layout, opts)
+
+    # Compile 'end' keyword
+    {end_meta, layout} = TokenLayout.space_before(layout, "end", nil)
+    end_token = {:end, end_meta}
+
+    {[fn_token] ++ fn_eoe_tokens ++ clauses_tokens ++ [end_token], layout}
+  end
+
+  # fn_multi with stab_eoe (no fn_eoe): fn stab_eoe end (backward compat)
   defp do_to_tokens({:fn_multi, {:stab_eoe, clauses, trailing_eoe}}, layout, opts) do
     # Compile 'fn' keyword
     {fn_meta, layout} = TokenLayout.space_before(layout, "fn", nil)
@@ -2835,6 +2875,44 @@ defmodule Spitfire.Property.TokenCompiler do
   end
 
   # ===========================================================================
+  # Helper: compile_fn_eoe (what comes after 'fn')
+  # ===========================================================================
+
+  # Compile fn_eoe (what comes after 'fn')
+  # Per grammar lines 335-336:
+  #   fn_eoe -> 'fn'      (inline - no eol)
+  #   fn_eoe -> 'fn' eoe  (eoe = eol | ';' | eol ';')
+  defp compile_fn_eoe(:none, layout, _opts) do
+    # Inline form: fn x -> x end (just a space, no eol)
+    {[], layout}
+  end
+
+  defp compile_fn_eoe(:eol, layout, _opts) do
+    # Newline form: fn\nx -> x\nend
+    eol_meta = TokenLayout.meta(layout, "\n", 1)
+    eol_token = {:eol, eol_meta}
+    layout = TokenLayout.newline(layout)
+    {[eol_token], layout}
+  end
+
+  defp compile_fn_eoe(:semi, layout, _opts) do
+    # Semicolon form: fn; x -> x end
+    {semi_meta, layout} = TokenLayout.stick_right(layout, ";", nil)
+    semi_token = {:";", semi_meta}
+    {[semi_token], layout}
+  end
+
+  defp compile_fn_eoe(:eol_semi, layout, _opts) do
+    # eol followed by semicolon form: fn\n; x -> x end
+    eol_meta = TokenLayout.meta(layout, "\n", 1)
+    eol_token = {:eol, eol_meta}
+    layout = TokenLayout.newline(layout)
+    {semi_meta, layout} = TokenLayout.stick_right(layout, ";", nil)
+    semi_token = {:";", semi_meta}
+    {[eol_token, semi_token], layout}
+  end
+
+  # ===========================================================================
   # Helper: compile_do_body (body of do block)
   # ===========================================================================
 
@@ -2861,6 +2939,16 @@ defmodule Spitfire.Property.TokenCompiler do
     {semi_meta, layout} = TokenLayout.stick_right(layout, ";", nil)
     semi_token = {:";", semi_meta}
     {[semi_token], layout}
+  end
+
+  defp compile_do_eoe(:eol_semi, layout, _opts) do
+    # eol followed by semicolon form: do\n; expr end
+    eol_meta = TokenLayout.meta(layout, "\n", 1)
+    eol_token = {:eol, eol_meta}
+    layout = TokenLayout.newline(layout)
+    {semi_meta, layout} = TokenLayout.stick_right(layout, ";", nil)
+    semi_token = {:";", semi_meta}
+    {[eol_token, semi_token], layout}
   end
 
   defp compile_do_body([], layout, _opts), do: {[], layout}
@@ -2991,11 +3079,39 @@ defmodule Spitfire.Property.TokenCompiler do
 
   # ===========================================================================
   # Helper: compile_block_items (else, rescue, catch, after)
+  # Per grammar lines 368-374:
+  #   block_item -> block_eoe stab_eoe    (with stab clauses)
+  #   block_item -> block_eoe             (empty body)
+  #   block_list -> block_item | block_item block_list
+  # block_eoe (grammar lines 341-342):
+  #   block_eoe -> block_identifier       (inline)
+  #   block_eoe -> block_identifier eoe   (eoe = eol | ';' | eol ';')
   # ===========================================================================
 
   # Compile block items (empty for basic do blocks)
   defp compile_block_items([], layout, _opts), do: {[], layout}
 
+  # New 4-element format with block_eoe: {:block_item, block_type, block_eoe, body}
+  defp compile_block_items([{:block_item, block_type, block_eoe, body} | rest], layout, opts) do
+    block_name = Atom.to_string(block_type)
+
+    # Compile block_identifier keyword
+    {kw_meta, layout} = TokenLayout.space_before(layout, block_name, nil)
+    kw_token = {:block_identifier, kw_meta, block_type}
+
+    # Compile block_eoe (what comes after block_identifier)
+    {eoe_tokens, layout} = compile_block_eoe(block_eoe, layout, opts)
+
+    # Compile block body
+    {body_tokens, layout} = compile_do_body(body, layout, opts)
+
+    # Continue with remaining block items
+    {rest_tokens, layout} = compile_block_items(rest, layout, opts)
+
+    {[kw_token] ++ eoe_tokens ++ body_tokens ++ rest_tokens, layout}
+  end
+
+  # Backward compat: 3-element format {:block_item, :else, body}
   defp compile_block_items([{:block_item, :else, body} | rest], layout, opts) do
     # Compile 'else' keyword
     {else_meta, layout} = TokenLayout.space_before(layout, "else", nil)
@@ -3015,6 +3131,7 @@ defmodule Spitfire.Property.TokenCompiler do
     {[else_token, eol_token] ++ body_tokens ++ rest_tokens, layout}
   end
 
+  # Backward compat: 3-element format {:block_item, :rescue, body}
   defp compile_block_items([{:block_item, :rescue, body} | rest], layout, opts) do
     # Compile 'rescue' keyword
     {rescue_meta, layout} = TokenLayout.space_before(layout, "rescue", nil)
@@ -3034,6 +3151,7 @@ defmodule Spitfire.Property.TokenCompiler do
     {[rescue_token, eol_token] ++ body_tokens ++ rest_tokens, layout}
   end
 
+  # Backward compat: 3-element format {:block_item, :catch, body}
   defp compile_block_items([{:block_item, :catch, body} | rest], layout, opts) do
     # Compile 'catch' keyword
     {catch_meta, layout} = TokenLayout.space_before(layout, "catch", nil)
@@ -3053,6 +3171,7 @@ defmodule Spitfire.Property.TokenCompiler do
     {[catch_token, eol_token] ++ body_tokens ++ rest_tokens, layout}
   end
 
+  # Backward compat: 3-element format {:block_item, :after, body}
   defp compile_block_items([{:block_item, :after, body} | rest], layout, opts) do
     # Compile 'after' keyword
     {after_meta, layout} = TokenLayout.space_before(layout, "after", nil)
@@ -3070,6 +3189,44 @@ defmodule Spitfire.Property.TokenCompiler do
     {rest_tokens, layout} = compile_block_items(rest, layout, opts)
 
     {[after_token, eol_token] ++ body_tokens ++ rest_tokens, layout}
+  end
+
+  # ===========================================================================
+  # Helper: compile_block_eoe (what comes after block_identifier)
+  # ===========================================================================
+
+  # Compile block_eoe (what comes after block_identifier like else, rescue, catch, after)
+  # Per grammar lines 341-342:
+  #   block_eoe -> block_identifier       (inline - no eol)
+  #   block_eoe -> block_identifier eoe   (eoe = eol | ';' | eol ';')
+  defp compile_block_eoe(:none, layout, _opts) do
+    # Inline form: else expr (just a space, no eol)
+    {[], layout}
+  end
+
+  defp compile_block_eoe(:eol, layout, _opts) do
+    # Newline form: else\nexpr
+    eol_meta = TokenLayout.meta(layout, "\n", 1)
+    eol_token = {:eol, eol_meta}
+    layout = TokenLayout.newline(layout)
+    {[eol_token], layout}
+  end
+
+  defp compile_block_eoe(:semi, layout, _opts) do
+    # Semicolon form: else; expr
+    {semi_meta, layout} = TokenLayout.stick_right(layout, ";", nil)
+    semi_token = {:";", semi_meta}
+    {[semi_token], layout}
+  end
+
+  defp compile_block_eoe(:eol_semi, layout, _opts) do
+    # eol followed by semicolon form: else\n; expr
+    eol_meta = TokenLayout.meta(layout, "\n", 1)
+    eol_token = {:eol, eol_meta}
+    layout = TokenLayout.newline(layout)
+    {semi_meta, layout} = TokenLayout.stick_right(layout, ";", nil)
+    semi_token = {:";", semi_meta}
+    {[eol_token, semi_token], layout}
   end
 
   # ===========================================================================

@@ -873,9 +873,15 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
   # ===========================================================================
 
   # Generate a single-clause fn expression: fn pattern -> body end
-  # Per grammar: fn stab_eoe 'end'
+  # Per grammar line 276: access_expr -> fn_eoe stab_eoe 'end'
+  # fn_eoe (grammar lines 335-336):
+  #   fn_eoe -> 'fn'        (inline fn)
+  #   fn_eoe -> 'fn' eoe    (fn followed by eol/semi/eol+semi)
   defp gen_fn_single(state) do
     child_state = GrammarTree.decr_depth(state)
+
+    # Generate fn_eoe (what comes after 'fn')
+    fn_eoe_gen = gen_fn_eoe()
 
     # Generate trailing eoe for stab_eoe
     # Per grammar lines 331-333: eoe -> eol | ';' | eol ';'
@@ -887,17 +893,25 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
         {1, StreamData.constant(:eol_semi)}
       ])
 
-    StreamData.bind(gen_stab_clause(child_state), fn clause ->
-      StreamData.bind(trailing_eoe_gen, fn trailing_eoe ->
-        StreamData.constant({:fn_single, {:stab_eoe, [clause], trailing_eoe}})
+    StreamData.bind(fn_eoe_gen, fn fn_eoe ->
+      StreamData.bind(gen_stab_clause(child_state), fn clause ->
+        StreamData.bind(trailing_eoe_gen, fn trailing_eoe ->
+          StreamData.constant({:fn_single, fn_eoe, {:stab_eoe, [clause], trailing_eoe}})
+        end)
       end)
     end)
   end
 
   # Generate a multi-clause fn expression: fn clause1; clause2; ... end
-  # Per grammar: fn stab_eoe 'end'
+  # Per grammar line 276: access_expr -> fn_eoe stab_eoe 'end'
+  # fn_eoe (grammar lines 335-336):
+  #   fn_eoe -> 'fn'        (inline fn)
+  #   fn_eoe -> 'fn' eoe    (fn followed by eol/semi/eol+semi)
   defp gen_fn_multi(state) do
     child_state = GrammarTree.decr_depth(state)
+
+    # Generate fn_eoe (what comes after 'fn')
+    fn_eoe_gen = gen_fn_eoe()
 
     # Generate trailing eoe for stab_eoe
     # Per grammar lines 331-333: eoe -> eol | ';' | eol ';'
@@ -910,10 +924,12 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
       ])
 
     # Generate 2-4 clauses
-    StreamData.bind(StreamData.integer(2..4), fn count ->
-      StreamData.bind(gen_stab_clause_list(child_state, count), fn clauses ->
-        StreamData.bind(trailing_eoe_gen, fn trailing_eoe ->
-          StreamData.constant({:fn_multi, {:stab_eoe, clauses, trailing_eoe}})
+    StreamData.bind(fn_eoe_gen, fn fn_eoe ->
+      StreamData.bind(StreamData.integer(2..4), fn count ->
+        StreamData.bind(gen_stab_clause_list(child_state, count), fn clauses ->
+          StreamData.bind(trailing_eoe_gen, fn trailing_eoe ->
+            StreamData.constant({:fn_multi, fn_eoe, {:stab_eoe, clauses, trailing_eoe}})
+          end)
         end)
       end)
     end)
@@ -1223,8 +1239,25 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
     end)
   end
 
+  # Generate fn_eoe variant (whether 'fn' is followed by eol, semicolon, or nothing)
+  # Per grammar lines 335-336:
+  #   fn_eoe -> 'fn'      (inline)
+  #   fn_eoe -> 'fn' eoe  (eoe = eol | ';' | eol ';')
+  defp gen_fn_eoe do
+    StreamData.frequency([
+      # Most common: inline fn with no eoe (fn x -> x end)
+      {6, StreamData.constant(:none)},
+      # Newline after 'fn' (fn\n x -> x end)
+      {3, StreamData.constant(:eol)},
+      # Semicolon after 'fn' (fn; x -> x end) - rare but valid
+      {1, StreamData.constant(:semi)},
+      # eol followed by semicolon (fn\n; x -> x end) - very rare
+      {1, StreamData.constant(:eol_semi)}
+    ])
+  end
+
   # Generate do_eoe variant (whether 'do' is followed by eol, semicolon, or nothing)
-  # Per grammar:
+  # Per grammar lines 338-339:
   #   do_eoe -> 'do'      (inline)
   #   do_eoe -> 'do' eoe  (eoe = eol | ';' | eol ';')
   defp gen_do_eoe do
@@ -1234,7 +1267,9 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
       # Inline form: do :expr end (no eol, for simple single expressions)
       {2, StreamData.constant(:none)},
       # Semicolon form: do; expr end (rare but valid)
-      {1, StreamData.constant(:semi)}
+      {1, StreamData.constant(:semi)},
+      # eol followed by semicolon (do\n; expr end) - very rare
+      {1, StreamData.constant(:eol_semi)}
     ])
   end
 
@@ -1320,49 +1355,84 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
     ])
   end
 
-  # Generate else block: [{:block_item, :else, body}]
-  # Per grammar: block_item -> block_eoe | block_eoe stab_eoe
+  # Generate block_eoe variant (whether block_identifier is followed by eol, semicolon, or nothing)
+  # Per grammar lines 341-342:
+  #   block_eoe -> block_identifier       (inline)
+  #   block_eoe -> block_identifier eoe   (eoe = eol | ';' | eol ';')
+  defp gen_block_eoe do
+    StreamData.frequency([
+      # Most common: newline after block_identifier (else\n body)
+      {7, StreamData.constant(:eol)},
+      # Inline form: else body (no eol)
+      {2, StreamData.constant(:none)},
+      # Semicolon form: else; body (rare but valid)
+      {1, StreamData.constant(:semi)},
+      # eol followed by semicolon (else\n; body) - very rare
+      {1, StreamData.constant(:eol_semi)}
+    ])
+  end
+
+  # Generate else block: [{:block_item, :else, block_eoe, body}]
+  # Per grammar lines 368-371:
+  #   block_item -> block_eoe stab_eoe   (with stab clauses)
+  #   block_item -> block_eoe            (empty body)
   # else typically uses expressions, not stab clauses
   defp gen_else_block(state) do
-    StreamData.frequency([
-      # Empty else (block_eoe only)
-      {1, StreamData.constant([{:block_item, :else, []}])},
-      # else with body
-      {4, gen_block_item_body(state, :else)}
-    ])
+    block_eoe_gen = gen_block_eoe()
+
+    StreamData.bind(block_eoe_gen, fn block_eoe ->
+      StreamData.frequency([
+        # Empty else (block_eoe only) - grammar line 370
+        {1, StreamData.constant([{:block_item, :else, block_eoe, []}])},
+        # else with body
+        {4, gen_block_item_body(state, :else, block_eoe)}
+      ])
+    end)
   end
 
-  # Generate rescue block: [{:block_item, :rescue, body}]
+  # Generate rescue block: [{:block_item, :rescue, block_eoe, body}]
   # rescue uses stab clauses: rescue e -> handle(e)
   defp gen_rescue_block(state) do
-    StreamData.frequency([
-      # Empty rescue
-      {1, StreamData.constant([{:block_item, :rescue, []}])},
-      # rescue with stab clauses
-      {4, gen_block_item_stab(state, :rescue)}
-    ])
+    block_eoe_gen = gen_block_eoe()
+
+    StreamData.bind(block_eoe_gen, fn block_eoe ->
+      StreamData.frequency([
+        # Empty rescue
+        {1, StreamData.constant([{:block_item, :rescue, block_eoe, []}])},
+        # rescue with stab clauses
+        {4, gen_block_item_stab(state, :rescue, block_eoe)}
+      ])
+    end)
   end
 
-  # Generate catch block: [{:block_item, :catch, body}]
+  # Generate catch block: [{:block_item, :catch, block_eoe, body}]
   # catch uses stab clauses: catch :throw, value -> handle(value)
   defp gen_catch_block(state) do
-    StreamData.frequency([
-      # Empty catch
-      {1, StreamData.constant([{:block_item, :catch, []}])},
-      # catch with stab clauses
-      {4, gen_block_item_stab(state, :catch)}
-    ])
+    block_eoe_gen = gen_block_eoe()
+
+    StreamData.bind(block_eoe_gen, fn block_eoe ->
+      StreamData.frequency([
+        # Empty catch
+        {1, StreamData.constant([{:block_item, :catch, block_eoe, []}])},
+        # catch with stab clauses
+        {4, gen_block_item_stab(state, :catch, block_eoe)}
+      ])
+    end)
   end
 
-  # Generate after block: [{:block_item, :after, body}]
+  # Generate after block: [{:block_item, :after, block_eoe, body}]
   # after uses expressions: after cleanup()
   defp gen_after_block(state) do
-    StreamData.frequency([
-      # Empty after
-      {1, StreamData.constant([{:block_item, :after, []}])},
-      # after with body
-      {4, gen_block_item_body(state, :after)}
-    ])
+    block_eoe_gen = gen_block_eoe()
+
+    StreamData.bind(block_eoe_gen, fn block_eoe ->
+      StreamData.frequency([
+        # Empty after
+        {1, StreamData.constant([{:block_item, :after, block_eoe, []}])},
+        # after with body
+        {4, gen_block_item_body(state, :after, block_eoe)}
+      ])
+    end)
   end
 
   # Generate rescue + after combo for try blocks
@@ -1375,16 +1445,17 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
   end
 
   # Generate block item with simple expression body
-  defp gen_block_item_body(_state, block_type) do
+  # Returns [{:block_item, block_type, block_eoe, body}]
+  defp gen_block_item_body(_state, block_type, block_eoe) do
     StreamData.bind(StreamData.integer(1..2), fn count ->
       gen_simple_expr_list(count)
     end)
-    |> StreamData.map(fn body -> [{:block_item, block_type, body}] end)
+    |> StreamData.map(fn body -> [{:block_item, block_type, block_eoe, body}] end)
   end
 
   # Generate block item with stab clause body
-  # Returns {:stab_eoe, clauses, trailing_eoe} wrapped in block_item
-  defp gen_block_item_stab(state, block_type) do
+  # Returns [{:block_item, block_type, block_eoe, {:stab_eoe, clauses, trailing_eoe}}]
+  defp gen_block_item_stab(state, block_type, block_eoe) do
     # Generate trailing eoe for stab_eoe
     # Per grammar lines 331-333: eoe -> eol | ';' | eol ';'
     trailing_eoe_gen =
@@ -1398,7 +1469,7 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
     StreamData.bind(StreamData.integer(1..2), fn count ->
       StreamData.bind(gen_stab_clause_list(state, count), fn clauses ->
         StreamData.bind(trailing_eoe_gen, fn trailing_eoe ->
-          StreamData.constant([{:block_item, block_type, {:stab_eoe, clauses, trailing_eoe}}])
+          StreamData.constant([{:block_item, block_type, block_eoe, {:stab_eoe, clauses, trailing_eoe}}])
         end)
       end)
     end)
