@@ -166,7 +166,8 @@ defmodule Spitfire do
   ]
 
   @peeks MapSet.new(
-           [:";", :eol, :eof, :end, :",", :")", :do, :., :"}", :"]", :">>"] ++ @operators
+           [:";", :eol, :eof, :end, :",", :")", :do, :., :"}", :"]", :">>", :mult_op] ++
+             @operators
          )
 
   @doc """
@@ -410,7 +411,10 @@ defmodule Spitfire do
                 if in_capture_name_context?(parser) do
                   &parse_identifier/1
                 else
-                  &parse_prefix_expression/1
+                  case peek_token_type(parser) do
+                    :mult_op -> &parse_identifier/1
+                    _ -> &parse_prefix_expression/1
+                  end
                 end
 
               _ ->
