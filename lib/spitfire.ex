@@ -5389,6 +5389,7 @@ defmodule Spitfire do
     |> normalize_unary_end_of_expression()
     |> normalize_unary_block_binary()
     |> normalize_clause_default_commas()
+    |> normalize_keyword_clause_args()
   end
 
   defp normalize_not_in(ast) do
@@ -5702,6 +5703,32 @@ defmodule Spitfire do
           end)
 
         {:->, meta, [args, body]}
+
+      other ->
+        other
+    end)
+  end
+
+  defp normalize_keyword_clause_args(ast) do
+    Macro.postwalk(ast, fn
+      {:fn, fn_meta, clauses} ->
+        clauses =
+          Enum.map(clauses, fn
+            {:comma, c_meta, [first, kw_list]} when is_list(kw_list) ->
+              case kw_list do
+                [{key, {:->, clause_meta, [lhs_patterns, body]}}] when is_list(lhs_patterns) ->
+                  lhs_expr = build_block_nr(lhs_patterns)
+                  {:->, clause_meta, [[first, [{key, lhs_expr}]], body]}
+
+                _ ->
+                  {:comma, c_meta, [first, kw_list]}
+              end
+
+            other ->
+              other
+          end)
+
+        {:fn, fn_meta, clauses}
 
       other ->
         other
