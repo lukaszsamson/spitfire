@@ -1075,7 +1075,6 @@ defmodule SpitfireReproTest do
     assert Spitfire.parse(code) == s2q(code)
   end
 
-  @tag :skip
   test "repro 91" do
     code = """
     not a do 1 end |r;\

@@ -5386,6 +5386,7 @@ defmodule Spitfire do
     |> normalize_block_sensitive_unary()
     |> split_unary_blocks()
     |> normalize_unary_capture_infix()
+    |> normalize_unary_end_of_expression()
   end
 
   defp normalize_not_in(ast) do
@@ -5635,6 +5636,32 @@ defmodule Spitfire do
           at_meta = if is_nil(eoe), do: at_meta, else: [{:end_of_expression, eoe} | at_meta]
 
           {:@, at_meta, [{:&, cap_meta, [{:<-, op_meta, [lhs, rhs]}]}]}
+        end
+
+      other ->
+        other
+    end)
+  end
+
+  defp normalize_unary_end_of_expression(ast) do
+    Macro.postwalk(ast, fn
+      {op, meta, [operand]} = node ->
+        if unary_block_op?(op) do
+          {operand, child_eoe} = pop_end_of_expression(operand)
+          {eoe, meta} = Keyword.pop(meta, :end_of_expression)
+
+          cond do
+            eoe ->
+              {op, [{:end_of_expression, eoe} | meta], [operand]}
+
+            child_eoe ->
+              {op, [{:end_of_expression, child_eoe} | meta], [operand]}
+
+            true ->
+              {op, meta, [operand]}
+          end
+        else
+          node
         end
 
       other ->
@@ -6025,6 +6052,13 @@ defmodule Spitfire do
         literal
     end
   end
+
+  defp pop_end_of_expression({token, meta, args}) when is_list(meta) do
+    {eoe, meta} = Keyword.pop(meta, :end_of_expression)
+    {{token, meta, args}, eoe}
+  end
+
+  defp pop_end_of_expression(ast), do: {ast, nil}
 
   # Build a block node from expressions, attaching ranges that span all children
   # For multiple expressions, creates a {:__block__, meta, exprs} node with a range
