@@ -3011,11 +3011,69 @@ defmodule Spitfire do
     [{:->, meta, [[kw_list], rhs]} | rest]
   end
 
+  defp normalize_fn_clauses(
+         [
+           {:->, meta, [{:<-, m2, [{:comma, _, args}, rhs_val]}, rhs]} | rest
+         ]
+       ) do
+    case args do
+      [] ->
+        [{:->, meta, [{:<-, m2, [{:comma, [], []}, rhs_val]}, rhs]} | rest]
+
+      _ ->
+        leading = Enum.drop(args, -1)
+        last = List.last(args)
+        new_last = {:<-, m2, [last, rhs_val]}
+        [{:->, meta, [leading ++ [new_last], rhs]} | rest]
+    end
+  end
+
   defp normalize_fn_clauses([{:comma, _, items}, {:->, meta, [_lhs, rhs]} | rest]) do
     [{:->, meta, [items, rhs]} | rest]
   end
 
+  defp normalize_fn_clauses([{:->, meta, [lhs, rhs]} | rest]) do
+    [{:->, meta, [normalize_fn_clause_lhs(lhs), rhs]} | rest]
+  end
+
   defp normalize_fn_clauses(exprs), do: exprs
+
+  defp normalize_fn_clause_lhs({:comma, _, items}), do: items
+
+  defp normalize_fn_clause_lhs({:<-, m2, [{:comma, _, args}, rhs_val]}) do
+    case args do
+      [] ->
+        [{:<-, m2, [{:comma, [], []}, rhs_val]}]
+
+      _ ->
+        leading = Enum.drop(args, -1)
+        last = List.last(args)
+        leading ++ [{:<-, m2, [last, rhs_val]}]
+    end
+  end
+
+  defp normalize_fn_clause_lhs(list) when is_list(list) do
+    Enum.flat_map(list, fn
+      {:<-, m2, [{:comma, _, args}, rhs_val]} ->
+        case args do
+          [] ->
+            [{:<-, m2, [{:comma, [], []}, rhs_val]}]
+
+          _ ->
+            leading = Enum.drop(args, -1)
+            last = List.last(args)
+            leading ++ [{:<-, m2, [last, rhs_val]}]
+        end
+
+      {:comma, _, items} ->
+        items
+
+      other ->
+        [other]
+    end)
+  end
+
+  defp normalize_fn_clause_lhs(other), do: [other]
 
   defp parse_dot_call_expression(parser, lhs) do
     trace "parse_dot_call_expression", trace_meta(parser) do

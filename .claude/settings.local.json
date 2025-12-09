@@ -1,9 +1,18 @@
 {
   "permissions": {
     "allow": [
-      "Read(//Users/lukaszsamson/claude_fun/toxic/**)",
+      "Bash(time mix test:*)",
       "Bash(mix test:*)",
-      "Bash(elixir:*)"
+      "Bash(mix compile:*)",
+      "Bash(elixir -S mix run -e:*)",
+      "Bash(mix run:*)",
+      "Bash(grep:*)",
+      "Bash(wc:*)",
+      "Bash(find:*)",
+      "Bash(elixir:*)",
+      "Bash(python3:*)",
+      "Bash(for seed in 1001 2002 3003 4004 5005)",
+      "Bash(do echo \"=== Seed $seed ===\" mix test test/spitfire/token_property_test.exs --seed $seed)"
     ],
     "deny": [],
     "ask": []

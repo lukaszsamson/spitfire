@@ -1203,7 +1203,11 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
     StreamData.bind(StreamData.integer(1..2), fn count ->
       StreamData.bind(gen_stab_clause_list(child_state, count), fn clauses ->
         StreamData.bind(trailing_eoe_gen, fn trailing_eoe ->
-          StreamData.constant({:paren_stab, {:stab_eoe, clauses, trailing_eoe}})
+          # Also randomly produce the variant where open_paren had a newline
+          StreamData.frequency([
+            {8, StreamData.constant({:paren_stab, {:stab_eoe, clauses, trailing_eoe}})},
+            {2, StreamData.constant({:paren_stab_nl, {:stab_eoe, clauses, trailing_eoe}, 1})}
+          ])
         end)
       end)
     end)
@@ -1228,7 +1232,11 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
     StreamData.bind(StreamData.integer(1..2), fn count ->
       StreamData.bind(gen_stab_clause_list(child_state, count), fn clauses ->
         StreamData.bind(trailing_eoe_gen, fn trailing_eoe ->
-          StreamData.constant({:paren_stab_semi, {:stab_eoe, clauses, trailing_eoe}})
+          # Also allow open_paren newline variant for semi form
+          StreamData.frequency([
+            {9, StreamData.constant({:paren_stab_semi, {:stab_eoe, clauses, trailing_eoe}})},
+            {1, StreamData.constant({:paren_stab_nl_semi, {:stab_eoe, clauses, trailing_eoe}, 1})}
+          ])
         end)
       end)
     end)

@@ -1158,6 +1158,30 @@ defmodule Spitfire.Property.TokenCompiler do
     {[open_token] ++ clauses_tokens ++ [close_token], layout}
   end
 
+  # Variant where open_paren had a trailing newline: '(' eol stab_eoe ')'
+  # Grammar action next_is_eol would attach newline count to open paren; at
+  # token level we emit '(' then an :eol token and continue.
+  defp do_to_tokens({:paren_stab_nl, {:stab_eoe, clauses, trailing_eoe}, newlines}, layout, opts)
+       when is_integer(newlines) and newlines > 0 do
+    # Compile '(' - with space before
+    {open_meta, layout} = TokenLayout.space_before(layout, "(", nil)
+    open_token = {:"(", open_meta}
+
+    # Emit eol token representing the newline after '('
+    eol_meta = TokenLayout.meta(layout, "\n", newlines)
+    layout = TokenLayout.newlines(layout, newlines)
+    eol_token = {:eol, eol_meta}
+
+    # Compile stab_eoe (clauses with optional trailing eoe)
+    {clauses_tokens, layout} = compile_stab_eoe(clauses, trailing_eoe, layout, opts)
+
+    # Compile ')' - stuck to last token
+    {close_meta, layout} = TokenLayout.stick_right(layout, ")", nil)
+    close_token = {:")", close_meta}
+
+    {[open_token, eol_token] ++ clauses_tokens ++ [close_token], layout}
+  end
+
   # paren_stab: (clause) or (clause1; clause2) (backward compat)
   # Grammar: open_paren stab_eoe ')' : build_paren_stab
   defp do_to_tokens({:paren_stab, clauses}, layout, opts)
@@ -1194,6 +1218,32 @@ defmodule Spitfire.Property.TokenCompiler do
     close_token = {:")", close_meta}
 
     {[open_token, semi_token] ++ clauses_tokens ++ [close_token], layout}
+  end
+
+  # Variant where open_paren had a trailing newline and leading semicolon
+  defp do_to_tokens({:paren_stab_nl_semi, {:stab_eoe, clauses, trailing_eoe}, newlines}, layout, opts)
+       when is_integer(newlines) and newlines > 0 do
+    # Compile '(' - with space before
+    {open_meta, layout} = TokenLayout.space_before(layout, "(", nil)
+    open_token = {:"(", open_meta}
+
+    # Emit eol token representing the newline after '('
+    eol_meta = TokenLayout.meta(layout, "\n", newlines)
+    layout = TokenLayout.newlines(layout, newlines)
+    eol_token = {:eol, eol_meta}
+
+    # Compile leading ';' - stuck to open paren (but after newline per grammar)
+    {semi_meta, layout} = TokenLayout.stick_right(layout, ";", nil)
+    semi_token = {:";", semi_meta}
+
+    # Compile stab_eoe (clauses with optional trailing eoe)
+    {clauses_tokens, layout} = compile_stab_eoe(clauses, trailing_eoe, layout, opts)
+
+    # Compile ')' - stuck to last token
+    {close_meta, layout} = TokenLayout.stick_right(layout, ")", nil)
+    close_token = {:")", close_meta}
+
+    {[open_token, eol_token, semi_token] ++ clauses_tokens ++ [close_token], layout}
   end
 
   # paren_stab_semi: (; clause) or (; clause1; clause2) (backward compat)

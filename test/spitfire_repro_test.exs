@@ -1244,7 +1244,6 @@ defmodule SpitfireReproTest do
     assert Spitfire.parse(code) == s2q(code)
   end
 
-  @tag :skip
   test "repro 105" do
     code = """
     fn a, r<-b -> :ok end\
@@ -1301,7 +1300,6 @@ defmodule SpitfireReproTest do
     assert Spitfire.parse(code) == s2q(code)
   end
 
-  @tag :skip
   test "repro 110" do
     code = """
     fn s: e -> :ok end\
@@ -1337,7 +1335,6 @@ defmodule SpitfireReproTest do
     assert Spitfire.parse(code) == s2q(code)
   end
 
-  @tag :skip
   test "repro 114" do
     code = """
     fn a, 0<-s -> :ok end\
@@ -1346,7 +1343,6 @@ defmodule SpitfireReproTest do
     assert Spitfire.parse(code) == s2q(code)
   end
 
-  @tag :skip
   test "repro 115" do
     code = """
     fn x when n: d -> 1 end\
