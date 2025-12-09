@@ -1294,7 +1294,8 @@ defmodule Spitfire do
   end
 
   defp identifier_stop_peek?(parser) do
-    MapSet.member?(@peeks, peek_token(parser)) ||
+    (Map.get(parser, :stop_at_open_brace, false) and peek_token(parser) == :"{") ||
+      MapSet.member?(@peeks, peek_token(parser)) ||
       (parser.interpolation_depth > 0 and peek_token_type(parser) == :end_interpolation)
   end
 
@@ -3299,6 +3300,7 @@ defmodule Spitfire do
           :alias -> &parse_alias/1
           :at_op -> &parse_lone_module_attr/1
           :unary_op -> &parse_prefix_lone_identifer/1
+          :dual_op -> &parse_prefix_expression/1
           _ -> nil
         end
 
@@ -3419,7 +3421,9 @@ defmodule Spitfire do
       meta = current_meta(parser)
       percent_range = token_range(percent_token)
       parser = next_token(parser)
+      parser = Map.put(parser, :stop_at_open_brace, true)
       {type, parser} = parse_struct_type(parser)
+      parser = Map.delete(parser, :stop_at_open_brace)
 
       parser = next_token(parser)
 
