@@ -3725,6 +3725,7 @@ defmodule Spitfire do
         newlines =
           case current_newlines(parser) do
             nil -> []
+            0 -> []
             nl -> [newlines: nl]
           end
 
