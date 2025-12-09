@@ -2585,7 +2585,16 @@ defmodule Spitfire.Property.TokenCompiler do
   end
 
   # Compile stab body expression - handles :empty_body
-  # Per grammar line 366: stab_op_eol_and_expr -> stab_op_eol (empty, warns, defaults to nil)
+  # Per grammar lines 365-366:
+  #   stab_op_eol_and_expr -> stab_op_eol expr : {'$1', '$2'}.
+  #   stab_op_eol_and_expr -> stab_op_eol : warn_empty_stab_clause('$1'), {'$1', handle_literal(nil, '$1')}.
+  #
+  # When body is :empty_body, we emit no tokens (producing source like "x ->" with no body).
+  # The parser will warn and synthesize a nil value. We intentionally do NOT emit a "nil"
+  # token here because:
+  # 1. We want to generate the actual problematic source that triggers the warning
+  # 2. This tests that both parsers (Oracle and Spitfire) handle the edge case correctly
+  # 3. Emitting "nil" would produce different source ("x -> nil") which is normal valid code
   defp compile_stab_body_expr(:empty_body, layout, _opts), do: {[], layout}
 
   defp compile_stab_body_expr(body, layout, opts) do
@@ -2596,9 +2605,15 @@ defmodule Spitfire.Property.TokenCompiler do
   # Per grammar lines 460-461:
   #   stab_op_eol -> stab_op : '$1'.
   #   stab_op_eol -> stab_op eol : next_is_eol('$1', '$2').
+  #
+  # The grammar's `next_is_eol` action (lines 834-836) copies the newline count
+  # from the eol token to the operator token's location for AST metadata. At the
+  # token level, we emit a separate eol token with the newline count. The count
+  # can be > 1 for multiple consecutive newlines (tokenized as single eol token).
   defp compile_stab_op_eol(0, layout), do: {[], layout}
 
   defp compile_stab_op_eol(newlines, layout) when newlines > 0 do
+    # Emit eol token with newline count in metadata
     eol_meta = TokenLayout.meta(layout, "\n", newlines)
     eol_token = {:eol, eol_meta}
     layout = TokenLayout.newlines(layout, newlines)
@@ -2789,6 +2804,17 @@ defmodule Spitfire.Property.TokenCompiler do
     {semi_meta, layout} = TokenLayout.stick_right(layout, ";", nil)
     semi_token = {:";", semi_meta}
     {[semi_token], layout}
+  end
+
+  # Per grammar line 333: eoe -> eol ';' (newline followed by semicolon)
+  defp compile_trailing_eoe(:eol_semi, layout) do
+    # Trailing newline then semicolon
+    eol_meta = TokenLayout.meta(layout, "\n", 1)
+    eol_token = {:eol, eol_meta}
+    layout = TokenLayout.newline(layout)
+    {semi_meta, layout} = TokenLayout.stick_right(layout, ";", nil)
+    semi_token = {:";", semi_meta}
+    {[eol_token, semi_token], layout}
   end
 
   # ===========================================================================
