@@ -1027,7 +1027,23 @@ defmodule Spitfire.Property.TokenCompiler do
   # fn expressions (Phase 1: single clause only)
   # ---------------------------------------------------------------------------
 
-  # fn_single: fn clause end
+  # fn_single with stab_eoe: fn stab_eoe end
+  defp do_to_tokens({:fn_single, {:stab_eoe, clauses, trailing_eoe}}, layout, opts) do
+    # Compile 'fn' keyword
+    {fn_meta, layout} = TokenLayout.space_before(layout, "fn", nil)
+    fn_token = {:fn, fn_meta}
+
+    # Compile stab_eoe (clauses with optional trailing eoe)
+    {clauses_tokens, layout} = compile_stab_eoe(clauses, trailing_eoe, layout, opts)
+
+    # Compile 'end' keyword
+    {end_meta, layout} = TokenLayout.space_before(layout, "end", nil)
+    end_token = {:end, end_meta}
+
+    {[fn_token] ++ clauses_tokens ++ [end_token], layout}
+  end
+
+  # fn_single: fn clause end (backward compat)
   defp do_to_tokens({:fn_single, [clause]}, layout, opts) do
     # Compile 'fn' keyword
     {fn_meta, layout} = TokenLayout.space_before(layout, "fn", nil)
@@ -1043,7 +1059,23 @@ defmodule Spitfire.Property.TokenCompiler do
     {[fn_token] ++ clause_tokens ++ [end_token], layout}
   end
 
-  # fn_multi: fn clause1; clause2; ... end
+  # fn_multi with stab_eoe: fn stab_eoe end
+  defp do_to_tokens({:fn_multi, {:stab_eoe, clauses, trailing_eoe}}, layout, opts) do
+    # Compile 'fn' keyword
+    {fn_meta, layout} = TokenLayout.space_before(layout, "fn", nil)
+    fn_token = {:fn, fn_meta}
+
+    # Compile stab_eoe (clauses with optional trailing eoe)
+    {clauses_tokens, layout} = compile_stab_eoe(clauses, trailing_eoe, layout, opts)
+
+    # Compile 'end' keyword
+    {end_meta, layout} = TokenLayout.space_before(layout, "end", nil)
+    end_token = {:end, end_meta}
+
+    {[fn_token] ++ clauses_tokens ++ [end_token], layout}
+  end
+
+  # fn_multi: fn clause1; clause2; ... end (backward compat)
   defp do_to_tokens({:fn_multi, clauses}, layout, opts) when length(clauses) >= 2 do
     # Compile 'fn' keyword
     {fn_meta, layout} = TokenLayout.space_before(layout, "fn", nil)
@@ -1068,7 +1100,23 @@ defmodule Spitfire.Property.TokenCompiler do
   #   access_expr -> open_paren ';' stab_eoe ')' : build_paren_stab('$1', '$3', '$4').
   #   access_expr -> open_paren ';' close_paren : build_paren_stab('$1', [], '$3').
 
-  # paren_stab: (clause) or (clause1; clause2)
+  # paren_stab with stab_eoe: (stab_eoe)
+  defp do_to_tokens({:paren_stab, {:stab_eoe, clauses, trailing_eoe}}, layout, opts) do
+    # Compile '(' - with space before
+    {open_meta, layout} = TokenLayout.space_before(layout, "(", nil)
+    open_token = {:"(", open_meta}
+
+    # Compile stab_eoe (clauses with optional trailing eoe)
+    {clauses_tokens, layout} = compile_stab_eoe(clauses, trailing_eoe, layout, opts)
+
+    # Compile ')' - stuck to last token
+    {close_meta, layout} = TokenLayout.stick_right(layout, ")", nil)
+    close_token = {:")", close_meta}
+
+    {[open_token] ++ clauses_tokens ++ [close_token], layout}
+  end
+
+  # paren_stab: (clause) or (clause1; clause2) (backward compat)
   # Grammar: open_paren stab_eoe ')' : build_paren_stab
   defp do_to_tokens({:paren_stab, clauses}, layout, opts)
        when is_list(clauses) and length(clauses) >= 1 do
@@ -1086,7 +1134,27 @@ defmodule Spitfire.Property.TokenCompiler do
     {[open_token] ++ clauses_tokens ++ [close_token], layout}
   end
 
-  # paren_stab_semi: (; clause) or (; clause1; clause2)
+  # paren_stab_semi with stab_eoe: (; stab_eoe)
+  defp do_to_tokens({:paren_stab_semi, {:stab_eoe, clauses, trailing_eoe}}, layout, opts) do
+    # Compile '(' - with space before
+    {open_meta, layout} = TokenLayout.space_before(layout, "(", nil)
+    open_token = {:"(", open_meta}
+
+    # Compile leading ';' - stuck to open paren
+    {semi_meta, layout} = TokenLayout.stick_right(layout, ";", nil)
+    semi_token = {:";", semi_meta}
+
+    # Compile stab_eoe (clauses with optional trailing eoe)
+    {clauses_tokens, layout} = compile_stab_eoe(clauses, trailing_eoe, layout, opts)
+
+    # Compile ')' - stuck to last token
+    {close_meta, layout} = TokenLayout.stick_right(layout, ")", nil)
+    close_token = {:")", close_meta}
+
+    {[open_token, semi_token] ++ clauses_tokens ++ [close_token], layout}
+  end
+
+  # paren_stab_semi: (; clause) or (; clause1; clause2) (backward compat)
   # Grammar: open_paren ';' stab_eoe ')' : build_paren_stab
   defp do_to_tokens({:paren_stab_semi, clauses}, layout, opts)
        when is_list(clauses) and length(clauses) >= 1 do
@@ -2460,9 +2528,19 @@ defmodule Spitfire.Property.TokenCompiler do
   # Compile a stab clause: pattern -> body (or pattern when guard -> body)
   # Pattern can be :empty, {:single, expr}, or {:many, [expr]}
   # Guard can be nil or an expression
+  # stab_op_eol is the number of newlines after -> (0 = inline)
+  #
+  # New 5-element format: {:stab_clause, pattern, guard, stab_op_eol, body}
+  # Old 4-element format: {:stab_clause, pattern, guard, body} (backward compat)
+
+  # Backward compatibility: convert old 4-element format to new 5-element format
+  defp compile_stab_clause({:stab_clause, pattern, guard, body}, layout, opts) do
+    # Default stab_op_eol to 0 (inline) for backward compatibility
+    compile_stab_clause({:stab_clause, pattern, guard, 0, body}, layout, opts)
+  end
 
   # Stab clause with guard: pattern when guard -> body
-  defp compile_stab_clause({:stab_clause, pattern, guard, body}, layout, opts)
+  defp compile_stab_clause({:stab_clause, pattern, guard, stab_op_eol, body}, layout, opts)
        when guard != nil do
     # Compile pattern (if any)
     {pattern_tokens, layout} = compile_pattern(pattern, layout, opts)
@@ -2478,14 +2556,18 @@ defmodule Spitfire.Property.TokenCompiler do
     {stab_meta, layout} = TokenLayout.space_before(layout, "->", nil)
     stab_token = {:stab_op, stab_meta, :->}
 
-    # Compile body
-    {body_tokens, layout} = do_to_tokens(body, layout, opts)
+    # Compile stab_op_eol (newlines after ->)
+    {eol_tokens, layout} = compile_stab_op_eol(stab_op_eol, layout)
 
-    {pattern_tokens ++ [when_token] ++ guard_tokens ++ [stab_token] ++ body_tokens, layout}
+    # Compile body (may be :empty_body per grammar line 366)
+    {body_tokens, layout} = compile_stab_body_expr(body, layout, opts)
+
+    {pattern_tokens ++ [when_token] ++ guard_tokens ++ [stab_token] ++ eol_tokens ++ body_tokens,
+     layout}
   end
 
   # Stab clause without guard: pattern -> body
-  defp compile_stab_clause({:stab_clause, pattern, nil, body}, layout, opts) do
+  defp compile_stab_clause({:stab_clause, pattern, nil, stab_op_eol, body}, layout, opts) do
     # Compile pattern (if any)
     {pattern_tokens, layout} = compile_pattern(pattern, layout, opts)
 
@@ -2493,10 +2575,34 @@ defmodule Spitfire.Property.TokenCompiler do
     {stab_meta, layout} = TokenLayout.space_before(layout, "->", nil)
     stab_token = {:stab_op, stab_meta, :->}
 
-    # Compile body
-    {body_tokens, layout} = do_to_tokens(body, layout, opts)
+    # Compile stab_op_eol (newlines after ->)
+    {eol_tokens, layout} = compile_stab_op_eol(stab_op_eol, layout)
 
-    {pattern_tokens ++ [stab_token] ++ body_tokens, layout}
+    # Compile body (may be :empty_body per grammar line 366)
+    {body_tokens, layout} = compile_stab_body_expr(body, layout, opts)
+
+    {pattern_tokens ++ [stab_token] ++ eol_tokens ++ body_tokens, layout}
+  end
+
+  # Compile stab body expression - handles :empty_body
+  # Per grammar line 366: stab_op_eol_and_expr -> stab_op_eol (empty, warns, defaults to nil)
+  defp compile_stab_body_expr(:empty_body, layout, _opts), do: {[], layout}
+
+  defp compile_stab_body_expr(body, layout, opts) do
+    do_to_tokens(body, layout, opts)
+  end
+
+  # Compile stab_op_eol: newlines after -> operator
+  # Per grammar lines 460-461:
+  #   stab_op_eol -> stab_op : '$1'.
+  #   stab_op_eol -> stab_op eol : next_is_eol('$1', '$2').
+  defp compile_stab_op_eol(0, layout), do: {[], layout}
+
+  defp compile_stab_op_eol(newlines, layout) when newlines > 0 do
+    eol_meta = TokenLayout.meta(layout, "\n", newlines)
+    eol_token = {:eol, eol_meta}
+    layout = TokenLayout.newlines(layout, newlines)
+    {[eol_token], layout}
   end
 
   # ===========================================================================
@@ -2504,16 +2610,51 @@ defmodule Spitfire.Property.TokenCompiler do
   # ===========================================================================
 
   # Empty pattern (no arguments): fn -> ... end
+  # Per grammar: stab_op_eol_and_expr (no pattern before ->)
   defp compile_pattern(:empty, layout, _opts), do: {[], layout}
+
+  # Empty parens pattern: fn () -> ... end
+  # Per grammar: empty_paren stab_op_eol_and_expr
+  defp compile_pattern(:empty_parens, layout, _opts) do
+    # Compile '('
+    {open_meta, layout} = TokenLayout.space_before(layout, "(", nil)
+    open_token = {:"(", open_meta}
+
+    # Compile ')' - stuck to open paren
+    {close_meta, layout} = TokenLayout.stick_right(layout, ")", nil)
+    close_token = {:")", close_meta}
+
+    {[open_token, close_token], layout}
+  end
 
   # Single pattern: fn x -> ... end
   defp compile_pattern({:single, expr}, layout, opts) do
     do_to_tokens(expr, layout, opts)
   end
 
-  # Multiple patterns: fn x, y -> ... end (Phase 2+)
+  # Multiple patterns without parens: fn x, y -> ... end
+  # Per grammar: call_args_no_parens_all stab_op_eol_and_expr
   defp compile_pattern({:many, exprs}, layout, opts) do
     compile_pattern_list(exprs, layout, opts)
+  end
+
+  # Multiple patterns with parens: fn (x, y) -> ... end
+  # Per grammar lines 528-529 (stab_parens_many):
+  #   stab_parens_many -> open_paren call_args_no_parens_kw close_paren
+  #   stab_parens_many -> open_paren call_args_no_parens_many close_paren
+  defp compile_pattern({:many_parens, exprs}, layout, opts) do
+    # Compile '('
+    {open_meta, layout} = TokenLayout.space_before(layout, "(", nil)
+    open_token = {:"(", open_meta}
+
+    # Compile patterns inside parens (first stuck to open paren)
+    {patterns_tokens, layout} = compile_pattern_list_in_parens(exprs, layout, opts)
+
+    # Compile ')' - stuck to last pattern
+    {close_meta, layout} = TokenLayout.stick_right(layout, ")", nil)
+    close_token = {:")", close_meta}
+
+    {[open_token] ++ patterns_tokens ++ [close_token], layout}
   end
 
   # Compile a list of patterns with comma separators
@@ -2536,6 +2677,28 @@ defmodule Spitfire.Property.TokenCompiler do
     {expr_tokens ++ [comma_token] ++ rest_tokens, layout}
   end
 
+  # Compile a list of patterns inside parens (first stuck to open paren)
+  defp compile_pattern_list_in_parens([], layout, _opts), do: {[], layout}
+
+  defp compile_pattern_list_in_parens([expr], layout, opts) do
+    # Single expr stuck to open paren (no space)
+    compile_arg_with_adhesion(expr, layout, opts)
+  end
+
+  defp compile_pattern_list_in_parens([expr | rest], layout, opts) do
+    # First expr stuck to open paren
+    {expr_tokens, layout} = compile_arg_with_adhesion(expr, layout, opts)
+
+    # Add comma token
+    {comma_meta, layout} = TokenLayout.stick_right(layout, ",", nil)
+    comma_token = {:",", comma_meta}
+
+    # Compile remaining patterns with normal spacing
+    {rest_tokens, layout} = compile_pattern_list(rest, layout, opts)
+
+    {expr_tokens ++ [comma_token] ++ rest_tokens, layout}
+  end
+
   # ===========================================================================
   # Helper: compile_stab_clauses (multiple clauses with semicolon separators)
   # ===========================================================================
@@ -2544,21 +2707,88 @@ defmodule Spitfire.Property.TokenCompiler do
   defp compile_stab_clauses([], layout, _opts), do: {[], layout}
 
   defp compile_stab_clauses([clause], layout, opts) do
-    compile_stab_clause(clause, layout, opts)
+    case clause do
+      {:stab_expr_bare, expr} ->
+        # Bare expr as stab entry: compile the expr and add trailing newline
+        {expr_tokens, layout} = do_to_tokens(expr, layout, opts)
+
+        # Add trailing newline
+        eol_meta = TokenLayout.meta(layout, "\n", 1)
+        eol_token = {:eol, eol_meta}
+        layout = TokenLayout.newline(layout)
+
+        {expr_tokens ++ [eol_token], layout}
+
+      _ ->
+        compile_stab_clause(clause, layout, opts)
+    end
   end
 
   defp compile_stab_clauses([clause | rest], layout, opts) do
-    # Compile first clause
-    {clause_tokens, layout} = compile_stab_clause(clause, layout, opts)
+    # Compile first clause (supports bare expr variant)
+    {clause_tokens, layout} =
+      case clause do
+        {:stab_expr_bare, expr} ->
+          {tokens, layout} = do_to_tokens(expr, layout, opts)
 
-    # Add semicolon separator
-    {semi_meta, layout} = TokenLayout.stick_right(layout, ";", nil)
-    semi_token = {:";", semi_meta}
+          # Add semicolon separator after bare expr when followed by more clauses
+          {semi_meta, layout} = TokenLayout.stick_right(layout, ";", nil)
+          semi_token = {:";", semi_meta}
+
+          {List.flatten([tokens]) ++ [semi_token], layout}
+
+        _ ->
+          {clause_toks, layout} = compile_stab_clause(clause, layout, opts)
+
+          # Add semicolon separator after stab clause when followed by more clauses
+          {semi_meta, layout} = TokenLayout.stick_right(layout, ";", nil)
+          semi_token = {:";", semi_meta}
+
+          {clause_toks ++ [semi_token], layout}
+      end
 
     # Compile remaining clauses
     {rest_tokens, layout} = compile_stab_clauses(rest, layout, opts)
 
-    {clause_tokens ++ [semi_token] ++ rest_tokens, layout}
+    {clause_tokens ++ rest_tokens, layout}
+  end
+
+  # ===========================================================================
+  # Helper: compile_stab_eoe (stab clauses with trailing eoe)
+  # ===========================================================================
+
+  # Per grammar lines 347-348:
+  #   stab_eoe -> stab : '$1'.
+  #   stab_eoe -> stab eoe : annotate_eoe('$2', '$1').
+  #
+  # stab_eoe is a list of stab clauses with an optional trailing eoe
+  # Structure: clauses (list), trailing_eoe (:none, :eol, :semi)
+  defp compile_stab_eoe(clauses, trailing_eoe, layout, opts) do
+    # Compile the stab clauses with semicolon separators
+    {clauses_tokens, layout} = compile_stab_clauses(clauses, layout, opts)
+
+    # Add trailing eoe if needed
+    {trailing_tokens, layout} = compile_trailing_eoe(trailing_eoe, layout)
+
+    {clauses_tokens ++ trailing_tokens, layout}
+  end
+
+  # Compile trailing eoe (end-of-expression) for stab_eoe
+  defp compile_trailing_eoe(:none, layout), do: {[], layout}
+
+  defp compile_trailing_eoe(:eol, layout) do
+    # Trailing newline
+    eol_meta = TokenLayout.meta(layout, "\n", 1)
+    eol_token = {:eol, eol_meta}
+    layout = TokenLayout.newline(layout)
+    {[eol_token], layout}
+  end
+
+  defp compile_trailing_eoe(:semi, layout) do
+    # Trailing semicolon
+    {semi_meta, layout} = TokenLayout.stick_right(layout, ";", nil)
+    semi_token = {:";", semi_meta}
+    {[semi_token], layout}
   end
 
   # ===========================================================================
@@ -2609,7 +2839,18 @@ defmodule Spitfire.Property.TokenCompiler do
 
   defp compile_do_body([], layout, _opts), do: {[], layout}
 
+  # Handle stab_eoe structure: {:stab_eoe, clauses, trailing_eoe}
+  defp compile_do_body({:stab_eoe, clauses, trailing_eoe}, layout, opts) do
+    compile_stab_eoe_body(clauses, trailing_eoe, layout, opts)
+  end
+
   # Handle stab clauses (for case expressions)
+  # 5-element format: {:stab_clause, pattern, guard, stab_op_eol, body}
+  defp compile_do_body([{:stab_clause, _, _, _, _} = clause | rest], layout, opts) do
+    compile_stab_body([clause | rest], layout, opts)
+  end
+
+  # 4-element format (backward compat): {:stab_clause, pattern, guard, body}
   defp compile_do_body([{:stab_clause, _, _, _} = clause | rest], layout, opts) do
     compile_stab_body([clause | rest], layout, opts)
   end
@@ -2661,6 +2902,63 @@ defmodule Spitfire.Property.TokenCompiler do
     layout = TokenLayout.newline(layout)
 
     {rest_tokens, layout} = compile_stab_body(rest, layout, opts)
+
+    {clause_tokens ++ [eol_token] ++ rest_tokens, layout}
+  end
+
+  # Compile stab_eoe in do block body
+  # This handles {:stab_eoe, clauses, trailing_eoe} structure
+  defp compile_stab_eoe_body(clauses, trailing_eoe, layout, opts) do
+    # Compile the stab clauses with newline separators (for do blocks)
+    {clauses_tokens, layout} = compile_stab_body_clauses(clauses, layout, opts)
+
+    # Add trailing eoe based on type
+    {trailing_tokens, layout} =
+      case trailing_eoe do
+        :none ->
+          # No trailing eoe, but still add final newline before 'end'
+          eol_meta = TokenLayout.meta(layout, "\n", 1)
+          eol_token = {:eol, eol_meta}
+          layout = TokenLayout.newline(layout)
+          {[eol_token], layout}
+
+        :eol ->
+          # Trailing newline (same as :none for do body)
+          eol_meta = TokenLayout.meta(layout, "\n", 1)
+          eol_token = {:eol, eol_meta}
+          layout = TokenLayout.newline(layout)
+          {[eol_token], layout}
+
+        :semi ->
+          # Trailing semicolon
+          {semi_meta, layout} = TokenLayout.stick_right(layout, ";", nil)
+          semi_token = {:";", semi_meta}
+          # Still need newline before 'end'
+          eol_meta = TokenLayout.meta(layout, "\n", 1)
+          eol_token = {:eol, eol_meta}
+          layout = TokenLayout.newline(layout)
+          {[semi_token, eol_token], layout}
+      end
+
+    {clauses_tokens ++ trailing_tokens, layout}
+  end
+
+  # Helper to compile stab clauses in do body with newline separators
+  defp compile_stab_body_clauses([], layout, _opts), do: {[], layout}
+
+  defp compile_stab_body_clauses([clause], layout, opts) do
+    compile_stab_clause(clause, layout, opts)
+  end
+
+  defp compile_stab_body_clauses([clause | rest], layout, opts) do
+    {clause_tokens, layout} = compile_stab_clause(clause, layout, opts)
+
+    # Add newline between clauses
+    eol_meta = TokenLayout.meta(layout, "\n", 1)
+    eol_token = {:eol, eol_meta}
+    layout = TokenLayout.newline(layout)
+
+    {rest_tokens, layout} = compile_stab_body_clauses(rest, layout, opts)
 
     {clause_tokens ++ [eol_token] ++ rest_tokens, layout}
   end

@@ -873,23 +873,46 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
   # ===========================================================================
 
   # Generate a single-clause fn expression: fn pattern -> body end
+  # Per grammar: fn stab_eoe 'end'
   defp gen_fn_single(state) do
     child_state = GrammarTree.decr_depth(state)
 
+    # Generate trailing eoe for stab_eoe
+    trailing_eoe_gen =
+      StreamData.frequency([
+        {6, StreamData.constant(:none)},
+        {3, StreamData.constant(:eol)},
+        {1, StreamData.constant(:semi)}
+      ])
+
     StreamData.bind(gen_stab_clause(child_state), fn clause ->
-      StreamData.constant({:fn_single, [clause]})
+      StreamData.bind(trailing_eoe_gen, fn trailing_eoe ->
+        StreamData.constant({:fn_single, {:stab_eoe, [clause], trailing_eoe}})
+      end)
     end)
   end
 
   # Generate a multi-clause fn expression: fn clause1; clause2; ... end
+  # Per grammar: fn stab_eoe 'end'
   defp gen_fn_multi(state) do
     child_state = GrammarTree.decr_depth(state)
 
+    # Generate trailing eoe for stab_eoe
+    trailing_eoe_gen =
+      StreamData.frequency([
+        {6, StreamData.constant(:none)},
+        {3, StreamData.constant(:eol)},
+        {1, StreamData.constant(:semi)}
+      ])
+
     # Generate 2-4 clauses
     StreamData.bind(StreamData.integer(2..4), fn count ->
-      gen_stab_clause_list(child_state, count)
+      StreamData.bind(gen_stab_clause_list(child_state, count), fn clauses ->
+        StreamData.bind(trailing_eoe_gen, fn trailing_eoe ->
+          StreamData.constant({:fn_multi, {:stab_eoe, clauses, trailing_eoe}})
+        end)
+      end)
     end)
-    |> StreamData.map(fn clauses -> {:fn_multi, clauses} end)
   end
 
   # Generate a list of stab clauses for fn_multi
@@ -917,13 +940,18 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
     # No guards for simplicity in multi-clause (guards added separately)
     guard_gen = StreamData.constant(nil)
 
+    # Generate stab_op_eol (newlines after ->)
+    stab_op_eol_gen = gen_stab_op_eol()
+
     # Generate simple body
     body_gen = gen_simple_expr()
 
     StreamData.bind(pattern_gen, fn pattern ->
       StreamData.bind(guard_gen, fn guard ->
-        StreamData.bind(body_gen, fn body ->
-          StreamData.constant({:stab_clause, pattern, guard, body})
+        StreamData.bind(stab_op_eol_gen, fn stab_op_eol ->
+          StreamData.bind(body_gen, fn body ->
+            StreamData.constant({:stab_clause, pattern, guard, stab_op_eol, body})
+          end)
         end)
       end)
     end)
@@ -965,11 +993,22 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
   defp gen_paren_stab(state) do
     child_state = GrammarTree.decr_depth(state)
 
+    # Generate trailing eoe for stab_eoe
+    trailing_eoe_gen =
+      StreamData.frequency([
+        {6, StreamData.constant(:none)},
+        {3, StreamData.constant(:eol)},
+        {1, StreamData.constant(:semi)}
+      ])
+
     # Generate 1-2 stab clauses
     StreamData.bind(StreamData.integer(1..2), fn count ->
-      gen_stab_clause_list(child_state, count)
+      StreamData.bind(gen_stab_clause_list(child_state, count), fn clauses ->
+        StreamData.bind(trailing_eoe_gen, fn trailing_eoe ->
+          StreamData.constant({:paren_stab, {:stab_eoe, clauses, trailing_eoe}})
+        end)
+      end)
     end)
-    |> StreamData.map(fn clauses -> {:paren_stab, clauses} end)
   end
 
   # Generate paren_stab with leading semicolon: (; clause) or (; clause1; clause2)
@@ -977,11 +1016,22 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
   defp gen_paren_stab_semi(state) do
     child_state = GrammarTree.decr_depth(state)
 
+    # Generate trailing eoe for stab_eoe
+    trailing_eoe_gen =
+      StreamData.frequency([
+        {6, StreamData.constant(:none)},
+        {3, StreamData.constant(:eol)},
+        {1, StreamData.constant(:semi)}
+      ])
+
     # Generate 1-2 stab clauses
     StreamData.bind(StreamData.integer(1..2), fn count ->
-      gen_stab_clause_list(child_state, count)
+      StreamData.bind(gen_stab_clause_list(child_state, count), fn clauses ->
+        StreamData.bind(trailing_eoe_gen, fn trailing_eoe ->
+          StreamData.constant({:paren_stab_semi, {:stab_eoe, clauses, trailing_eoe}})
+        end)
+      end)
     end)
-    |> StreamData.map(fn clauses -> {:paren_stab_semi, clauses} end)
   end
 
   # Generate empty paren_stab with semicolon: (;)
@@ -1065,12 +1115,28 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
   end
 
   # Generate case block with stab clauses
+  # Returns {:do_block, do_eoe, {:stab_eoe, clauses, trailing_eoe}, extras}
   defp gen_case_block(_state) do
+    # Generate trailing eoe for stab_eoe
+    trailing_eoe_gen =
+      StreamData.frequency([
+        {6, StreamData.constant(:none)},
+        {3, StreamData.constant(:eol)},
+        {1, StreamData.constant(:semi)}
+      ])
+
+    do_eoe_gen = gen_do_eoe()
+
     # Generate 2-3 stab clauses for case
     StreamData.bind(StreamData.integer(2..3), fn count ->
-      gen_case_clause_list(count)
+      StreamData.bind(gen_case_clause_list(count), fn clauses ->
+        StreamData.bind(trailing_eoe_gen, fn trailing_eoe ->
+          StreamData.bind(do_eoe_gen, fn do_eoe ->
+            StreamData.constant({:do_block, do_eoe, {:stab_eoe, clauses, trailing_eoe}, []})
+          end)
+        end)
+      end)
     end)
-    |> StreamData.map(fn clauses -> {:do_block, clauses, []} end)
   end
 
   # Generate a list of case clauses
@@ -1096,11 +1162,16 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
         {1, StreamData.constant({:single, {:identifier, :_}})}
       ])
 
+    # Generate stab_op_eol (newlines after ->)
+    stab_op_eol_gen = gen_stab_op_eol()
+
     body_gen = gen_simple_expr()
 
     StreamData.bind(pattern_gen, fn pattern ->
-      StreamData.bind(body_gen, fn body ->
-        StreamData.constant({:stab_clause, pattern, nil, body})
+      StreamData.bind(stab_op_eol_gen, fn stab_op_eol ->
+        StreamData.bind(body_gen, fn body ->
+          StreamData.constant({:stab_clause, pattern, nil, stab_op_eol, body})
+        end)
       end)
     end)
   end
@@ -1183,9 +1254,22 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
 
   # Generate do body with stab clauses (for case/receive/cond/try)
   # This produces bodies like: x -> y; a -> b
+  # Returns {:stab_eoe, clauses, trailing_eoe}
   defp gen_do_body_stab(state) do
+    # Generate trailing eoe for stab_eoe
+    trailing_eoe_gen =
+      StreamData.frequency([
+        {6, StreamData.constant(:none)},
+        {3, StreamData.constant(:eol)},
+        {1, StreamData.constant(:semi)}
+      ])
+
     StreamData.bind(StreamData.integer(1..3), fn count ->
-      gen_stab_clause_list(state, count)
+      StreamData.bind(gen_stab_clause_list(state, count), fn clauses ->
+        StreamData.bind(trailing_eoe_gen, fn trailing_eoe ->
+          StreamData.constant({:stab_eoe, clauses, trailing_eoe})
+        end)
+      end)
     end)
   end
 
@@ -1287,11 +1371,23 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
   end
 
   # Generate block item with stab clause body
+  # Returns {:stab_eoe, clauses, trailing_eoe} wrapped in block_item
   defp gen_block_item_stab(state, block_type) do
+    # Generate trailing eoe for stab_eoe
+    trailing_eoe_gen =
+      StreamData.frequency([
+        {6, StreamData.constant(:none)},
+        {3, StreamData.constant(:eol)},
+        {1, StreamData.constant(:semi)}
+      ])
+
     StreamData.bind(StreamData.integer(1..2), fn count ->
-      gen_stab_clause_list(state, count)
+      StreamData.bind(gen_stab_clause_list(state, count), fn clauses ->
+        StreamData.bind(trailing_eoe_gen, fn trailing_eoe ->
+          StreamData.constant([{:block_item, block_type, {:stab_eoe, clauses, trailing_eoe}}])
+        end)
+      end)
     end)
-    |> StreamData.map(fn clauses -> [{:block_item, block_type, clauses}] end)
   end
 
   # ===========================================================================
@@ -1457,42 +1553,114 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
     end)
   end
 
+  # ===========================================================================
+  # Generator: stab_op_eol (-> operator with optional newlines)
+  # ===========================================================================
+
+  # Per grammar lines 460-461:
+  # stab_op_eol -> stab_op : '$1'.
+  # stab_op_eol -> stab_op eol : next_is_eol('$1', '$2').
+  #
+  # The stab operator -> can be followed by 0 or more newlines.
+  defp gen_stab_op_eol do
+    StreamData.frequency([
+      # No newline after -> (most common, inline body)
+      {6, StreamData.constant(0)},
+      # One newline after ->
+      {3, StreamData.constant(1)},
+      # Multiple newlines after -> (rare)
+      {1, StreamData.integer(2..3)}
+    ])
+  end
+
   # Generate a stab clause: pattern -> body (or pattern when guard -> body)
-  # Phase 2: optionally generates guards and multiple patterns
+  # Per grammar lines 350-363 (stab_expr productions)
+  #
+  # Structure: {:stab_clause, pattern, guard, stab_op_eol, body}
+  # - pattern: :empty, :empty_parens, {:single, expr}, {:many, [expr]}, {:many_parens, [expr]}
+  # - guard: nil or guard expression
+  # - stab_op_eol: newlines after -> (0 = inline, 1+ = newlines)
+  # - body: expression or :empty_body (for stab_op_eol_and_expr -> stab_op_eol)
+  #
+  # Grammar coverage:
+  # - stab_expr -> stab_op_eol_and_expr: :empty pattern, no guard
+  # - stab_expr -> empty_paren stab_op_eol_and_expr: :empty_parens pattern
+  # - stab_expr -> empty_paren when_op expr stab_op_eol_and_expr: :empty_parens with guard
+  # - stab_expr -> call_args_no_parens_all stab_op_eol_and_expr: {:single, _} or {:many, _}
+  # - stab_expr -> stab_parens_many stab_op_eol_and_expr: {:many_parens, _}
+  # - stab_expr -> stab_parens_many when_op expr stab_op_eol_and_expr: {:many_parens, _} with guard
+  # - stab_op_eol_and_expr -> stab_op_eol: empty body (:empty_body)
   defp gen_stab_clause(state) do
-    # Generate pattern (:empty, {:single, expr}, or {:many, [expr]})
+    # Generate pattern
     pattern_gen = gen_pattern()
 
     # Generate guard (nil most of the time, occasionally a guard expression)
     guard_gen = gen_optional_guard(state)
 
-    # Generate body (simple expression to avoid deep nesting)
+    # Generate stab_op_eol (newlines after ->)
+    stab_op_eol_gen = gen_stab_op_eol()
+
+    # Generate body - can be expression or :empty_body
+    # Per grammar line 366: stab_op_eol_and_expr -> stab_op_eol (empty, warns)
     body_gen =
+      StreamData.frequency([
+        {19,
+         if state.budget.depth <= 1 do
+           gen_simple_expr()
+         else
+           gen_expr(state)
+         end},
+        # Empty body (rare, generates warning): -> (no body)
+        {1, StreamData.constant(:empty_body)}
+      ])
+
+    # Additionally, the grammar allows a stab_expr that is just an expr (no ->),
+    # i.e., stab_expr -> expr : '$1'. Model that by occasionally emitting a bare
+    # expr as a stab_clause-like tuple with :bare_expr marker so the compiler can
+    # handle it.
+    bare_expr_gen =
       if state.budget.depth <= 1 do
         gen_simple_expr()
       else
         gen_expr(state)
       end
 
-    StreamData.bind(pattern_gen, fn pattern ->
-      StreamData.bind(guard_gen, fn guard ->
-        StreamData.bind(body_gen, fn body ->
-          StreamData.constant({:stab_clause, pattern, guard, body})
-        end)
-      end)
-    end)
+    StreamData.frequency([
+      {4,
+       StreamData.bind(bare_expr_gen, fn expr ->
+         StreamData.constant({:stab_expr_bare, expr})
+       end)},
+      {6,
+       StreamData.bind(pattern_gen, fn pattern ->
+         StreamData.bind(guard_gen, fn guard ->
+           StreamData.bind(stab_op_eol_gen, fn stab_op_eol ->
+             StreamData.bind(body_gen, fn body ->
+               StreamData.constant({:stab_clause, pattern, guard, stab_op_eol, body})
+             end)
+           end)
+         end)
+       end)}
+    ])
   end
 
   # ===========================================================================
   # Generator: patterns (Phase 2)
   # ===========================================================================
 
-  # Generate a pattern: :empty, {:single, expr}, or {:many, [expr]}
+  # Generate a pattern: :empty, :empty_parens, {:single, expr}, {:many, [expr]}, {:many_parens, [expr]}
+  # Per grammar stab_expr rules (lines 350-363):
+  #   - :empty corresponds to stab_op_eol_and_expr (no pattern, just -> body)
+  #   - :empty_parens corresponds to empty_paren stab_op_eol_and_expr: () -> body
+  #   - {:single, expr} corresponds to call_args_no_parens_one (single arg)
+  #   - {:many, [exprs]} corresponds to call_args_no_parens_all (multiple args without parens)
+  #   - {:many_parens, [exprs]} corresponds to stab_parens_many (multiple args with parens)
   defp gen_pattern do
     StreamData.frequency([
       {2, StreamData.constant(:empty)},
+      {1, StreamData.constant(:empty_parens)},
       {4, gen_single_pattern()},
-      {3, gen_many_pattern()}
+      {2, gen_many_pattern()},
+      {2, gen_many_parens_pattern()}
     ])
   end
 
@@ -1503,13 +1671,49 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
     |> StreamData.map(fn atom -> {:single, {:identifier, atom}} end)
   end
 
-  # Generate multiple patterns: {:many, [expr1, expr2, ...]}
+  # Generate multiple patterns without parens: {:many, [expr1, expr2, ...]}
+  # Per grammar: call_args_no_parens_all stab_op_eol_and_expr
   defp gen_many_pattern do
     # Generate 2-4 pattern expressions (identifiers only for simplicity)
     StreamData.bind(StreamData.integer(2..4), fn count ->
       gen_pattern_identifier_list(count)
     end)
     |> StreamData.map(fn exprs -> {:many, exprs} end)
+  end
+
+  # Generate multiple patterns with parens: {:many_parens, [expr1, expr2, ...]}
+  # Per grammar lines 528-529 (stab_parens_many):
+  #   stab_parens_many -> open_paren call_args_no_parens_kw close_paren
+  #   stab_parens_many -> open_paren call_args_no_parens_many close_paren
+  defp gen_many_parens_pattern do
+    # Generate variants for paren patterns:
+    # - positional: (a, b)
+    # - positional + trailing kw: (a, b, key: v)
+    # - kw-only: (key: v)
+    StreamData.frequency([
+      # Positional-only
+      {4,
+       StreamData.bind(StreamData.integer(2..4), fn count ->
+         gen_pattern_identifier_list(count)
+       end)
+       |> StreamData.map(fn exprs -> {:many_parens, exprs} end)},
+
+      # Positional with trailing keyword args
+      {2,
+       StreamData.bind(StreamData.integer(1..3), fn pos_count ->
+         StreamData.bind(gen_pattern_identifier_list(pos_count), fn pos ->
+           StreamData.bind(gen_call_args_no_parens_kw(), fn kw ->
+             StreamData.constant({:many_parens, pos ++ [kw]})
+           end)
+         end)
+       end)},
+
+      # Keyword-only inside parens
+      {1,
+       StreamData.bind(gen_call_args_no_parens_kw(), fn kw ->
+         StreamData.constant({:many_parens, [kw]})
+       end)}
+    ])
   end
 
   # Generate a list of unique identifiers for patterns
@@ -1883,6 +2087,7 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
         {5, gen_literal()},
         {2, gen_alias()},
         {2, gen_fn_single(state)},
+        {1, gen_fn_multi(state)},
         {2, gen_call_parens(state)},
         {1, gen_call_parens_nested(state)},
         {1, gen_capture_int()},
