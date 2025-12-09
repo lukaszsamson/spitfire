@@ -6119,7 +6119,7 @@ defmodule Spitfire do
       {op, op_meta, [{:&, cap_meta, [lhs]}, rhs]} = node when op in [:<-] ->
         if contains_block_with_do?(lhs) do
           {eoe, op_meta} = Keyword.pop(op_meta, :end_of_expression)
-          cap_meta = if is_nil(eoe), do: cap_meta, else: [{:end_of_expression, eoe} | cap_meta]
+          cap_meta = put_eoe_meta(cap_meta, eoe)
 
           {:&, cap_meta, [{op, op_meta, [lhs, rhs]}]}
         else
@@ -6163,7 +6163,7 @@ defmodule Spitfire do
         if MapSet.member?(@unary_capture_reassoc, unary_op) and
              not Keyword.has_key?(op_meta, :parens) do
           {eoe, op_meta} = Keyword.pop(op_meta, :end_of_expression)
-          u_meta = if is_nil(eoe), do: u_meta, else: [{:end_of_expression, eoe} | u_meta]
+          u_meta = put_eoe_meta(u_meta, eoe)
 
           {unary_op, u_meta, [{:&, cap_meta, [{:<-, op_meta, [lhs, rhs]}]}]}
         else
@@ -6175,7 +6175,7 @@ defmodule Spitfire do
           {:<-, op_meta, [{:@, at_meta, [{:&, cap_meta, [lhs]}]}, rhs]}
         else
           {eoe, op_meta} = Keyword.pop(op_meta, :end_of_expression)
-          at_meta = if is_nil(eoe), do: at_meta, else: [{:end_of_expression, eoe} | at_meta]
+          at_meta = put_eoe_meta(at_meta, eoe)
 
           {:@, at_meta, [{:&, cap_meta, [{:<-, op_meta, [lhs, rhs]}]}]}
         end
@@ -6194,10 +6194,10 @@ defmodule Spitfire do
 
           cond do
             eoe ->
-              {op, [{:end_of_expression, eoe} | meta], [operand]}
+              {op, put_eoe_meta(meta, eoe), [operand]}
 
             child_eoe ->
-              {op, [{:end_of_expression, child_eoe} | meta], [operand]}
+              {op, put_eoe_meta(meta, child_eoe), [operand]}
 
             true ->
               {op, meta, [operand]}
@@ -6279,9 +6279,7 @@ defmodule Spitfire do
       {:<-, op_meta, [{:..., range_meta, [{:&, cap_meta, [lhs]}]}, rhs]} = node ->
         if contains_block_with_do?(lhs) do
           {eoe, op_meta} = Keyword.pop(op_meta, :end_of_expression)
-
-          range_meta =
-            if is_nil(eoe), do: range_meta, else: [{:end_of_expression, eoe} | range_meta]
+          range_meta = put_eoe_meta(range_meta, eoe)
 
           {:..., range_meta, [{:&, cap_meta, [{:<-, op_meta, [lhs, rhs]}]}]}
         else
@@ -6648,10 +6646,29 @@ defmodule Spitfire do
     end
   end
 
+  defp put_eoe_meta(meta, nil), do: meta
+
+  defp put_eoe_meta(meta, eoe) do
+    meta
+    |> List.wrap()
+    |> List.insert_at(0, {:end_of_expression, eoe})
+    |> reorder_parens_end_of_expression()
+  end
+
+  defp reorder_parens_end_of_expression(meta) do
+    {parens, rest} = Enum.split_with(meta, &match?({:parens, _}, &1))
+    {eoes, others} = Enum.split_with(rest, &match?({:end_of_expression, _}, &1))
+
+    {pos_eoes, zero_eoes} =
+      Enum.split_with(eoes, fn {:end_of_expression, e} -> Keyword.get(e, :newlines, 0) > 0 end)
+
+    pos_eoes ++ parens ++ zero_eoes ++ others
+  end
+
   defp push_eoe(ast, eoe) do
     case ast do
       {t, meta, a} when not is_nil(eoe) and t != :-> ->
-        {t, [{:end_of_expression, eoe} | meta], a}
+        {t, put_eoe_meta(meta, eoe), a}
 
       literal ->
         literal
