@@ -7,10 +7,16 @@ defmodule Spitfire.CharPropertyTest do
 
   alias Spitfire.Property.TokenGrammarGenerators, as: Gen
 
+  # Options used by both oracle and Spitfire for consistency
   @oracle_opts [
     columns: true,
     token_metadata: true,
     emit_warnings: false,
+    existing_atoms_only: true
+  ]
+
+  # Spitfire parse options - same as oracle where applicable
+  @spitfire_opts [
     existing_atoms_only: true
   ]
 
@@ -116,6 +122,16 @@ defmodule Spitfire.CharPropertyTest do
     # Touch atom pools to ensure atoms exist
     touch_atom_pools()
     :ok
+  end
+
+  setup do
+    # Use toxic tokenizer for all tests
+    original = Application.get_env(:spitfire, :tokenizer, :legacy)
+    Application.put_env(:spitfire, :tokenizer, :toxic)
+
+    on_exit(fn ->
+      Application.put_env(:spitfire, :tokenizer, original)
+    end)
   end
 
   defp touch_atom_pools do
@@ -1110,8 +1126,8 @@ defmodule Spitfire.CharPropertyTest do
 
       {:ok, oracle_ast} ->
         # IO.puts(">>>>> [#{context}]\n" <> code <> "\n<<<<<")
-        # Parse with Spitfire
-        assert {:ok, spitfire_ast} = Spitfire.parse(code)
+        # Parse with Spitfire using same options as oracle
+        assert {:ok, spitfire_ast} = Spitfire.parse(code, @spitfire_opts)
 
         # Apply workaround for parser bugs with not/! in forms
         {oracle_ast, spitfire_ast} =

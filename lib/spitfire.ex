@@ -3174,8 +3174,9 @@ defmodule Spitfire do
       range = token_range(parser.current_token)
       meta = parser |> current_meta() |> put_meta_range(range)
       {args, parser} = parse_interpolation(parser, tokens)
+      atom_fun = atom_function(parser)
 
-      {{{:., meta, [:erlang, :binary_to_atom]}, [{:delimiter, ~S'"'} | meta],
+      {{{:., meta, [:erlang, atom_fun]}, [{:delimiter, ~S'"'} | meta],
         [{:<<>>, meta, args}, :utf8]}, parser}
     end
   end
@@ -3664,9 +3665,10 @@ defmodule Spitfire do
           :list_string -> &parse_string/1
           :bin_string_start -> &parse_linearized_string(&1, :binary)
           :list_string_start -> &parse_linearized_string(&1, :charlist)
-          :at_op -> &parse_lone_module_attr/1
+          :at_op -> &parse_prefix_expression/1
           :unary_op -> &parse_prefix_expression/1
           :dual_op -> &parse_prefix_expression/1
+          :range_op -> &parse_range_expression/1
           _ -> nil
         end
 
@@ -4978,8 +4980,9 @@ defmodule Spitfire do
               args = build_string_parts(parts, :atom)
               binary_ast = {:<<>>, start_meta, args}
               meta_with_delimiter = [{:delimiter, ~S'"'}, {:format, :keyword} | start_meta]
+              atom_fun = atom_function(parser)
 
-              {{:., start_meta, [:erlang, :binary_to_atom]}, meta_with_delimiter,
+              {{:., start_meta, [:erlang, atom_fun]}, meta_with_delimiter,
                [binary_ast, :utf8]}
             end
             |> put_start_position(start_meta)
@@ -5206,19 +5209,24 @@ defmodule Spitfire do
           {attach_range(ast, [container_range]), parser}
 
         true ->
-          # Interpolated atom – build binary_to_atom({:<<>>,...}, :utf8)
+          # Interpolated atom – build binary_to_atom/binary_to_existing_atom({:<<>>,...}, :utf8)
           args = build_string_parts(parts, :atom)
           range_meta = put_meta_range(start_meta, container_range)
           binary_ast = {:<<>>, range_meta, args}
           delimiter_meta = put_meta_range([{:delimiter, delim_str} | start_meta], container_range)
+          atom_fun = atom_function(parser)
 
           atom_ast =
-            {{:., range_meta, [:erlang, :binary_to_atom]}, delimiter_meta, [binary_ast, :utf8]}
+            {{:., range_meta, [:erlang, atom_fun]}, delimiter_meta, [binary_ast, :utf8]}
 
           {atom_ast, parser}
       end
     end
   end
+
+  # Returns the appropriate atom conversion function based on existing_atoms_only option
+  defp atom_function(%{existing_atoms_only: true}), do: :binary_to_existing_atom
+  defp atom_function(_parser), do: :binary_to_atom
 
   defp new(code, opts) do
     %{
@@ -5231,6 +5239,7 @@ defmodule Spitfire do
       nesting: 0,
       literal_encoder: Keyword.get(opts, :literal_encoder),
       unescape_literals: Keyword.get(opts, :unescape, true),
+      existing_atoms_only: Keyword.get(opts, :existing_atoms_only, false),
       # Track interpolation nesting level
       interpolation_depth: 0,
       # Stack to save/restore nesting during interpolations
@@ -6693,7 +6702,8 @@ defmodule Spitfire do
               :flt,
               :char,
               :bin_string,
-              :list_string
+              :list_string,
+              :range_op
             ] do
     true
   end
