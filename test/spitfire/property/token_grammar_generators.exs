@@ -2748,7 +2748,9 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
         # call_args_no_parens_ambig: nested no_parens call
         {2, gen_no_parens_expr(child_state) |> StreamData.map(&{:call_args_ambig, &1})},
         # call_args_no_parens_many: 2+ args (positional only)
-        {3, gen_positional_args_list(restricted_state, 2, 4) |> StreamData.map(&{:call_args_many, &1})},
+        {3,
+         gen_positional_args_list(restricted_state, 2, 4)
+         |> StreamData.map(&{:call_args_many, &1})},
         # call_args_no_parens_many: positional + trailing kw
         {2, gen_args_with_trailing_kw(restricted_state) |> StreamData.map(&{:call_args_many, &1})}
       ])

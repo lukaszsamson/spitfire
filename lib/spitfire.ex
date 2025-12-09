@@ -1799,10 +1799,12 @@ defmodule Spitfire do
   defp parse_infix_expression(parser, lhs) do
     trace "parse_infix_expression", trace_meta(parser) do
       token = current_token(parser)
+
       meta =
         parser
         |> current_meta()
         |> mark_operator_meta(token, parser)
+
       op_range = token_range(parser.current_token)
       precedence = current_precedence(parser)
       # we save this in case the next expression is an error
@@ -1999,10 +2001,12 @@ defmodule Spitfire do
   defp parse_range_expression(parser) do
     trace "parse_range_expression", trace_meta(parser) do
       token = current_token(parser)
+
       meta =
         parser
         |> current_meta()
         |> mark_operator_meta(token, parser)
+
       op_range = token_range(parser.current_token)
 
       ast =
