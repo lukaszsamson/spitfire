@@ -5387,6 +5387,7 @@ defmodule Spitfire do
     |> split_unary_blocks()
     |> normalize_unary_capture_infix()
     |> normalize_unary_end_of_expression()
+    |> normalize_unary_block_binary()
   end
 
   defp normalize_not_in(ast) do
@@ -5660,6 +5661,21 @@ defmodule Spitfire do
             true ->
               {op, meta, [operand]}
           end
+        else
+          node
+        end
+
+      other ->
+        other
+    end)
+  end
+
+  defp normalize_unary_block_binary(ast) do
+    Macro.postwalk(ast, fn
+      {bin_op, bin_meta, [{unary_op, unary_meta, [operand]} | rest]} = node ->
+        if rest != [] and unary_op in [:not, :!] and bin_op not in [:<<>>, :__block__] and
+             leftmost_block_with_do?(operand) do
+          {unary_op, unary_meta, [{bin_op, bin_meta, [operand | rest]}]}
         else
           node
         end
