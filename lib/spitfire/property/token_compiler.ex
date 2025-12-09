@@ -2953,6 +2953,10 @@ defmodule Spitfire.Property.TokenCompiler do
 
   defp compile_do_body([], layout, _opts), do: {[], layout}
 
+  # Handle parser-style empty body {:__block__, [], []} - produces no tokens
+  # This provides literal parity with parser output for empty block items
+  defp compile_do_body({:__block__, [], []}, layout, _opts), do: {[], layout}
+
   # Handle stab_eoe structure: {:stab_eoe, clauses, trailing_eoe}
   defp compile_do_body({:stab_eoe, clauses, trailing_eoe}, layout, opts) do
     compile_stab_eoe_body(clauses, trailing_eoe, layout, opts)

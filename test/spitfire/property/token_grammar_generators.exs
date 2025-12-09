@@ -1376,16 +1376,21 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
   # Per grammar lines 368-371:
   #   block_item -> block_eoe stab_eoe   (with stab clauses)
   #   block_item -> block_eoe            (empty body)
-  # else typically uses expressions, not stab clauses
+  # else can use expressions or stab clauses (grammar allows both)
   defp gen_else_block(state) do
     block_eoe_gen = gen_block_eoe()
 
     StreamData.bind(block_eoe_gen, fn block_eoe ->
       StreamData.frequency([
-        # Empty else (block_eoe only) - grammar line 370
+        # Empty else using [] (block_eoe only) - grammar line 370
         {1, StreamData.constant([{:block_item, :else, block_eoe, []}])},
-        # else with body
-        {4, gen_block_item_body(state, :else, block_eoe)}
+        # Empty else using parser-style {:__block__, [], []} for literal parity
+        {1, StreamData.constant([{:block_item, :else, block_eoe, {:__block__, [], []}}])},
+        # else with expression body (common case)
+        {4, gen_block_item_body(state, :else, block_eoe)},
+        # else with stab clauses (grammar line 368: block_eoe stab_eoe)
+        # Valid but uncommon: else x -> y; z -> w
+        {1, gen_block_item_stab(state, :else, block_eoe)}
       ])
     end)
   end
@@ -1397,8 +1402,10 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
 
     StreamData.bind(block_eoe_gen, fn block_eoe ->
       StreamData.frequency([
-        # Empty rescue
+        # Empty rescue using []
         {1, StreamData.constant([{:block_item, :rescue, block_eoe, []}])},
+        # Empty rescue using parser-style {:__block__, [], []} for literal parity
+        {1, StreamData.constant([{:block_item, :rescue, block_eoe, {:__block__, [], []}}])},
         # rescue with stab clauses
         {4, gen_block_item_stab(state, :rescue, block_eoe)}
       ])
@@ -1412,8 +1419,10 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
 
     StreamData.bind(block_eoe_gen, fn block_eoe ->
       StreamData.frequency([
-        # Empty catch
+        # Empty catch using []
         {1, StreamData.constant([{:block_item, :catch, block_eoe, []}])},
+        # Empty catch using parser-style {:__block__, [], []} for literal parity
+        {1, StreamData.constant([{:block_item, :catch, block_eoe, {:__block__, [], []}}])},
         # catch with stab clauses
         {4, gen_block_item_stab(state, :catch, block_eoe)}
       ])
@@ -1427,8 +1436,10 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
 
     StreamData.bind(block_eoe_gen, fn block_eoe ->
       StreamData.frequency([
-        # Empty after
+        # Empty after using []
         {1, StreamData.constant([{:block_item, :after, block_eoe, []}])},
+        # Empty after using parser-style {:__block__, [], []} for literal parity
+        {1, StreamData.constant([{:block_item, :after, block_eoe, {:__block__, [], []}}])},
         # after with body
         {4, gen_block_item_body(state, :after, block_eoe)}
       ])
@@ -1469,7 +1480,9 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
     StreamData.bind(StreamData.integer(1..2), fn count ->
       StreamData.bind(gen_stab_clause_list(state, count), fn clauses ->
         StreamData.bind(trailing_eoe_gen, fn trailing_eoe ->
-          StreamData.constant([{:block_item, block_type, block_eoe, {:stab_eoe, clauses, trailing_eoe}}])
+          StreamData.constant([
+            {:block_item, block_type, block_eoe, {:stab_eoe, clauses, trailing_eoe}}
+          ])
         end)
       end)
     end)
