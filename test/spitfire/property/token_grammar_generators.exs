@@ -867,12 +867,26 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
   # Generate a list of call_args_parens_expr (matched or unmatched, not no_parens)
   defp gen_call_args_parens_expr_list(_state, 0), do: StreamData.constant([])
 
-  defp gen_call_args_parens_expr_list(state, count) when count > 0 do
-    # call_args_parens_expr -> matched_expr | unmatched_expr
-    # Avoid unmatched at the end to prevent ambiguity with do blocks
+  defp gen_call_args_parens_expr_list(_state, 0), do: StreamData.constant([])
+
+  # Single argument: avoid unmatched at the end to prevent ambiguity with do blocks
+  defp gen_call_args_parens_expr_list(state, 1) do
     expr_gen =
       StreamData.frequency([
         {4, gen_sub_matched_expr(state)},
+        {2, gen_matched_expr(state)}
+      ])
+
+    StreamData.bind(expr_gen, fn expr -> StreamData.constant([expr]) end)
+  end
+
+  defp gen_call_args_parens_expr_list(state, count) when count > 1 do
+    # call_args_parens_expr -> matched_expr | unmatched_expr
+    # Allow unmatched expressions in non-final positions (safer than final position)
+    expr_gen =
+      StreamData.frequency([
+        {4, gen_sub_matched_expr(state)},
+        {3, gen_unmatched_expr(state)},
         {2, gen_matched_expr(state)}
       ])
 
