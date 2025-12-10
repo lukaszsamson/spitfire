@@ -1590,4 +1590,143 @@ defmodule SpitfireReproTest do
 
     assert Spitfire.parse(code) == s2q(code)
   end
+
+  test "repro 139" do
+    code = """
+    Bar.foo(delta: true, bar: 0o1, qux: 0xA6)(gamma, false, qux: beta, eggs: :bob, delta: -48) do
+    ; after
+    true
+    34.0
+    end
+    @nil\
+    """
+
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
+  @tag :skip
+  test "repro 140" do
+    code = """
+    &nil
+    fn ->
+    41.2
+    ; end
+    \
+    """
+
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
+  test "repro 141" do
+    code = """
+    if true do
+    :ok
+    end ||| beta; try qux do
+    beta -> true
+    rescue
+    ; after
+    gamma
+    end
+    \
+    """
+
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
+  test "repro 142" do
+    code = """
+    Mod.delta(spam: 21.83, gamma: Schema.Config)() do
+    ; end
+    baz qux nil, 0\
+    """
+
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
+  test "repro 143" do
+    code = """
+    -707.(-610, eggs) do\n:baz -> 0b11\nrescue\nend\
+    """
+
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
+  test "repro 144" do
+    code = """
+    try gamma do; :foo
+    bar
+    end\
+    """
+
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
+  test "repro 145" do
+    code = """
+    ... if baz do
+    :ok
+    end
+    bar(Remote, :ok) do
+    ; end
+    \
+    """
+
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
+  test "repro 146" do
+    code = """
+
+    foo.bar() do
+    8 -> -734
+    after
+    ; end
+    ... .. :ok // nil\
+    """
+
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
+  test "repro 147" do
+    code = """
+    State.Bar.baz(bar: beta, alpha: foo, eggs: foo)(:bob, 93.96, delta: bar, baz: ?x) do
+    else
+    ; end
+    delta.beta ..
+    .. // ...
+    \
+    """
+
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
+  test "repro 148" do
+    code = """
+    Mod.< bar :ok, 0x80; Foo.delta delta: :three, delta: 934, baz: 305 do
+    foo -> false
+    delta -> State
+    else
+    ; 55
+    end\
+    """
+
+    assert Spitfire.parse(code) == s2q(code)
+  end
+
+  test "repro 148a" do
+    code = """
+    foo.case true do qux ->
+    ?f
+    :ok ->
+
+
+    :foo
+    :two -> qux
+    else
+    ; end
+    ; .. | nil\
+    """
+
+    assert Spitfire.parse(code) == s2q(code)
+  end
 end
