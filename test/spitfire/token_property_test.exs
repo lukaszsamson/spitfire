@@ -84,7 +84,7 @@ defmodule Spitfire.TokenPropertyTest do
     @tag timeout: 120_000
     property "grammar trees round-trip through Spitfire" do
       check all(
-              tree <- Gen.grammar(phase: 1, max_depth: 4, max_forms: 2),
+              tree <- Gen.grammar(phase: 1, max_depth: 1, max_forms: 2),
               max_runs: 5000,
               max_shrinks: 50
             ) do

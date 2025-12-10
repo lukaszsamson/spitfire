@@ -708,6 +708,214 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
     end)
   end
 
+  # ===========================================================================
+  # Generator: container_expr, container_args, kw_eol, kw_base, kw_call, kw_data
+  # ===========================================================================
+  #
+  # Per grammar lines 533-542:
+  #   container_expr -> matched_expr
+  #   container_expr -> unmatched_expr
+  #   container_expr -> no_parens_expr  (ERROR case - error_no_parens_container_strict)
+  #
+  #   container_args_base -> container_expr
+  #   container_args_base -> container_args_base ',' container_expr
+  #
+  #   container_args -> container_args_base
+  #   container_args -> container_args_base ','                   (trailing comma)
+  #   container_args -> container_args_base ',' kw_data           (positional + kw)
+  #
+  # Per grammar lines 566-582:
+  #   kw_eol -> kw_identifier [eol]         (bare keyword: foo:)
+  #   kw_eol -> kw_identifier_safe [eol]    (quoted keyword: "foo":)
+  #   kw_eol -> kw_identifier_unsafe [eol]  (interpolated keyword: "#{x}":)
+  #
+  #   kw_base -> kw_eol container_expr (',' kw_eol container_expr)*
+  #
+  #   kw_call -> kw_base
+  #   kw_call -> kw_base ','              (trailing comma, warns)
+  #   kw_call -> kw_base ',' matched_expr (ERROR - maybe_bad_keyword_call_follow_up)
+  #
+  #   kw_data -> kw_base
+  #   kw_data -> kw_base ','              (trailing comma)
+  #   kw_data -> kw_base ',' matched_expr (ERROR - maybe_bad_keyword_data_follow_up)
+
+  @doc """
+  Generate a container_expr.
+
+  Per grammar lines 533-535:
+  - container_expr -> matched_expr
+  - container_expr -> unmatched_expr
+  - container_expr -> no_parens_expr (ERROR - not generated in normal mode)
+
+  Container expressions are used inside containers (lists, maps, tuples, etc.)
+  where no_parens_expr would be ambiguous.
+  """
+  def gen_container_expr(state) do
+    child_state = GrammarTree.decr_depth(state)
+
+    if child_state.budget.depth <= 1 do
+      gen_simple_expr()
+    else
+      restricted_state = restrict_unmatched(child_state)
+
+      StreamData.frequency([
+        # matched_expr - most common
+        {6, gen_matched_expr(restricted_state)},
+        # unmatched_expr - block expressions, unary with unmatched args
+        {2, gen_unmatched_expr(restricted_state)}
+        # no_parens_expr is ERROR - not generated
+      ])
+    end
+  end
+
+  @doc """
+  Generate container_args_base - a list of comma-separated container expressions.
+
+  Per grammar lines 537-538:
+  - container_args_base -> container_expr
+  - container_args_base -> container_args_base ',' container_expr
+  """
+  def gen_container_args_base(state, min_count \\ 1, max_count \\ 3) do
+    child_state = GrammarTree.decr_depth(state)
+
+    StreamData.bind(StreamData.integer(min_count..max_count), fn count ->
+      gen_container_expr_list(child_state, count)
+    end)
+  end
+
+  defp gen_container_expr_list(_state, 0), do: StreamData.constant([])
+
+  defp gen_container_expr_list(state, count) when count > 0 do
+    StreamData.bind(gen_container_expr(state), fn expr ->
+      StreamData.bind(gen_container_expr_list(GrammarTree.decr_nodes(state), count - 1), fn rest ->
+        StreamData.constant([expr | rest])
+      end)
+    end)
+  end
+
+  @doc """
+  Generate container_args.
+
+  Per grammar lines 540-542:
+  - container_args -> container_args_base
+  - container_args -> container_args_base ','                (trailing comma)
+  - container_args -> container_args_base ',' kw_data        (positional + kw)
+
+  Returns one of:
+  - `{:container_args, exprs}` - just positional exprs
+  - `{:container_args_trailing, exprs}` - positional with trailing comma
+  - `{:container_args_with_kw, exprs, kw_data}` - positional + keyword data
+  """
+  def gen_container_args(state) do
+    child_state = GrammarTree.decr_depth(state)
+
+    StreamData.frequency([
+      # Just positional
+      {6, gen_container_args_base(child_state) |> StreamData.map(&{:container_args, &1})},
+      # Trailing comma
+      {1, gen_container_args_base(child_state) |> StreamData.map(&{:container_args_trailing, &1})},
+      # Positional + kw_data
+      {3,
+       StreamData.bind(gen_container_args_base(child_state, 1, 2), fn positional ->
+         StreamData.bind(gen_kw_data(child_state), fn kw_data ->
+           StreamData.constant({:container_args_with_kw, positional, kw_data})
+         end)
+       end)}
+    ])
+  end
+
+  @doc """
+  Generate a kw_eol - keyword identifier with optional newline.
+
+  Per grammar lines 566-571:
+  - kw_eol -> kw_identifier [eol]
+  - kw_eol -> kw_identifier_safe [eol]
+  - kw_eol -> kw_identifier_unsafe [eol]
+
+  For simplicity, we generate bare kw_identifier (atom followed by colon).
+  The token will be `:kw_identifier` which is the terminal.
+
+  Returns `{:kw_eol, key, has_eol}` where key is an atom.
+  """
+  def gen_kw_eol do
+    StreamData.bind(StreamData.member_of(@identifiers), fn key ->
+      StreamData.bind(StreamData.boolean(), fn has_eol ->
+        StreamData.constant({:kw_eol, key, has_eol})
+      end)
+    end)
+  end
+
+  @doc """
+  Generate kw_base - one or more keyword pairs.
+
+  Per grammar lines 573-574:
+  - kw_base -> kw_eol container_expr
+  - kw_base -> kw_base ',' kw_eol container_expr
+
+  Returns a list of `{kw_eol, container_expr}` pairs.
+  """
+  def gen_kw_base(state, min_pairs \\ 1, max_pairs \\ 3) do
+    child_state = GrammarTree.decr_depth(state)
+
+    StreamData.bind(StreamData.integer(min_pairs..max_pairs), fn count ->
+      gen_kw_base_pairs(child_state, count)
+    end)
+  end
+
+  defp gen_kw_base_pairs(_state, 0), do: StreamData.constant([])
+
+  defp gen_kw_base_pairs(state, count) when count > 0 do
+    StreamData.bind(gen_kw_eol(), fn kw_eol ->
+      StreamData.bind(gen_container_expr(state), fn value ->
+        StreamData.bind(gen_kw_base_pairs(GrammarTree.decr_nodes(state), count - 1), fn rest ->
+          StreamData.constant([{kw_eol, value} | rest])
+        end)
+      end)
+    end)
+  end
+
+  @doc """
+  Generate kw_call - keyword arguments for function calls inside parentheses.
+
+  Per grammar lines 576-578:
+  - kw_call -> kw_base
+  - kw_call -> kw_base ','  (trailing comma, warns but valid)
+  - kw_call -> kw_base ',' matched_expr (ERROR - maybe_bad_keyword_call_follow_up)
+
+  Returns one of:
+  - `{:kw_call, pairs}` - keyword pairs
+  - `{:kw_call_trailing, pairs}` - with trailing comma
+
+  Note: The error case (kw_base ',' matched_expr) is not generated.
+  """
+  def gen_kw_call(state) do
+    StreamData.frequency([
+      {8, gen_kw_base(state) |> StreamData.map(&{:kw_call, &1})},
+      {1, gen_kw_base(state) |> StreamData.map(&{:kw_call_trailing, &1})}
+    ])
+  end
+
+  @doc """
+  Generate kw_data - keyword data for containers (lists, maps, brackets).
+
+  Per grammar lines 580-582:
+  - kw_data -> kw_base
+  - kw_data -> kw_base ','  (trailing comma)
+  - kw_data -> kw_base ',' matched_expr (ERROR - maybe_bad_keyword_data_follow_up)
+
+  Returns one of:
+  - `{:kw_data, pairs}` - keyword pairs
+  - `{:kw_data_trailing, pairs}` - with trailing comma
+
+  Note: The error case (kw_base ',' matched_expr) is not generated.
+  """
+  def gen_kw_data(state) do
+    StreamData.frequency([
+      {8, gen_kw_base(state) |> StreamData.map(&{:kw_data, &1})},
+      {1, gen_kw_base(state) |> StreamData.map(&{:kw_data_trailing, &1})}
+    ])
+  end
+
   # Generate keyword arguments for no-parens call: a: 1 or a: 1, b: 2
   # Per grammar: call_args_no_parens_kw -> call_args_no_parens_kw_expr [',' ...]
   # call_args_no_parens_kw_expr -> kw_eol matched_expr | kw_eol no_parens_expr
@@ -787,7 +995,7 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
         # Empty: ()
         {2, StreamData.constant({:call_args_parens, :empty})},
         # Keyword only: (a: 1)
-        {2, gen_kw_call() |> StreamData.map(&{:call_args_parens, {:kw_only, &1}})},
+        {2, gen_kw_call(child_state) |> StreamData.map(&{:call_args_parens, {:kw_only, &1}})},
         # Positional only: (1, 2)
         {4, gen_call_args_parens_base_simple(1, 3) |> StreamData.map(&{:call_args_parens, {:positional, &1}})},
         # Positional + kw: (1, a: 2)
@@ -802,41 +1010,13 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
         # Single no_parens_expr: (foo bar)
         {1, gen_no_parens_expr(child_state) |> StreamData.map(&{:call_args_parens, {:no_parens_expr, &1}})},
         # Keyword only: (a: 1, b: 2)
-        {2, gen_kw_call() |> StreamData.map(&{:call_args_parens, {:kw_only, &1}})},
+        {2, gen_kw_call(restricted_state) |> StreamData.map(&{:call_args_parens, {:kw_only, &1}})},
         # Positional only: (expr, expr)
         {4, gen_call_args_parens_base(restricted_state, 1, 3) |> StreamData.map(&{:call_args_parens, {:positional, &1}})},
         # Positional + kw: (expr, a: 1)
         {2, gen_positional_with_kw(restricted_state) |> StreamData.map(&{:call_args_parens, &1})}
       ])
     end
-  end
-
-  # Generate kw_call for use in call_args_parens: a: 1, b: 2
-  # Per grammar lines 576-578:
-  #   kw_call -> kw_base
-  #   kw_call -> kw_base ','  (trailing comma, warns but valid)
-  #   kw_base -> kw_eol container_expr (',' kw_eol container_expr)*
-  defp gen_kw_call do
-    StreamData.bind(StreamData.integer(1..3), fn count ->
-      gen_kw_call_pairs(count)
-    end)
-  end
-
-  # Generate kw_call pairs using container_expr values (matched or unmatched)
-  defp gen_kw_call_pairs(0), do: StreamData.constant([])
-
-  defp gen_kw_call_pairs(count) when count > 0 do
-    # Values can be matched_expr or unmatched_expr (container_expr)
-    # For simplicity, use simple expressions for keywords
-    value_gen = gen_simple_expr()
-
-    StreamData.bind(StreamData.member_of(@identifiers), fn key ->
-      StreamData.bind(value_gen, fn value ->
-        StreamData.bind(gen_kw_call_pairs(count - 1), fn rest ->
-          StreamData.constant([{key, value} | rest])
-        end)
-      end)
-    end)
   end
 
   # Generate call_args_parens_base with simple expressions
@@ -898,11 +1078,11 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
   end
 
   # Generate positional args + trailing kw (simple version)
-  defp gen_positional_with_kw_simple(_state) do
+  defp gen_positional_with_kw_simple(state) do
     StreamData.bind(StreamData.integer(1..2), fn pos_count ->
       StreamData.bind(gen_simple_expr_list(pos_count), fn positional ->
-        StreamData.bind(gen_kw_call(), fn kw_pairs ->
-          StreamData.constant({:positional_with_kw, positional, kw_pairs})
+        StreamData.bind(gen_kw_call(state), fn kw_call ->
+          StreamData.constant({:positional_with_kw, positional, kw_call})
         end)
       end)
     end)
@@ -912,8 +1092,8 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
   defp gen_positional_with_kw(state) do
     StreamData.bind(StreamData.integer(1..2), fn pos_count ->
       StreamData.bind(gen_call_args_parens_expr_list(state, pos_count), fn positional ->
-        StreamData.bind(gen_kw_call(), fn kw_pairs ->
-          StreamData.constant({:positional_with_kw, positional, kw_pairs})
+        StreamData.bind(gen_kw_call(state), fn kw_call ->
+          StreamData.constant({:positional_with_kw, positional, kw_call})
         end)
       end)
     end)
@@ -3572,7 +3752,7 @@ defmodule Spitfire.Property.TokenGrammarGenerators do
       # Rule 2: Single container expression: foo[bar], foo[x + y], foo[func()]
       {6, container_expr_gen},
       # Rule 1: Keyword data: foo[a: 1], foo[a: 1, b: 2]
-      {2, gen_call_args_no_parens_kw()},
+      {2, gen_kw_data(child_state)},
       # Rule 3: Container expr with trailing comma: foo[bar,], foo[x + y,]
       {1,
        StreamData.bind(container_expr_gen, fn expr ->

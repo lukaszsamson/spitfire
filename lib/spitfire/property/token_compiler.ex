@@ -1934,7 +1934,21 @@ defmodule Spitfire.Property.TokenCompiler do
   end
 
   # Keyword only: (a: 1, b: 2)
-  defp compile_call_args_parens({:call_args_parens, {:kw_only, pairs}}, layout, opts) do
+  # New format: {:kw_call, pairs} or {:kw_call_trailing, pairs}
+  defp compile_call_args_parens({:call_args_parens, {:kw_only, {:kw_call, pairs}}}, layout, opts) do
+    compile_kw_base(pairs, layout, opts, :first)
+  end
+
+  defp compile_call_args_parens({:call_args_parens, {:kw_only, {:kw_call_trailing, pairs}}}, layout, opts) do
+    {kw_tokens, layout} = compile_kw_base(pairs, layout, opts, :first)
+    # Add trailing comma
+    {comma_meta, layout} = TokenLayout.stick_right(layout, ",", nil)
+    comma_token = {:",", comma_meta}
+    {kw_tokens ++ [comma_token], layout}
+  end
+
+  # Old format for backward compatibility: [{key, value}, ...]
+  defp compile_call_args_parens({:call_args_parens, {:kw_only, pairs}}, layout, opts) when is_list(pairs) do
     compile_kw_call_args(pairs, layout, opts, :first)
   end
 
@@ -1944,7 +1958,41 @@ defmodule Spitfire.Property.TokenCompiler do
   end
 
   # Positional + trailing kw: (1, 2, a: 3)
-  defp compile_call_args_parens({:call_args_parens, {:positional_with_kw, exprs, kw_pairs}}, layout, opts) do
+  # New format: {:kw_call, pairs} or {:kw_call_trailing, pairs}
+  defp compile_call_args_parens({:call_args_parens, {:positional_with_kw, exprs, {:kw_call, kw_pairs}}}, layout, opts) do
+    # Compile positional args first
+    {pos_tokens, layout} = compile_args_in_parens(exprs, layout, opts)
+
+    # Add comma before keywords
+    {comma_meta, layout} = TokenLayout.stick_right(layout, ",", nil)
+    comma_token = {:",", comma_meta}
+
+    # Compile keyword args (not first since we have positional)
+    {kw_tokens, layout} = compile_kw_base(kw_pairs, layout, opts, :rest)
+
+    {pos_tokens ++ [comma_token] ++ kw_tokens, layout}
+  end
+
+  defp compile_call_args_parens({:call_args_parens, {:positional_with_kw, exprs, {:kw_call_trailing, kw_pairs}}}, layout, opts) do
+    # Compile positional args first
+    {pos_tokens, layout} = compile_args_in_parens(exprs, layout, opts)
+
+    # Add comma before keywords
+    {comma_meta, layout} = TokenLayout.stick_right(layout, ",", nil)
+    comma_token = {:",", comma_meta}
+
+    # Compile keyword args (not first since we have positional)
+    {kw_tokens, layout} = compile_kw_base(kw_pairs, layout, opts, :rest)
+
+    # Add trailing comma
+    {trailing_comma_meta, layout} = TokenLayout.stick_right(layout, ",", nil)
+    trailing_comma_token = {:",", trailing_comma_meta}
+
+    {pos_tokens ++ [comma_token] ++ kw_tokens ++ [trailing_comma_token], layout}
+  end
+
+  # Old format for backward compatibility: plain list of pairs
+  defp compile_call_args_parens({:call_args_parens, {:positional_with_kw, exprs, kw_pairs}}, layout, opts) when is_list(kw_pairs) do
     # Compile positional args first
     {pos_tokens, layout} = compile_args_in_parens(exprs, layout, opts)
 
@@ -2011,6 +2059,103 @@ defmodule Spitfire.Property.TokenCompiler do
     {rest_tokens, layout} = compile_kw_call_args_rest(rest, layout, opts)
 
     {[comma_token, key_token] ++ value_tokens ++ rest_tokens, layout}
+  end
+
+  # ===========================================================================
+  # Helper: compile_kw_base (new format with kw_eol)
+  # ===========================================================================
+  #
+  # Handles the new kw_base format where pairs are:
+  #   {{:kw_eol, key, has_eol}, container_expr}
+  #
+  # :first means first arg is stuck to open paren, :rest means space before
+
+  defp compile_kw_base([], layout, _opts, _position), do: {[], layout}
+
+  defp compile_kw_base([{{:kw_eol, key, has_eol}, value} | rest], layout, opts, position) do
+    # Compile keyword key (as kw_identifier)
+    key_str = Atom.to_string(key)
+    key_lexeme = key_str <> ":"
+    chars = String.to_charlist(key_str)
+
+    {key_meta, layout} =
+      case position do
+        :first -> TokenLayout.stick_right(layout, key_lexeme, chars)
+        :rest -> TokenLayout.space_before(layout, key_lexeme, chars)
+      end
+
+    key_token = {:kw_identifier, key_meta, key}
+
+    # Add optional eol after key
+    {eol_tokens, layout} =
+      if has_eol do
+        eol_meta = TokenLayout.meta(layout, "\n", 1)
+        eol_token = {:eol, eol_meta}
+        layout = TokenLayout.newline(layout)
+        {[eol_token], layout}
+      else
+        {[], layout}
+      end
+
+    # Compile value with space (or after newline)
+    {value_tokens, layout} = do_to_tokens(value, layout, opts)
+
+    # Compile remaining pairs
+    {rest_tokens, layout} = compile_kw_base_rest(rest, layout, opts)
+
+    {[key_token] ++ eol_tokens ++ value_tokens ++ rest_tokens, layout}
+  end
+
+  defp compile_kw_base_rest([], layout, _opts), do: {[], layout}
+
+  defp compile_kw_base_rest([{{:kw_eol, key, has_eol}, value} | rest], layout, opts) do
+    # Add comma
+    {comma_meta, layout} = TokenLayout.stick_right(layout, ",", nil)
+    comma_token = {:",", comma_meta}
+
+    # Compile key with space
+    key_str = Atom.to_string(key)
+    key_lexeme = key_str <> ":"
+    chars = String.to_charlist(key_str)
+    {key_meta, layout} = TokenLayout.space_before(layout, key_lexeme, chars)
+    key_token = {:kw_identifier, key_meta, key}
+
+    # Add optional eol after key
+    {eol_tokens, layout} =
+      if has_eol do
+        eol_meta = TokenLayout.meta(layout, "\n", 1)
+        eol_token = {:eol, eol_meta}
+        layout = TokenLayout.newline(layout)
+        {[eol_token], layout}
+      else
+        {[], layout}
+      end
+
+    # Compile value
+    {value_tokens, layout} = do_to_tokens(value, layout, opts)
+
+    # Compile remaining
+    {rest_tokens, layout} = compile_kw_base_rest(rest, layout, opts)
+
+    {[comma_token, key_token] ++ eol_tokens ++ value_tokens ++ rest_tokens, layout}
+  end
+
+  # ===========================================================================
+  # Helper: compile_kw_data (for bracket_arg)
+  # ===========================================================================
+  #
+  # Handles {:kw_data, pairs} and {:kw_data_trailing, pairs} from bracket_arg
+
+  defp compile_kw_data({:kw_data, pairs}, layout, opts) do
+    compile_kw_base(pairs, layout, opts, :first)
+  end
+
+  defp compile_kw_data({:kw_data_trailing, pairs}, layout, opts) do
+    {kw_tokens, layout} = compile_kw_base(pairs, layout, opts, :first)
+    # Add trailing comma
+    {comma_meta, layout} = TokenLayout.stick_right(layout, ",", nil)
+    comma_token = {:",", comma_meta}
+    {kw_tokens ++ [comma_token], layout}
   end
 
   # ===========================================================================
@@ -2147,8 +2292,8 @@ defmodule Spitfire.Property.TokenCompiler do
     {open_meta, layout} = TokenLayout.stick_right(layout, "(", nil)
     open_token = {:"(", open_meta}
 
-    # Args inside parens
-    {args_tokens, layout} = compile_args_in_parens(args, layout, opts)
+    # Args inside parens (using call_args_parens handler for new format)
+    {args_tokens, layout} = compile_call_args_parens(args, layout, opts)
 
     # Closing paren stuck to args
     {close_meta, layout} = TokenLayout.stick_right(layout, ")", nil)
@@ -3192,6 +3337,18 @@ defmodule Spitfire.Property.TokenCompiler do
           eol_token = {:eol, eol_meta}
           layout = TokenLayout.newline(layout)
           {[semi_token, eol_token], layout}
+
+        :eol_semi ->
+          # Trailing newline followed by semicolon, then newline before 'end'
+          eol_meta1 = TokenLayout.meta(layout, "\n", 1)
+          eol_token1 = {:eol, eol_meta1}
+          layout = TokenLayout.newline(layout)
+          {semi_meta, layout} = TokenLayout.stick_right(layout, ";", nil)
+          semi_token = {:";", semi_meta}
+          eol_meta2 = TokenLayout.meta(layout, "\n", 1)
+          eol_token2 = {:eol, eol_meta2}
+          layout = TokenLayout.newline(layout)
+          {[eol_token1, semi_token, eol_token2], layout}
       end
 
     {clauses_tokens ++ trailing_tokens, layout}
@@ -3528,7 +3685,8 @@ defmodule Spitfire.Property.TokenCompiler do
   # Compile bracket argument: [key]
   # Supports multiple generator shapes produced by gen_bracket_arg/1:
   # - simple expression (e.g., {:identifier, meta, name})
-  # - {:kw_args, pairs} for keyword lists
+  # - {:kw_args, pairs} for keyword lists (old format)
+  # - {:kw_data, pairs} / {:kw_data_trailing, pairs} for keyword data (new format)
   # - list of elements for container args
   # - {:trailing, expr} for trailing-comma form
   defp compile_bracket_arg({:kw_args, pairs}, layout, opts) do
@@ -3544,6 +3702,31 @@ defmodule Spitfire.Property.TokenCompiler do
     close_token = {:"]", close_meta}
 
     {[open_token] ++ pairs_tokens ++ [close_token], layout}
+  end
+
+  # New format: kw_data with kw_eol pairs
+  defp compile_bracket_arg({:kw_data, _pairs} = kw_data, layout, opts) do
+    {open_meta, layout} = TokenLayout.stick_right(layout, "[", nil)
+    open_token = {:"[", open_meta}
+
+    {kw_tokens, layout} = compile_kw_data(kw_data, layout, opts)
+
+    {close_meta, layout} = TokenLayout.stick_right(layout, "]", nil)
+    close_token = {:"]", close_meta}
+
+    {[open_token] ++ kw_tokens ++ [close_token], layout}
+  end
+
+  defp compile_bracket_arg({:kw_data_trailing, _pairs} = kw_data, layout, opts) do
+    {open_meta, layout} = TokenLayout.stick_right(layout, "[", nil)
+    open_token = {:"[", open_meta}
+
+    {kw_tokens, layout} = compile_kw_data(kw_data, layout, opts)
+
+    {close_meta, layout} = TokenLayout.stick_right(layout, "]", nil)
+    close_token = {:"]", close_meta}
+
+    {[open_token] ++ kw_tokens ++ [close_token], layout}
   end
 
   defp compile_bracket_arg(arg, layout, opts) when is_list(arg) do
@@ -3607,6 +3790,31 @@ defmodule Spitfire.Property.TokenCompiler do
     close_token = {:"]", close_meta}
 
     {[open_token] ++ pairs_tokens ++ [close_token], layout}
+  end
+
+  # New format: kw_data with kw_eol pairs
+  defp compile_bracket_arg_stuck({:kw_data, _pairs} = kw_data, layout, opts) do
+    {open_meta, layout} = TokenLayout.stick_right(layout, "[", nil)
+    open_token = {:"[", open_meta}
+
+    {kw_tokens, layout} = compile_kw_data(kw_data, layout, opts)
+
+    {close_meta, layout} = TokenLayout.stick_right(layout, "]", nil)
+    close_token = {:"]", close_meta}
+
+    {[open_token] ++ kw_tokens ++ [close_token], layout}
+  end
+
+  defp compile_bracket_arg_stuck({:kw_data_trailing, _pairs} = kw_data, layout, opts) do
+    {open_meta, layout} = TokenLayout.stick_right(layout, "[", nil)
+    open_token = {:"[", open_meta}
+
+    {kw_tokens, layout} = compile_kw_data(kw_data, layout, opts)
+
+    {close_meta, layout} = TokenLayout.stick_right(layout, "]", nil)
+    close_token = {:"]", close_meta}
+
+    {[open_token] ++ kw_tokens ++ [close_token], layout}
   end
 
   defp compile_bracket_arg_stuck(arg, layout, opts) when is_list(arg) do
